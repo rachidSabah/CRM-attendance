@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification, ClassScheduleEntry } from './types';
+import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem } from './types';
 import { api, setApiToken, getApiToken } from './api';
 
 interface AppState {
@@ -27,6 +27,9 @@ interface AppState {
   notifications: Notification[];
   admins: Record<string, unknown>[];
   schedules: ClassScheduleEntry[];
+  exams: Exam[];
+  examGrades: ExamGrade[];
+  curriculum: CurriculumItem[];
 
   // Settings
   language: 'en' | 'fr';
@@ -52,6 +55,9 @@ interface AppState {
   setSchoolInfo: (info: SchoolInfo) => void;
   setNotifications: (notifications: Notification[]) => void;
   setSchedules: (schedules: ClassScheduleEntry[]) => void;
+  setExams: (exams: Exam[]) => void;
+  setExamGrades: (examGrades: ExamGrade[]) => void;
+  setCurriculum: (curriculum: CurriculumItem[]) => void;
   loadAllData: () => Promise<void>;
 }
 
@@ -105,6 +111,9 @@ async function syncAllToApi() {
         employees: state.employees,
         schedules: state.schedules,
         academicYears: state.academicYears,
+        exams: state.exams,
+        examGrades: state.examGrades,
+        curriculum: state.curriculum,
       }
     });
     console.log('[API] Data synced to cloud successfully');
@@ -124,6 +133,9 @@ async function syncAllToApi() {
       { endpoint: 'employees', data: state.employees },
       { endpoint: 'schedules', data: state.schedules },
       { endpoint: 'academic-years', data: state.academicYears },
+      { endpoint: 'exams', data: state.exams },
+      { endpoint: 'exam-grades', data: state.examGrades },
+      { endpoint: 'curriculum', data: state.curriculum },
     ];
 
     // Sync school settings separately
@@ -175,6 +187,9 @@ export const useAppStore = create<AppState>((set) => ({
   notifications: [],
   admins: [],
   schedules: [],
+  exams: [],
+  examGrades: [],
+  curriculum: [],
   language: 'en',
   primaryColor: '#10b981',
 
@@ -232,6 +247,9 @@ export const useAppStore = create<AppState>((set) => ({
   setSchoolInfo: (i) => { set({ schoolInfo: i }); localStorage.setItem('attendance_school_info', JSON.stringify(i)); scheduleApiSync(); },
   setNotifications: (n) => { set({ notifications: n }); },
   setSchedules: (s) => { set({ schedules: s }); localStorage.setItem('attendance_schedules', JSON.stringify(s)); scheduleApiSync(); },
+  setExams: (e) => { set({ exams: e }); localStorage.setItem('attendance_exams', JSON.stringify(e)); scheduleApiSync(); },
+  setExamGrades: (eg) => { set({ examGrades: eg }); localStorage.setItem('attendance_exam_grades', JSON.stringify(eg)); scheduleApiSync(); },
+  setCurriculum: (c) => { set({ curriculum: c }); localStorage.setItem('attendance_curriculum', JSON.stringify(c)); scheduleApiSync(); },
   setPrimaryColor: (color) => { set({ primaryColor: color }); localStorage.setItem('attendance_primary_color', color); document.documentElement.style.setProperty('--app-primary-color', color); scheduleApiSync(); },
 
   loadAllData: async () => {
@@ -253,6 +271,9 @@ export const useAppStore = create<AppState>((set) => ({
       primaryColor: typeof window !== 'undefined' ? localStorage.getItem('attendance_primary_color') || '#10b981' : '#10b981',
       admins: loadLocal('attendance_admins'),
       schedules: loadLocal('attendance_schedules'),
+      exams: loadLocal('attendance_exams'),
+      examGrades: loadLocal('attendance_exam_grades'),
+      curriculum: loadLocal('attendance_curriculum'),
     });
 
     // Apply primary color from cache

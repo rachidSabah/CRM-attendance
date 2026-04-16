@@ -203,4 +203,46 @@ export interface ClassScheduleEntry {
   createdAt: string;
 }
 
-export type PageName = 'dashboard' | 'students' | 'classes' | 'modules' | 'attendance' | 'calendar' | 'schedule' | 'grades' | 'behavior' | 'tasks' | 'incidents' | 'messaging' | 'reports' | 'settings' | 'superadmin';
+export interface Exam {
+  id: string;
+  title: string;
+  moduleId: string;
+  classId: string;
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:mm
+  duration: number; // minutes
+  room: string;
+  maxScore: number;
+  weight: number; // percentage weight for final grade (0-100)
+  type: 'midterm' | 'final' | 'quiz' | 'practical' | 'oral' | 'project' | 'other';
+  description?: string;
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  createdAt: string;
+}
+
+export interface ExamGrade {
+  id: string;
+  examId: string;
+  studentId: string;
+  score: number;
+  maxScore: number;
+  percentage: number;
+  gradedBy?: string;
+  gradedAt: string;
+  createdAt: string;
+}
+
+export interface CurriculumItem {
+  id: string;
+  moduleId: string;
+  academicYear: string;
+  title: string;
+  description?: string;
+  objectives: string[]; // learning objectives
+  hours: number; // total hours allocated
+  order: number; // display order
+  status: 'planned' | 'in_progress' | 'completed';
+  createdAt: string;
+}
+
+export type PageName = 'dashboard' | 'students' | 'classes' | 'modules' | 'attendance' | 'calendar' | 'schedule' | 'grades' | 'behavior' | 'tasks' | 'incidents' | 'messaging' | 'reports' | 'exams' | 'curriculum' | 'settings' | 'superadmin';

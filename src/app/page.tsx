@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { setApiToken, api } from '@/lib/api';
 import { t } from '@/lib/i18n';
-import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, PageName, CalendarEvent, ClassScheduleEntry } from '@/lib/types';
+import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
 import * as pdfUtils from '@/lib/pdf';
 
@@ -37,7 +37,8 @@ import {
   TrendingUp, TrendingDown, Minus, CircleDot, Send, FileDown,
   Copy, Printer, Lock, ArrowLeft, Filter, MoreHorizontal, MessageCircle,
   Flame, Award, Zap, Globe, Database, Activity, ToggleLeft, CreditCard, IdCard,
-  Palette, HardDrive, ChevronDown, Info, RotateCcw, Archive, Cloud, FolderOpen
+  Palette, HardDrive, ChevronDown, Info, RotateCcw, Archive, Cloud, FolderOpen,
+  FileCheck, ListChecks, Target
 } from 'lucide-react';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
@@ -59,6 +60,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'tasks', labelKey: 'tasks', icon: <ListTodo className="h-5 w-5" /> },
   { id: 'incidents', labelKey: 'incidents', icon: <AlertTriangle className="h-5 w-5" /> },
   { id: 'messaging', labelKey: 'messaging', icon: <MessageSquare className="h-5 w-5" /> },
+  { id: 'exams', labelKey: 'exams', icon: <FileCheck className="h-5 w-5" /> },
+  { id: 'curriculum', labelKey: 'curriculum', icon: <ListChecks className="h-5 w-5" /> },
   { id: 'reports', labelKey: 'reports', icon: <BarChart3 className="h-5 w-5" /> },
   { id: 'settings', labelKey: 'settings', icon: <Settings className="h-5 w-5" /> },
   { id: 'superadmin', labelKey: 'super_admin', icon: <Shield className="h-5 w-5" />, superAdminOnly: true },
@@ -88,6 +91,11 @@ const STATUS_COLORS: Record<string, string> = {
   critical: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
   positive: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
   negative: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+  scheduled: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  in_progress: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
+  completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  cancelled: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+  planned: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -2216,7 +2224,7 @@ function ReportsPage() {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div className="flex flex-wrap gap-2">
-          <Select value={reportType} onValueChange={setReportType}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="attendance">{t('attendance', language)}</SelectItem><SelectItem value="grades">{t('grades', language)}</SelectItem><SelectItem value="behavior">{t('behavior', language)}</SelectItem></SelectContent></Select>
+          <Select value={reportType} onValueChange={setReportType}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="attendance">{t('attendance', language)}</SelectItem><SelectItem value="grades">{t('grades', language)}</SelectItem><SelectItem value="behavior">{t('behavior', language)}</SelectItem><SelectItem value="progress">{t('progress_reports', language)}</SelectItem></SelectContent></Select>
           <div className="flex items-center gap-2"><Label className="text-xs whitespace-nowrap">{t('date_range', language)}:</Label><Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36" /><span className="text-xs">→</span><Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36" /></div>
         </div>
         <Button variant="outline" onClick={handleExportReport}><FileDown className="h-4 w-4 mr-1" />{t('export_csv', language)}</Button>
@@ -2249,6 +2257,124 @@ function ReportsPage() {
         </div>
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Comportement' : 'Behavior'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={200}><PieChart><Pie data={[{ name: t('positive', language), value: behaviorSummary.positive }, { name: t('negative', language), value: behaviorSummary.negative }]} cx="50%" cy="50%" outerRadius={80} dataKey="value" fill="#8884d8"><Cell fill="#10b981" /><Cell fill="#ef4444" /></Pie><ReTooltip /><Legend /></PieChart></ResponsiveContainer></CardContent></Card>
       </>)}
+
+      {reportType === 'progress' && <ProgressReportsSection />}
+    </div>
+  );
+}
+
+// ==================== PROGRESS REPORTS SECTION ====================
+function ProgressReportsSection() {
+  const { students, classes, attendance, grades, behavior, exams, examGrades, schoolInfo, language } = useAppStore();
+  const [selectedClass, setSelectedClass] = useState('all');
+  const [selectedStudent, setSelectedStudent] = useState('all');
+  const [period, setPeriod] = useState('full_year');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [teacherComment, setTeacherComment] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
+
+  const filteredStudents = useMemo(() => {
+    let s = students.filter(st => st.status === 'active');
+    if (selectedClass !== 'all') s = s.filter(st => st.classId === selectedClass);
+    if (selectedStudent !== 'all') s = s.filter(st => st.id === selectedStudent);
+    return s;
+  }, [students, selectedClass, selectedStudent]);
+
+  const dateRange = useMemo(() => {
+    const now = new Date(); const y = now.getFullYear();
+    if (period === 'q1') return { from: `${y}-09-01`, to: `${y}-11-30` };
+    if (period === 'q2') return { from: `${y}-12-01`, to: `${y+1}-02-28` };
+    if (period === 'q3') return { from: `${y}-03-01`, to: `${y}-05-31` };
+    if (period === 'q4') return { from: `${y}-06-01`, to: `${y}-08-31` };
+    if (period === 'custom' && customFrom && customTo) return { from: customFrom, to: customTo };
+    return { from: `${y}-09-01`, to: `${y}-08-31` };
+  }, [period, customFrom, customTo]);
+
+  const studentReports = useMemo(() => {
+    return filteredStudents.map(student => {
+      const studentAtt = attendance.filter(a => a.studentId === student.id && a.date >= dateRange.from && a.date <= dateRange.to);
+      const present = studentAtt.filter(a => a.status === 'present').length;
+      const absent = studentAtt.filter(a => a.status === 'absent').length;
+      const late = studentAtt.filter(a => a.status === 'late').length;
+      const excused = studentAtt.filter(a => a.status === 'excused').length;
+      const total = studentAtt.length;
+      const attRate = total > 0 ? Math.round((present / total) * 100) : 0;
+
+      const studentGrades = grades.filter(g => g.studentId === student.id);
+      const avgGrade = studentGrades.length > 0 ? Math.round(studentGrades.reduce((s, g) => s + (g.percentage || 0), 0) / studentGrades.length) : 0;
+
+      const studentExamGrades = examGrades.filter(eg => eg.studentId === student.id);
+      let weightedAvg = 0;
+      let totalWeight = 0;
+      studentExamGrades.forEach(eg => {
+        const exam = exams.find(e => e.id === eg.examId);
+        if (exam) { weightedAvg += eg.percentage * exam.weight; totalWeight += exam.weight; }
+      });
+      const finalWeighted = totalWeight > 0 ? Math.round(weightedAvg / totalWeight) : 0;
+
+      const posBehavior = behavior.filter(b => b.studentId === student.id && b.type === 'positive').length;
+      const negBehavior = behavior.filter(b => b.studentId === student.id && b.type === 'negative').length;
+
+      return { student, present, absent, late, excused, total: studentAtt.length, attRate, avgGrade, finalWeighted, posBehavior, negBehavior, gradesCount: studentGrades.length, examCount: studentExamGrades.length };
+    }).sort((a, b) => b.finalWeighted - a.finalWeighted);
+  }, [filteredStudents, attendance, grades, exams, examGrades, behavior, dateRange]);
+
+  const classSummary = useMemo(() => {
+    const avgAtt = studentReports.length > 0 ? Math.round(studentReports.reduce((s, r) => s + r.attRate, 0) / studentReports.length) : 0;
+    const avgGrade = studentReports.length > 0 ? Math.round(studentReports.reduce((s, r) => s + r.avgGrade, 0) / studentReports.length) : 0;
+    return { totalStudents: studentReports.length, avgAtt, avgGrade };
+  }, [studentReports]);
+
+  return (
+    <div className="space-y-4">
+      <Card><CardHeader className="pb-2"><CardTitle className="text-base">{t('generate_progress_report', language)}</CardTitle></CardHeader><CardContent className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="space-y-2"><Label>{t('select_class_filter', language)}</Label><Select value={selectedClass} onValueChange={v => { setSelectedClass(v); setSelectedStudent('all'); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Toutes les classes' : 'All Classes'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label>{t('select_student', language)}</Label><Select value={selectedStudent} onValueChange={setSelectedStudent}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Tous les étudiants' : 'All Students'}</SelectItem>{filteredStudents.map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label>{t('report_period', language)}</Label><Select value={period} onValueChange={setPeriod}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="full_year">{t('full_year', language)}</SelectItem><SelectItem value="q1">{t('q1', language)}</SelectItem><SelectItem value="q2">{t('q2', language)}</SelectItem><SelectItem value="q3">{t('q3', language)}</SelectItem><SelectItem value="q4">{t('q4', language)}</SelectItem><SelectItem value="custom">{t('custom', language)}</SelectItem></SelectContent></Select></div>
+          {period === 'custom' && <div className="space-y-2"><Label>{t('date_range', language)}</Label><div className="flex gap-1"><Input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="text-xs" /><Input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="text-xs" /></div></div>}
+        </div>
+        <div className="space-y-2"><Label>{t('teacher_comment', language)}</Label><Textarea value={teacherComment} onChange={e => setTeacherComment(e.target.value)} rows={2} placeholder={language === 'fr' ? 'Ajouter un commentaire...' : 'Add a teacher comment...'} /></div>
+        <div className="flex gap-2">
+          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => setShowPreview(true)}><Eye className="h-4 w-4 mr-1" />{t('preview_report', language)}</Button>
+          <Button variant="outline" onClick={() => { pdfUtils.exportProgressReportPDF(studentReports, classSummary, schoolInfo || {}, dateRange, teacherComment, language); toast.success(t('report_generated', language)); }}><Download className="h-4 w-4 mr-1" />{t('download_pdf', language)}</Button>
+        </div>
+      </CardContent></Card>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-lg p-4 text-center bg-emerald-100 dark:bg-emerald-900/20"><p className="text-3xl font-bold text-emerald-700">{classSummary.totalStudents}</p><p className="text-xs text-muted-foreground">{t('total_students', language)}</p></div>
+        <div className="rounded-lg p-4 text-center bg-blue-100 dark:bg-blue-900/20"><p className="text-3xl font-bold text-blue-700">{classSummary.avgAtt}%</p><p className="text-xs text-muted-foreground">{t('avg_attendance', language)}</p></div>
+        <div className="rounded-lg p-4 text-center bg-purple-100 dark:bg-purple-900/20"><p className="text-3xl font-bold text-purple-700">{classSummary.avgGrade}%</p><p className="text-xs text-muted-foreground">{language === 'fr' ? 'Moyenne des Notes' : 'Avg Grade'}</p></div>
+      </div>
+
+      {showPreview && studentReports.length > 0 && (
+        <Card><CardHeader className="pb-2"><CardTitle className="text-base">{t('class_ranking', language)}</CardTitle><CardDescription>{dateRange.from} → {dateRange.to}</CardDescription></CardHeader><CardContent className="p-0">
+          <div className="max-h-[500px] overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow>
+            <TableHead className="w-8">#</TableHead><TableHead>{t('name', language)}</TableHead><TableHead>{t('class_name', language)}</TableHead>
+            <TableHead className="text-center">{t('attendance_rate', language)}</TableHead><TableHead className="text-center">{t('grades_overview', language)}</TableHead>
+            <TableHead className="text-center">{t('weighted_average', language)}</TableHead><TableHead className="text-center">+/-</TableHead>
+          </TableRow></TableHeader><TableBody>
+            {studentReports.map((r, i) => (
+              <TableRow key={r.student.id}>
+                <TableCell className="font-bold text-muted-foreground">{i + 1}</TableCell>
+                <TableCell className="font-medium">{r.student.fullName}</TableCell>
+                <TableCell className="text-sm">{r.student.className || classes.find(c => c.id === r.student.classId)?.name || '-'}</TableCell>
+                <TableCell className="text-center"><Badge variant={r.attRate >= 80 ? 'default' : r.attRate >= 60 ? 'secondary' : 'destructive'} className={r.attRate >= 80 ? 'bg-emerald-100 text-emerald-800' : ''}>{r.attRate}%</Badge></TableCell>
+                <TableCell className="text-center text-sm">{r.avgGrade}%<span className="text-muted-foreground ml-1">({r.gradesCount})</span></TableCell>
+                <TableCell className="text-center font-bold">{r.finalWeighted}%<span className="text-muted-foreground ml-1 font-normal">({r.examCount})</span></TableCell>
+                <TableCell className="text-center"><span className="text-emerald-600 text-xs">+{r.posBehavior}</span> / <span className="text-red-600 text-xs">-{r.negBehavior}</span></TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table></div>
+        </CardContent></Card>
+      )}
+
+      {teacherComment && showPreview && (
+        <Card><CardHeader className="pb-2"><CardTitle className="text-base">{t('teacher_comment', language)}</CardTitle></CardHeader><CardContent><p className="text-sm whitespace-pre-wrap">{teacherComment}</p></CardContent></Card>
+      )}
+
+      {studentReports.length === 0 && <EmptyState message={t('no_data', language)} />}
     </div>
   );
 }
@@ -2797,6 +2923,475 @@ function SettingsPage() {
   );
 }
 
+// ==================== EXAMS PAGE ====================
+function ExamsPage() {
+  const { exams, examGrades, setExams, setExamGrades, modules, classes, students, language, currentUser } = useAppStore();
+  const [tab, setTab] = useState('all');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [gradeDialogOpen, setGradeDialogOpen] = useState(false);
+  const [editingExam, setEditingExam] = useState<Exam | null>(null);
+  const [gradingExam, setGradingExam] = useState<Exam | null>(null);
+  const [gradeScores, setGradeScores] = useState<Record<string, string>>({});
+
+  const emptyExam: Omit<Exam, 'id' | 'createdAt'> = {
+    title: '', moduleId: '', classId: '', date: '', startTime: '09:00',
+    duration: 60, room: '', maxScore: 20, weight: 25,
+    type: 'midterm', status: 'scheduled', description: '',
+  };
+  const [form, setForm] = useState(emptyExam);
+
+  const examTypes: Exam['type'][] = ['midterm', 'final', 'quiz', 'practical', 'oral', 'project', 'other'];
+  const examStatuses: Exam['status'][] = ['scheduled', 'in_progress', 'completed', 'cancelled'];
+
+  const today = new Date().toISOString().split('T')[0];
+  const filteredExams = useMemo(() => {
+    let list = [...exams].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (tab === 'upcoming') list = list.filter(e => e.date >= today && e.status !== 'cancelled');
+    if (tab === 'past') list = list.filter(e => e.date < today || e.status === 'completed');
+    return list;
+  }, [exams, tab, today]);
+
+  const getModule = (id: string) => modules.find(m => m.id === id);
+  const getClass = (id: string) => classes.find(c => c.id === id);
+
+  const openCreate = () => { setEditingExam(null); setForm(emptyExam); setDialogOpen(true); };
+  const openEdit = (exam: Exam) => { setEditingExam(exam); setForm(exam); setDialogOpen(true); };
+  const openGrade = (exam: Exam) => {
+    setGradingExam(exam);
+    const existing: Record<string, string> = {};
+    examGrades.filter(g => g.examId === exam.id).forEach(g => { existing[g.studentId] = String(g.score); });
+    setGradeScores(existing);
+    setGradeDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    if (!form.title || !form.moduleId || !form.classId || !form.date) {
+      toast.error(language === 'fr' ? 'Veuillez remplir les champs obligatoires' : 'Please fill in required fields');
+      return;
+    }
+    if (editingExam) {
+      setExams(exams.map(e => e.id === editingExam.id ? { ...e, ...form } : e));
+      toast.success(language === 'fr' ? 'Examen modifié' : 'Exam updated');
+    } else {
+      const newExam: Exam = { ...form, id: genId(), createdAt: new Date().toISOString() } as Exam;
+      setExams([...exams, newExam]);
+      toast.success(language === 'fr' ? 'Examen créé' : 'Exam created');
+    }
+    setDialogOpen(false);
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm(language === 'fr' ? 'Supprimer cet examen ?' : 'Delete this exam?')) return;
+    setExams(exams.filter(e => e.id !== id));
+    setExamGrades(examGrades.filter(g => g.examId !== id));
+    toast.success(language === 'fr' ? 'Examen supprimé' : 'Exam deleted');
+  };
+
+  const handleSaveGrades = () => {
+    if (!gradingExam) return;
+    const classStudents = students.filter(s => s.classId === gradingExam.classId && s.status === 'active');
+    let updated = [...examGrades];
+    classStudents.forEach(s => {
+      const score = parseFloat(gradeScores[s.id] || '');
+      if (isNaN(score)) return;
+      const pct = gradingExam.maxScore > 0 ? Math.round((score / gradingExam.maxScore) * 1000) / 10 : 0;
+      const existing = updated.find(g => g.examId === gradingExam!.id && g.studentId === s.id);
+      if (existing) {
+        Object.assign(existing, { score, maxScore: gradingExam.maxScore, percentage: pct, gradedAt: new Date().toISOString() });
+      } else {
+        updated.push({ id: genId(), examId: gradingExam!.id, studentId: s.id, score, maxScore: gradingExam.maxScore, percentage: pct, gradedBy: currentUser?.username || '', gradedAt: new Date().toISOString(), createdAt: new Date().toISOString() });
+      }
+    });
+    setExamGrades(updated);
+    setGradeDialogOpen(false);
+    toast.success(t('exam_grades_saved', language));
+  };
+
+  const getWeightedAvg = (studentId: string) => {
+    const studentGrades = examGrades.filter(g => g.studentId === studentId && g.percentage > 0);
+    if (studentGrades.length === 0) return null;
+    let totalWeight = 0, weightedSum = 0;
+    studentGrades.forEach(g => {
+      const exam = exams.find(e => e.id === g.examId);
+      if (exam && exam.status === 'completed' && exam.weight > 0) {
+        weightedSum += g.percentage * exam.weight;
+        totalWeight += exam.weight;
+      }
+    });
+    return totalWeight > 0 ? Math.round(weightedSum / totalWeight * 10) / 10 : null;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold">{t('exam_management', language)}</h2>
+          <p className="text-muted-foreground text-sm">{t('exams', language)} ({exams.length})</p>
+        </div>
+        <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={openCreate}><Plus className="h-4 w-4 mr-1" />{t('create_exam', language)}</Button>
+      </div>
+
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="all">{t('exams', language)}</TabsTrigger>
+          <TabsTrigger value="upcoming">{t('upcoming_exams', language)}</TabsTrigger>
+          <TabsTrigger value="past">{t('past_exams', language)}</TabsTrigger>
+          <TabsTrigger value="grade_entry">{t('enter_scores', language)}</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value={tab} className="mt-4">
+          {tab === 'grade_entry' ? (
+            <div className="grid gap-3">
+              {exams.filter(e => e.status === 'scheduled' || e.status === 'in_progress').length === 0
+                ? <EmptyState message={t('no_exams', language)} />
+                : exams.filter(e => e.status === 'scheduled' || e.status === 'in_progress').map(exam => (
+                  <Card key={exam.id} className="p-4 flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold">{exam.title}</p>
+                      <p className="text-sm text-muted-foreground">{getModule(exam.moduleId)?.name || '-'} • {getClass(exam.classId)?.name || '-'} • {exam.date}</p>
+                    </div>
+                    <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => openGrade(exam)}><FileCheck className="h-4 w-4 mr-1" />{t('grade_exam', language)}</Button>
+                  </Card>
+                ))
+              }
+            </div>
+          ) : filteredExams.length === 0 ? (
+            <EmptyState message={t('no_exams', language)} />
+          ) : (
+            <div className="rounded-lg border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('exam_title', language)}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t('modules', language)}</TableHead>
+                    <TableHead className="hidden sm:table-cell">{t('classes', language)}</TableHead>
+                    <TableHead className="hidden sm:table-cell">{t('exam_date', language)}</TableHead>
+                    <TableHead className="hidden lg:table-cell">{t('exam_type', language)}</TableHead>
+                    <TableHead>{t('status', language)}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t('exam_weight', language)}</TableHead>
+                    <TableHead className="text-right">{t('actions', language)}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredExams.map(exam => (
+                    <TableRow key={exam.id}>
+                      <TableCell className="font-medium">{exam.title}</TableCell>
+                      <TableCell className="hidden md:table-cell">{getModule(exam.moduleId)?.name || '-'}</TableCell>
+                      <TableCell className="hidden sm:table-cell">{getClass(exam.classId)?.name || '-'}</TableCell>
+                      <TableCell className="hidden sm:table-cell">{exam.date}</TableCell>
+                      <TableCell className="hidden lg:table-cell"><Badge variant="outline">{t(exam.type, language)}</Badge></TableCell>
+                      <TableCell><StatusBadge status={exam.status} /></TableCell>
+                      <TableCell className="hidden md:table-cell">{exam.weight}%</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openGrade(exam)}><FileCheck className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(exam)}><Pencil className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleDelete(exam.id)} className="text-red-500"><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Weighted Averages per Student */}
+      {exams.filter(e => e.status === 'completed').length > 0 && (
+        <Card className="p-4">
+          <h3 className="font-semibold mb-3">{t('weighted_average', language)}</h3>
+          <div className="rounded-lg border overflow-hidden max-h-64 overflow-y-auto custom-scrollbar">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('students', language)}</TableHead>
+                  <TableHead>{t('classes', language)}</TableHead>
+                  <TableHead className="text-right">{t('final_grade', language)}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {students.filter(s => s.status === 'active').map(s => {
+                  const avg = getWeightedAvg(s.id);
+                  if (avg === null) return null;
+                  return (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium">{s.fullName}</TableCell>
+                      <TableCell>{getClass(s.classId)?.name || '-'}</TableCell>
+                      <TableCell className="text-right font-bold" style={{ color: avg >= 70 ? '#10b981' : avg >= 50 ? '#f59e0b' : '#ef4444' }}>{avg}%</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      )}
+
+      {/* Add/Edit Exam Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>{editingExam ? t('edit_exam', language) : t('create_exam', language)}</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2"><Label>{t('exam_title', language)} *</Label><Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>{t('modules', language)} *</Label><Select value={form.moduleId} onValueChange={v => setForm({ ...form, moduleId: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>{t('classes', language)} *</Label><Select value={form.classId} onValueChange={v => setForm({ ...form, classId: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>{t('exam_date', language)} *</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+              <div className="space-y-2"><Label>{t('exam_time', language)}</Label><Input type="time" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} /></div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2"><Label>{t('exam_duration', language)}</Label><Input type="number" value={form.duration} onChange={e => setForm({ ...form, duration: Number(e.target.value) })} /></div>
+              <div className="space-y-2"><Label>{t('exam_room', language)}</Label><Input value={form.room} onChange={e => setForm({ ...form, room: e.target.value })} /></div>
+              <div className="space-y-2"><Label>{t('exam_max_score', language)}</Label><Input type="number" value={form.maxScore} onChange={e => setForm({ ...form, maxScore: Number(e.target.value) })} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>{t('exam_weight', language)} (%)</Label><Input type="number" value={form.weight} onChange={e => setForm({ ...form, weight: Number(e.target.value) })} /></div>
+              <div className="space-y-2"><Label>{t('exam_type', language)}</Label><Select value={form.type} onValueChange={v => setForm({ ...form, type: v as Exam['type'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{examTypes.map(tp => <SelectItem key={tp} value={tp}>{t(tp === 'other' ? 'exam_other' : tp, language)}</SelectItem>)}</SelectContent></Select></div>
+            </div>
+            <div className="space-y-2"><Label>{t('status', language)}</Label><Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Exam['status'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{examStatuses.map(st => <SelectItem key={st} value={st}>{t(st, language)}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>{t('exam_description', language)}</Label><Textarea value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Grade Exam Dialog */}
+      <Dialog open={gradeDialogOpen} onOpenChange={setGradeDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>{t('enter_scores', language)} — {gradingExam?.title}</DialogTitle>
+            <DialogDescription>{gradingExam?.date} • Max: {gradingExam?.maxScore} • {getModule(gradingExam?.moduleId || '')?.name || '-'}</DialogDescription>
+          </DialogHeader>
+          {gradingExam && (
+            <ScrollArea className="max-h-[55vh]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('students', language)}</TableHead>
+                    <TableHead>{t('student_score', language)} / {gradingExam.maxScore}</TableHead>
+                    <TableHead className="text-right">{t('auto_calc', language)} (%)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {students.filter(s => s.classId === gradingExam.classId && s.status === 'active').map(s => {
+                    const score = parseFloat(gradeScores[s.id] || '');
+                    const pct = !isNaN(score) && gradingExam.maxScore > 0 ? Math.round(score / gradingExam.maxScore * 1000) / 10 : 0;
+                    return (
+                      <TableRow key={s.id}>
+                        <TableCell className="font-medium">{s.fullName}</TableCell>
+                        <TableCell><Input type="number" min={0} max={gradingExam.maxScore} className="w-24" value={gradeScores[s.id] || ''} onChange={e => setGradeScores({ ...gradeScores, [s.id]: e.target.value })} /></TableCell>
+                        <TableCell className="text-right font-semibold" style={{ color: pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444' }}>{pct}%</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGradeDialogOpen(false)}>{t('cancel', language)}</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveGrades}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ==================== CURRICULUM PAGE ====================
+function CurriculumPage() {
+  const { curriculum, setCurriculum, modules, language, academicYears } = useAppStore();
+  const [selectedModule, setSelectedModule] = useState('');
+  const [selectedYear, setSelectedYear] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<CurriculumItem | null>(null);
+
+  const emptyItem: Omit<CurriculumItem, 'id' | 'createdAt'> = {
+    moduleId: '', academicYear: '', title: '', description: '',
+    objectives: [], hours: 2, order: 1, status: 'planned',
+  };
+  const [form, setForm] = useState(emptyItem);
+
+  const statuses: CurriculumItem['status'][] = ['planned', 'in_progress', 'completed'];
+
+  const filteredItems = useMemo(() => {
+    let items = [...curriculum].sort((a, b) => a.order - b.order);
+    if (selectedModule) items = items.filter(i => i.moduleId === selectedModule);
+    if (selectedYear) items = items.filter(i => i.academicYear === selectedYear);
+    return items;
+  }, [curriculum, selectedModule, selectedYear]);
+
+  const totalHours = filteredItems.reduce((s, i) => s + i.hours, 0);
+  const completedHours = filteredItems.filter(i => i.status === 'completed').reduce((s, i) => s + i.hours, 0);
+
+  const openCreate = () => {
+    setEditingItem(null);
+    setForm({ ...emptyItem, moduleId: selectedModule, academicYear: selectedYear });
+    setDialogOpen(true);
+  };
+  const openEdit = (item: CurriculumItem) => {
+    setEditingItem(item);
+    setForm(item);
+    setDialogOpen(true);
+  };
+
+  const addObjective = () => setForm({ ...form, objectives: [...form.objectives, ''] });
+  const removeObjective = (idx: number) => setForm({ ...form, objectives: form.objectives.filter((_, i) => i !== idx) });
+  const updateObjective = (idx: number, val: string) => {
+    const newObj = [...form.objectives];
+    newObj[idx] = val;
+    setForm({ ...form, objectives: newObj });
+  };
+
+  const handleSave = () => {
+    if (!form.title || !form.moduleId) {
+      toast.error(language === 'fr' ? 'Veuillez remplir les champs obligatoires' : 'Please fill in required fields');
+      return;
+    }
+    if (editingItem) {
+      setCurriculum(curriculum.map(i => i.id === editingItem.id ? { ...i, ...form } : i));
+      toast.success(language === 'fr' ? 'Sujet modifié' : 'Topic updated');
+    } else {
+      const newItem: CurriculumItem = { ...form, id: genId(), createdAt: new Date().toISOString() } as CurriculumItem;
+      setCurriculum([...curriculum, newItem]);
+      toast.success(language === 'fr' ? 'Sujet ajouté' : 'Topic added');
+    }
+    setDialogOpen(false);
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm(language === 'fr' ? 'Supprimer ce sujet ?' : 'Delete this topic?')) return;
+    setCurriculum(curriculum.filter(i => i.id !== id));
+    toast.success(language === 'fr' ? 'Sujet supprimé' : 'Topic deleted');
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold">{t('curriculum_planner', language)}</h2>
+          <p className="text-muted-foreground text-sm">{t('curriculum', language)} ({filteredItems.length} {language === 'fr' ? 'sujets' : 'topics'})</p>
+        </div>
+        <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={openCreate}><Plus className="h-4 w-4 mr-1" />{t('add_curriculum_item', language)}</Button>
+      </div>
+
+      {/* Filters */}
+      <Card className="p-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>{t('modules', language)}</Label>
+            <Select value={selectedModule} onValueChange={setSelectedModule}>
+              <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Tous les modules' : 'All modules'} /></SelectTrigger>
+              <SelectContent><SelectItem value="">{language === 'fr' ? 'Tous les modules' : 'All modules'}</SelectItem>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>{t('academic_year', language)}</Label>
+            <Select value={selectedYear} onValueChange={setSelectedYear}>
+              <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Toutes les années' : 'All years'} /></SelectTrigger>
+              <SelectContent><SelectItem value="">{language === 'fr' ? 'Toutes les années' : 'All years'}</SelectItem>{(academicYears || []).map(y => <SelectItem key={y.id} value={y.year}>{y.year}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+        </div>
+      </Card>
+
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card className="p-4 text-center"><p className="text-2xl font-bold text-emerald-600">{completedHours}</p><p className="text-xs text-muted-foreground">{t('curriculum_completed', language)}</p></Card>
+        <Card className="p-4 text-center"><p className="text-2xl font-bold text-amber-600">{totalHours - completedHours}</p><p className="text-xs text-muted-foreground">{t('curriculum_in_progress', language)}</p></Card>
+        <Card className="p-4 text-center"><p className="text-2xl font-bold text-blue-600">{totalHours}</p><p className="text-xs text-muted-foreground">{t('total_hours', language)}</p></Card>
+      </div>
+
+      {/* Curriculum Items */}
+      {filteredItems.length === 0 ? (
+        <EmptyState message={t('no_curriculum', language)} />
+      ) : (
+        <div className="space-y-3">
+          {filteredItems.map((item) => (
+            <Card key={item.id} className="p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 text-sm font-bold shrink-0 mt-0.5">{item.order}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-semibold">{item.title}</h4>
+                      <StatusBadge status={item.status} />
+                    </div>
+                    {item.description && <p className="text-sm text-muted-foreground mt-1">{item.description}</p>}
+                    {item.objectives.length > 0 && (
+                      <ul className="mt-2 space-y-1">
+                        {item.objectives.map((obj, oi) => (
+                          <li key={oi} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                            <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />
+                            <span>{obj}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="flex gap-3 mt-2 text-xs text-muted-foreground">
+                      <span>{modules.find(m => m.id === item.moduleId)?.name || '-'}</span>
+                      <span>{item.hours}h</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(item)}><Pencil className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="sm" onClick={() => handleDelete(item.id)} className="text-red-500"><Trash2 className="h-4 w-4" /></Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>{editingItem ? t('edit_curriculum_item', language) : t('add_curriculum_item', language)}</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2 max-h-[60vh] overflow-y-auto custom-scrollbar">
+            <div className="space-y-2"><Label>{t('topic_title', language)} *</Label><Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
+            <div className="space-y-2"><Label>{t('topic_description', language)}</Label><Textarea value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>{t('modules', language)} *</Label><Select value={form.moduleId} onValueChange={v => setForm({ ...form, moduleId: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>{t('academic_year', language)}</Label><Select value={form.academicYear} onValueChange={v => setForm({ ...form, academicYear: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{(academicYears || []).map(y => <SelectItem key={y.id} value={y.year}>{y.year}</SelectItem>)}</SelectContent></Select></div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2"><Label>{t('hours_allocated', language)}</Label><Input type="number" min={1} value={form.hours} onChange={e => setForm({ ...form, hours: Number(e.target.value) })} /></div>
+              <div className="space-y-2"><Label>{t('display_order', language)}</Label><Input type="number" min={1} value={form.order} onChange={e => setForm({ ...form, order: Number(e.target.value) })} /></div>
+              <div className="space-y-2"><Label>{t('status', language)}</Label><Select value={form.status} onValueChange={v => setForm({ ...form, status: v as CurriculumItem['status'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{statuses.map(st => <SelectItem key={st} value={st}>{t(`curriculum_${st === 'planned' ? 'planned' : st === 'in_progress' ? 'in_progress' : 'completed'}`, language)}</SelectItem>)}</SelectContent></Select></div>
+            </div>
+
+            {/* Learning Objectives */}
+            <div className="space-y-2">
+              <Label>{t('learning_objectives', language)}</Label>
+              <div className="space-y-2">
+                {form.objectives.map((obj, idx) => (
+                  <div key={idx} className="flex gap-2">
+                    <Input value={obj} onChange={e => updateObjective(idx, e.target.value)} placeholder={`${t('learning_objectives', language)} ${idx + 1}`} />
+                    <Button variant="ghost" size="icon" onClick={() => removeObjective(idx)} className="text-red-500 shrink-0"><X className="h-4 w-4" /></Button>
+                  </div>
+                ))}
+                <Button variant="outline" size="sm" onClick={addObjective}><Plus className="h-4 w-4 mr-1" />{t('add_objective', language)}</Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ==================== SUPER ADMIN PAGE ====================
 function SuperAdminPage() {
   const { language, admins, students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, schoolInfo } = useAppStore();
@@ -3070,6 +3665,8 @@ export default function App() {
       case 'incidents': return <IncidentsPage />;
       case 'messaging': return <MessagingPage />;
       case 'reports': return <ReportsPage />;
+      case 'exams': return <ExamsPage />;
+      case 'curriculum': return <CurriculumPage />;
       case 'settings': return <SettingsPage />;
       case 'superadmin': return currentUser?.role === 'super_admin' ? <SuperAdminPage /> : <DashboardPage />;
       default: return <DashboardPage />;
