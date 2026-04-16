@@ -206,6 +206,8 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     return true;
   });
 
+  const roleLabel = currentUser?.role === 'super_admin' ? 'SUPER_ADMIN' : currentUser?.role === 'admin' ? 'ADMIN' : currentUser?.role === 'teacher' ? 'TEACHER' : 'EMPLOYEE';
+
   return (
     <>
       {open && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={onClose} />}
@@ -218,11 +220,24 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
             </div>
             <div className="flex-1 min-w-0">
               <h2 className="font-bold text-sm truncate">{schoolInfo?.name || 'INFOHAS'}</h2>
-              <p className="text-xs text-muted-foreground truncate">{currentUser?.fullName || currentUser?.username}</p>
+              <p className="text-xs text-muted-foreground truncate">{language === 'fr' ? 'Système de Gestion Scolaire' : 'School Management System'}</p>
             </div>
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={onClose}>
               <X className="h-5 w-5" />
             </Button>
+          </div>
+
+          {/* User Profile Card */}
+          <div className="p-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0">
+                {(currentUser?.username || currentUser?.fullName || 'A').charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm truncate">{currentUser?.username || currentUser?.fullName || 'admin'}</p>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">{roleLabel}</Badge>
+              </div>
+            </div>
           </div>
 
           {/* Navigation */}
@@ -277,8 +292,15 @@ function Header({ onMenuClick, onExportClick }: { onMenuClick: () => void; onExp
   const { theme, setTheme } = useTheme();
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [syncTime, setSyncTime] = useState(new Date());
 
   const pageTitle = t(currentPage, language);
+
+  // Update sync time periodically
+  useEffect(() => {
+    const timer = setInterval(() => setSyncTime(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -336,6 +358,12 @@ function Header({ onMenuClick, onExportClick }: { onMenuClick: () => void; onExp
           <Download className="h-4 w-4" />
         </Button>
 
+        {/* Sync Status */}
+        <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>{language === 'fr' ? 'Dernière sync' : 'Last sync'}: {syncTime.toLocaleTimeString(language === 'fr' ? 'fr-FR' : 'en-US', { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+
         {/* Notifications */}
         <div className="relative">
           <Button variant="ghost" size="icon" onClick={() => setNotifOpen(!notifOpen)}>
@@ -343,11 +371,21 @@ function Header({ onMenuClick, onExportClick }: { onMenuClick: () => void; onExp
           </Button>
           {notifOpen && (
             <div className="absolute right-0 top-full mt-2 w-72 bg-card border border-border rounded-lg shadow-lg p-3 z-50">
-              <p className="text-sm font-medium mb-2">Notifications</p>
+              <p className="text-sm font-medium mb-2">{language === 'fr' ? 'Notifications' : 'Notifications'}</p>
               <p className="text-xs text-muted-foreground">{t('no_data', language)}</p>
             </div>
           )}
         </div>
+
+        {/* Settings shortcut */}
+        <Button variant="ghost" size="icon" onClick={() => useAppStore.getState().setCurrentPage('settings')}>
+          <Settings className="h-5 w-5" />
+        </Button>
+
+        {/* User profile */}
+        <Button variant="ghost" size="icon" onClick={() => useAppStore.getState().setCurrentPage('settings')}>
+          <Users className="h-5 w-5" />
+        </Button>
       </div>
     </header>
   );
@@ -568,11 +606,23 @@ function StudentsPage() {
     guardianName: '', guardianPhone: '', phone: '', email: '', address: '', notes: '', group: '',
   });
 
+  const [sortBy, setSortBy] = useState('name_asc');
+  const [multiSelect, setMultiSelect] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [academicYearFilter, setAcademicYearFilter] = useState('all');
+  const { academicYears } = useAppStore();
+
   const filtered = students.filter(s => {
     const matchSearch = s.fullName.toLowerCase().includes(search.toLowerCase()) || s.studentId.toLowerCase().includes(search.toLowerCase());
     const matchClass = classFilter === 'all' || s.classId === classFilter;
     const matchStatus = statusFilter === 'all' || s.status === statusFilter;
     return matchSearch && matchClass && matchStatus;
+  }).sort((a, b) => {
+    if (sortBy === 'name_asc') return a.fullName.localeCompare(b.fullName);
+    if (sortBy === 'name_desc') return b.fullName.localeCompare(a.fullName);
+    if (sortBy === 'id') return a.studentId.localeCompare(b.studentId);
+    if (sortBy === 'date') return (b.createdAt || '').localeCompare(a.createdAt || '');
+    return 0;
   });
 
   const openAdd = () => {
@@ -640,39 +690,80 @@ function StudentsPage() {
 
   return (
     <div className="space-y-4">
+      {/* Batch action bar (visible when multi-select && items selected) */}
+      {multiSelect && selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <span className="text-sm font-medium text-blue-800 dark:text-blue-300">{selectedIds.size} {language === 'fr' ? 'sélectionné(s)' : 'selected'}</span>
+          <div className="flex gap-2 ml-auto">
+            <Button variant="outline" size="sm" onClick={() => {
+              const toExport = students.filter(s => selectedIds.has(s.id));
+              exportUtils.exportStudentsCSV(toExport, classes);
+              toast.success(language === 'fr' ? 'Exporté!' : 'Exported!');
+            }}><FileDown className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Exporter sélection' : 'Export Selected'}</Button>
+            <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => {
+              if (confirm(`${language === 'fr' ? 'Supprimer' : 'Delete'} ${selectedIds.size} ${language === 'fr' ? 'étudiants?' : 'students?'}`)) {
+                setStudents(students.filter(s => !selectedIds.has(s.id)));
+                setSelectedIds(new Set());
+                toast.success(language === 'fr' ? 'Supprimés' : 'Deleted');
+              }
+            }}><Trash2 className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Supprimer' : 'Delete'}</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setSelectedIds(new Set()); setMultiSelect(false); }}><X className="h-4 w-4" /></Button>
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1 flex gap-2">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex-1 flex flex-wrap gap-2">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder={t('search', language)} value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+            <Input placeholder={language === 'fr' ? 'Rechercher étudiants...' : 'Search students...'} value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
           </div>
           <Select value={classFilter} onValueChange={setClassFilter}>
             <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{t('classes', language)}</SelectItem>
+              <SelectItem value="all">{language === 'fr' ? 'Toutes les Classes' : 'All Classes'}</SelectItem>
               {classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{language === 'fr' ? 'Tous' : 'All'}</SelectItem>
+              <SelectItem value="all">{language === 'fr' ? 'Filtrer par Statut' : 'Filter by Status'}</SelectItem>
               <SelectItem value="active">{t('active', language)}</SelectItem>
               <SelectItem value="abandoned">{t('abandoned', language)}</SelectItem>
               <SelectItem value="graduated">{t('graduated', language)}</SelectItem>
+              <SelectItem value="terminated">{t('terminated', language)}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name_asc">{language === 'fr' ? 'Trier par Nom A-Z' : 'Sort Name A-Z'}</SelectItem>
+              <SelectItem value="name_desc">{language === 'fr' ? 'Trier par Nom Z-A' : 'Sort Name Z-A'}</SelectItem>
+              <SelectItem value="id">{language === 'fr' ? 'Trier par ID' : 'Sort by ID'}</SelectItem>
+              <SelectItem value="date">{language === 'fr' ? 'Trier par Date' : 'Sort by Date'}</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" className={multiSelect ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-400' : ''} onClick={() => { setMultiSelect(!multiSelect); setSelectedIds(new Set()); }}>
+            <CheckCircle2 className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Sélection multiple' : 'Multi-select'}
+          </Button>
           <label className="cursor-pointer">
             <input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} />
-            <Button variant="outline" size="sm" asChild>
-              <span><Upload className="h-4 w-4 mr-1" /> CSV</span>
+            <Button variant="outline" size="sm" className="border-orange-400 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20" asChild>
+              <span><Upload className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Importer' : 'Import'} CSV</span>
             </Button>
           </label>
-          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={openAdd}>
-            <Plus className="h-4 w-4 mr-1" /> {t('add_student', language)}
+          <Button variant="outline" size="sm" onClick={() => { exportUtils.exportStudentsCSV(students, classes); toast.success(language === 'fr' ? 'Exporté!' : 'Exported!'); }}>
+            <FileDown className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Exporter CSV' : 'Export CSV'}
+          </Button>
+          <Button variant="outline" size="sm" className="border-emerald-400 text-emerald-600 hover:bg-emerald-50" onClick={() => window.print()}>
+            <Printer className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Exporter PDF' : 'Export PDF'}
+          </Button>
+          <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={openAdd}>
+            <Plus className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Ajouter Étudiant' : 'Add Student'}
           </Button>
         </div>
       </div>
@@ -686,25 +777,57 @@ function StudentsPage() {
             <div className="max-h-[calc(100vh-320px)] overflow-y-auto custom-scrollbar">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>{language === 'fr' ? 'Nom' : 'Name'}</TableHead>
-                    <TableHead>ID</TableHead>
-                    <TableHead className="hidden md:table-cell">{t('classes', language)}</TableHead>
-                    <TableHead className="hidden lg:table-cell">{language === 'fr' ? 'Tuteur' : 'Guardian'}</TableHead>
-                    <TableHead className="hidden lg:table-cell">{language === 'fr' ? 'Téléphone' : 'Phone'}</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-24">{language === 'fr' ? 'Actions' : 'Actions'}</TableHead>
+                  <TableRow className="bg-purple-600 dark:bg-purple-800">
+                    {multiSelect && <TableHead className="w-10"><Checkbox onCheckedChange={(checked) => {
+                      setSelectedIds(checked ? new Set(filtered.map(s => s.id)) : new Set());
+                    }} /></TableHead>}
+                    <TableHead className="text-white">{language === 'fr' ? 'Photo' : 'Photo'}</TableHead>
+                    <TableHead className="text-white">{language === 'fr' ? 'Nom' : 'Name'}</TableHead>
+                    <TableHead className="text-white">{language === 'fr' ? 'ID Étudiant' : 'Student ID'}</TableHead>
+                    <TableHead className="text-white hidden md:table-cell">{t('classes', language)}</TableHead>
+                    <TableHead className="text-white hidden lg:table-cell">{language === 'fr' ? 'Année Académique' : 'Academic Year'}</TableHead>
+                    <TableHead className="text-white hidden lg:table-cell">{language === 'fr' ? 'Statut Étudiant' : 'Student Status'}</TableHead>
+                    <TableHead className="text-white hidden lg:table-cell">{language === 'fr' ? 'Tuteur' : 'Guardian'}</TableHead>
+                    <TableHead className="text-white hidden xl:table-cell">{language === 'fr' ? 'Téléphone' : 'Phone'}</TableHead>
+                    <TableHead className="text-white w-32">{language === 'fr' ? 'Actions' : 'Actions'}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.map(s => (
-                    <TableRow key={s.id}>
+                    <TableRow key={s.id} className={selectedIds.has(s.id) ? 'bg-blue-50 dark:bg-blue-900/10' : ''}>
+                      {multiSelect && <TableCell><Checkbox checked={selectedIds.has(s.id)} onCheckedChange={(checked) => {
+                        const next = new Set(selectedIds);
+                        if (checked) next.add(s.id); else next.delete(s.id);
+                        setSelectedIds(next);
+                      }} /></TableCell>}
+                      <TableCell>
+                        <div className="w-9 h-9 bg-emerald-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
+                          {s.fullName.charAt(0).toUpperCase()}
+                        </div>
+                      </TableCell>
                       <TableCell className="font-medium">{s.fullName}</TableCell>
                       <TableCell>{s.studentId}</TableCell>
                       <TableCell className="hidden md:table-cell">{s.className || classes.find(c => c.id === s.classId)?.name || '-'}</TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        {academicYears.find(y => y.isCurrent)?.name || '-'}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell"><StatusBadge status={s.status} /></TableCell>
                       <TableCell className="hidden lg:table-cell">{s.guardianName || '-'}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{s.guardianPhone || s.phone || '-'}</TableCell>
-                      <TableCell><StatusBadge status={s.status} /></TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        <div className="flex items-center gap-1">
+                          {s.guardianPhone ? (
+                            <>
+                              <span className="text-xs">{s.guardianPhone}</span>
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30" onClick={() => {
+                                const phone = s.guardianPhone.replace(/\\D/g, '');
+                                window.open(`https://wa.me/${phone}?text=${encodeURIComponent('Hello from school!')}`, '_blank');
+                              }}>
+                                <MessageCircle className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          ) : '-'}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setProfileStudent(s); setProfileOpen(true); }}>
@@ -2271,18 +2394,35 @@ function ReportsPage() {
 // ============================================================
 
 function SettingsPage() {
-  const { schoolInfo, setSchoolInfo, teachers, setTeachers, employees, setEmployees, academicYears, setAcademicYears, language } = useAppStore();
+  const { schoolInfo, setSchoolInfo, teachers, setTeachers, employees, setEmployees, academicYears, setAcademicYears, language, students, classes, modules, attendance, grades, behavior, tasks, incidents, templates } = useAppStore();
   const [passwordForm, setPasswordForm] = useState({ current: '', newPass: '', confirm: '' });
   const [teacherForm, setTeacherForm] = useState({ name: '', subject: '', email: '', phone: '', experience: '', qualification: '', notes: '' });
   const [employeeForm, setEmployeeForm] = useState({ fullName: '', email: '', phone: '', department: '', position: '' });
   const [yearForm, setYearForm] = useState({ name: '', startDate: '', endDate: '', isCurrent: false });
   const [infoForm, setInfoForm] = useState({ name: schoolInfo.name || '', address: schoolInfo.address || '', phone: schoolInfo.phone || '', email: schoolInfo.email || '' });
+  const [generalSettings, setGeneralSettings] = useState({ currentYear: academicYears.find(y => y.isCurrent)?.id || '', timezone: 'UTC', defaultLanguage: language });
+  const [autoBackup, setAutoBackup] = useState(false);
+  const [backupFreq, setBackupFreq] = useState('weekly');
+  const [backupDest, setBackupDest] = useState('local');
+  const [backupIncludes, setBackupIncludes] = useState({ students: true, attendance: true, grades: true, settings: true });
+  const [lastBackup, setLastBackup] = useState<string | null>(null);
+  const [cloudConfig, setCloudConfig] = useState({ gdrive: '', dropbox: '', onedriveId: '', onedriveSecret: '' });
+  const [adminForm, setAdminForm] = useState({ username: '', email: '', role: 'admin' });
+  const [adminUsers, setAdminUsers] = useState<{ id: string; username: string; email: string; role: string }[]>(() => {
+    try { return JSON.parse(localStorage.getItem('admin_users') || '[]'); } catch { return []; }
+  });
 
   const handlePasswordChange = () => {
     if (!passwordForm.current || !passwordForm.newPass) { toast.error('All fields required'); return; }
-    if (passwordForm.newPass !== passwordForm.confirm) { toast.error('Passwords do not match'); return; }
+    if (passwordForm.newPass !== passwordForm.confirm) { toast.error(language === 'fr' ? 'Les mots de passe ne correspondent pas' : 'Passwords do not match'); return; }
     toast.success(language === 'fr' ? 'Mot de passe changé!' : 'Password changed!');
     setPasswordForm({ current: '', newPass: '', confirm: '' });
+  };
+
+  const handleSaveGeneral = () => {
+    if (generalSettings.defaultLanguage !== language) useAppStore.setState({ language: generalSettings.defaultLanguage });
+    localStorage.setItem('general_settings', JSON.stringify(generalSettings));
+    toast.success(language === 'fr' ? 'Paramètres enregistrés' : 'Settings saved');
   };
 
   const handleSaveInfo = () => {
@@ -2292,13 +2432,7 @@ function SettingsPage() {
 
   const handleAddTeacher = () => {
     if (!teacherForm.name) { toast.error('Name required'); return; }
-    const newTeacher: Teacher = {
-      id: genId(), name: teacherForm.name, subject: teacherForm.subject,
-      email: teacherForm.email, phone: teacherForm.phone,
-      experience: parseInt(teacherForm.experience) || 0,
-      qualification: teacherForm.qualification, notes: teacherForm.notes,
-      createdAt: new Date().toISOString(),
-    };
+    const newTeacher: Teacher = { id: genId(), name: teacherForm.name, subject: teacherForm.subject, email: teacherForm.email, phone: teacherForm.phone, experience: parseInt(teacherForm.experience) || 0, qualification: teacherForm.qualification, notes: teacherForm.notes, createdAt: new Date().toISOString() };
     setTeachers([...teachers, newTeacher]);
     setTeacherForm({ name: '', subject: '', email: '', phone: '', experience: '', qualification: '', notes: '' });
     toast.success(language === 'fr' ? 'Enseignant ajouté' : 'Teacher added');
@@ -2306,12 +2440,7 @@ function SettingsPage() {
 
   const handleAddEmployee = () => {
     if (!employeeForm.fullName) { toast.error('Name required'); return; }
-    const newEmployee: Employee = {
-      id: genId(), fullName: employeeForm.fullName,
-      email: employeeForm.email, phone: employeeForm.phone,
-      department: employeeForm.department, position: employeeForm.position,
-      createdAt: new Date().toISOString(),
-    };
+    const newEmployee: Employee = { id: genId(), fullName: employeeForm.fullName, email: employeeForm.email, phone: employeeForm.phone, department: employeeForm.department, position: employeeForm.position, createdAt: new Date().toISOString() };
     setEmployees([...employees, newEmployee]);
     setEmployeeForm({ fullName: '', email: '', phone: '', department: '', position: '' });
     toast.success(language === 'fr' ? 'Employé ajouté' : 'Employee added');
@@ -2319,85 +2448,234 @@ function SettingsPage() {
 
   const handleAddYear = () => {
     if (!yearForm.name) { toast.error('Name required'); return; }
-    const newYear: AcademicYear = {
-      id: genId(), name: yearForm.name,
-      startDate: yearForm.startDate, endDate: yearForm.endDate,
-      isCurrent: yearForm.isCurrent, createdAt: new Date().toISOString(),
-    };
+    if (yearForm.isCurrent) setAcademicYears(academicYears.map(y => ({ ...y, isCurrent: false })));
+    const newYear: AcademicYear = { id: genId(), name: yearForm.name, startDate: yearForm.startDate, endDate: yearForm.endDate, isCurrent: yearForm.isCurrent, createdAt: new Date().toISOString() };
     setAcademicYears([...academicYears, newYear]);
     setYearForm({ name: '', startDate: '', endDate: '', isCurrent: false });
     toast.success(language === 'fr' ? 'Année ajoutée' : 'Academic year added');
   };
 
+  // Backup functions
+  const createBackup = () => {
+    const data = { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, templates, academicYears, schoolInfo, backupDate: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `backup_${new Date().toISOString().split('T')[0]}.json`; a.click();
+    URL.revokeObjectURL(url);
+    const history = JSON.parse(localStorage.getItem('backup_history') || '[]');
+    history.unshift({ id: genId(), date: new Date().toISOString(), size: blob.size });
+    if (history.length > 20) history.pop();
+    localStorage.setItem('backup_history', JSON.stringify(history));
+    setLastBackup(new Date().toISOString());
+    toast.success(language === 'fr' ? 'Sauvegarde créée et téléchargée' : 'Backup created and downloaded');
+  };
+
+  const restoreBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string);
+        if (data.students) useAppStore.getState().setStudents(data.students);
+        if (data.classes) useAppStore.getState().setClasses(data.classes);
+        if (data.modules) useAppStore.getState().setModules(data.modules);
+        if (data.attendance) useAppStore.getState().setAttendance(data.attendance);
+        if (data.grades) useAppStore.getState().setGrades(data.grades);
+        if (data.behavior) useAppStore.getState().setBehavior(data.behavior);
+        if (data.tasks) useAppStore.getState().setTasks(data.tasks);
+        if (data.incidents) useAppStore.getState().setIncidents(data.incidents);
+        if (data.teachers) useAppStore.getState().setTeachers(data.teachers);
+        if (data.employees) useAppStore.getState().setEmployees(data.employees);
+        if (data.templates) useAppStore.getState().setTemplates(data.templates);
+        if (data.academicYears) useAppStore.getState().setAcademicYears(data.academicYears);
+        if (data.schoolInfo) useAppStore.getState().setSchoolInfo(data.schoolInfo);
+        toast.success(language === 'fr' ? 'Données restaurées avec succès!' : 'Data restored successfully!');
+      } catch { toast.error(language === 'fr' ? 'Fichier invalide' : 'Invalid backup file'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const [showBackupHistory, setShowBackupHistory] = useState(false);
+  const backupHistory = JSON.parse(localStorage.getItem('backup_history') || '[]');
+
+  const handleAddAdmin = () => {
+    if (!adminForm.username) { toast.error('Username required'); return; }
+    const newAdmin = { id: genId(), ...adminForm };
+    const updated = [...adminUsers, newAdmin];
+    setAdminUsers(updated);
+    localStorage.setItem('admin_users', JSON.stringify(updated));
+    setAdminForm({ username: '', email: '', role: 'admin' });
+    toast.success(language === 'fr' ? 'Admin ajouté' : 'Admin added');
+  };
+
+  const handleDeleteAdmin = (id: string) => {
+    const updated = adminUsers.filter(a => a.id !== id);
+    setAdminUsers(updated);
+    localStorage.setItem('admin_users', JSON.stringify(updated));
+    toast.success(language === 'fr' ? 'Admin supprimé' : 'Admin deleted');
+  };
+
+  const handleClearAllData = () => {
+    if (!confirm(language === 'fr' ? 'Êtes-vous sûr? Toutes les données seront supprimées!' : 'Are you sure? All data will be deleted!')) return;
+    if (!confirm(language === 'fr' ? 'Cette action est irréversible. Continuer?' : 'This action is irreversible. Continue?')) return;
+    useAppStore.getState().setStudents([]);
+    useAppStore.getState().setClasses([]);
+    useAppStore.getState().setModules([]);
+    useAppStore.getState().setAttendance([]);
+    useAppStore.getState().setGrades([]);
+    useAppStore.getState().setBehavior([]);
+    useAppStore.getState().setTasks([]);
+    useAppStore.getState().setIncidents([]);
+    useAppStore.getState().setTemplates([]);
+    useAppStore.getState().setTeachers([]);
+    useAppStore.getState().setEmployees([]);
+    useAppStore.getState().setAcademicYears([]);
+    toast.success(language === 'fr' ? 'Toutes les données supprimées' : 'All data cleared');
+  };
+
   return (
     <Tabs defaultValue="general" className="space-y-4">
       <TabsList className="flex-wrap gap-1 h-auto bg-transparent p-0">
-        <TabsTrigger value="general" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{t('change_password', language)}</TabsTrigger>
-        <TabsTrigger value="school" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{t('school_info', language)}</TabsTrigger>
-        <TabsTrigger value="teachers" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{t('teachers_management', language)}</TabsTrigger>
-        <TabsTrigger value="employees" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{t('employees_management', language)}</TabsTrigger>
-        <TabsTrigger value="years" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{t('academic_year_management', language)}</TabsTrigger>
+        <TabsTrigger value="general" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Général' : 'General'}</TabsTrigger>
+        <TabsTrigger value="years" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Gestion Année Académique' : 'Academic Year Mgmt'}</TabsTrigger>
+        <TabsTrigger value="backup" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Système de Sauvegarde' : 'Backup System'}</TabsTrigger>
+        <TabsTrigger value="teachers" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Gestion des Enseignants' : 'Teacher Mgmt'}</TabsTrigger>
+        <TabsTrigger value="employees" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Gestion des Employés' : 'Employee Mgmt'}</TabsTrigger>
+        <TabsTrigger value="school" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Info École' : 'School Info'}</TabsTrigger>
+        <TabsTrigger value="data" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Gestion Données' : 'Data Management'}</TabsTrigger>
+        <TabsTrigger value="admins" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Utilisateurs Admin' : 'Admin Users'}</TabsTrigger>
       </TabsList>
 
-      {/* Change Password */}
+      {/* General Settings */}
       <TabsContent value="general">
         <Card className="border-0 shadow-sm">
-          <CardHeader><CardTitle className="text-base">{t('change_password', language)}</CardTitle></CardHeader>
-          <CardContent className="space-y-4 max-w-md">
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Settings className="h-5 w-5" />{language === 'fr' ? 'Paramètres Généraux' : 'General Settings'}</CardTitle></CardHeader>
+          <CardContent className="space-y-4 max-w-lg">
             <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Mot de passe actuel' : 'Current Password'}</Label>
-              <Input type="password" value={passwordForm.current} onChange={e => setPasswordForm({ ...passwordForm, current: e.target.value })} />
+              <Label>{language === 'fr' ? 'Année Académique Actuelle' : 'Current Academic Year'}</Label>
+              <Select value={generalSettings.currentYear} onValueChange={v => setGeneralSettings({ ...generalSettings, currentYear: v })}>
+                <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger>
+                <SelectContent>{academicYears.map(y => <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>)}</SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Nouveau mot de passe' : 'New Password'}</Label>
-              <Input type="password" value={passwordForm.newPass} onChange={e => setPasswordForm({ ...passwordForm, newPass: e.target.value })} />
+              <Label>{language === 'fr' ? 'Fuseau Horaire' : 'Timezone'}</Label>
+              <Select value={generalSettings.timezone} onValueChange={v => setGeneralSettings({ ...generalSettings, timezone: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="UTC">UTC</SelectItem><SelectItem value="UTC+1">UTC+1 (Europe)</SelectItem><SelectItem value="UTC+2">UTC+2 (Africa)</SelectItem><SelectItem value="UTC+3">UTC+3 (Middle East)</SelectItem><SelectItem value="UTC+4">UTC+4 (Gulf)</SelectItem><SelectItem value="UTC+5">UTC+5 (Pakistan)</SelectItem><SelectItem value="UTC-5">UTC-5 (EST)</SelectItem><SelectItem value="UTC-8">UTC-8 (PST)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Confirmer le mot de passe' : 'Confirm Password'}</Label>
-              <Input type="password" value={passwordForm.confirm} onChange={e => setPasswordForm({ ...passwordForm, confirm: e.target.value })} />
+              <Label>{language === 'fr' ? 'Langue par Défaut' : 'Default Language'}</Label>
+              <Select value={generalSettings.defaultLanguage} onValueChange={v => setGeneralSettings({ ...generalSettings, defaultLanguage: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="fr">{language === 'fr' ? 'Français' : 'French'}</SelectItem><SelectItem value="en">{language === 'fr' ? 'Anglais' : 'English'}</SelectItem></SelectContent>
+              </Select>
             </div>
-            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handlePasswordChange}>
-              <Lock className="h-4 w-4 mr-2" />{t('save', language)}
-            </Button>
+            <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleSaveGeneral}><Save className="h-4 w-4 mr-2" />{language === 'fr' ? 'Enregistrer Paramètres' : 'Save Settings'}</Button>
           </CardContent>
         </Card>
       </TabsContent>
 
-      {/* School Info */}
-      <TabsContent value="school">
-        <Card className="border-0 shadow-sm">
-          <CardHeader><CardTitle className="text-base">{t('school_info', language)}</CardTitle></CardHeader>
-          <CardContent className="space-y-4 max-w-md">
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Nom de l\'école' : 'School Name'}</Label>
-              <Input value={infoForm.name} onChange={e => setInfoForm({ ...infoForm, name: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Adresse' : 'Address'}</Label>
-              <Input value={infoForm.address} onChange={e => setInfoForm({ ...infoForm, address: e.target.value })} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{language === 'fr' ? 'Téléphone' : 'Phone'}</Label>
-                <Input value={infoForm.phone} onChange={e => setInfoForm({ ...infoForm, phone: e.target.value })} />
+      {/* Academic Years */}
+      <TabsContent value="years">
+        <div className="space-y-4">
+          <Card className="border-0 shadow-sm">
+            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Gestion des Années Académiques' : 'Academic Year Management'}</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid md:grid-cols-2 gap-4 max-w-2xl">
+                <div className="space-y-2"><Label>{language === 'fr' ? 'Nom' : 'Name'} *</Label><Input value={yearForm.name} onChange={e => setYearForm({ ...yearForm, name: e.target.value })} placeholder="2024-2025" /></div>
+                <div className="space-y-2"><Label>{language === 'fr' ? 'Date début' : 'Start Date'}</Label><Input type="date" value={yearForm.startDate} onChange={e => setYearForm({ ...yearForm, startDate: e.target.value })} /></div>
+                <div className="space-y-2"><Label>{language === 'fr' ? 'Date fin' : 'End Date'}</Label><Input type="date" value={yearForm.endDate} onChange={e => setYearForm({ ...yearForm, endDate: e.target.value })} /></div>
+                <div className="flex items-center gap-2 pt-6"><Switch checked={yearForm.isCurrent} onCheckedChange={v => setYearForm({ ...yearForm, isCurrent: v })} /><Label>{language === 'fr' ? 'Année en cours' : 'Current Year'}</Label></div>
               </div>
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input value={infoForm.email} onChange={e => setInfoForm({ ...infoForm, email: e.target.value })} />
+              <Button className="mt-4 bg-emerald-600 hover:bg-emerald-700" onClick={handleAddYear}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-0">
+              {academicYears.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+                <div className="max-h-72 overflow-y-auto custom-scrollbar">
+                  <Table><TableHeader><TableRow><TableHead>{language === 'fr' ? 'Nom' : 'Name'}</TableHead><TableHead>{language === 'fr' ? 'Début' : 'Start'}</TableHead><TableHead>{language === 'fr' ? 'Fin' : 'End'}</TableHead><TableHead>Status</TableHead><TableHead className="w-16"></TableHead></TableRow></TableHeader>
+                  <TableBody>{academicYears.map(y => (
+                    <TableRow key={y.id}><TableCell className="font-medium">{y.name}</TableCell><TableCell>{y.startDate || '-'}</TableCell><TableCell>{y.endDate || '-'}</TableCell><TableCell>{y.isCurrent ? <Badge className="bg-emerald-100 text-emerald-800">Current</Badge> : '-'}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setAcademicYears(academicYears.map(a => ({ ...a, isCurrent: a.id === y.id }))); toast.success('Updated'); }}><CheckCircle2 className="h-4 w-4 text-emerald-600" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => setAcademicYears(academicYears.filter(a => a.id !== y.id))}><Trash2 className="h-4 w-4" /></Button></div></TableCell></TableRow>
+                  ))}</TableBody></Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </TabsContent>
+
+      {/* Backup System */}
+      <TabsContent value="backup">
+        <div className="space-y-6">
+          {/* Auto Backup */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Sauvegarde Automatique' : 'Automatic Backup'}</CardTitle></CardHeader>
+            <CardContent className="space-y-4 max-w-lg">
+              <div className="flex items-center gap-3"><Switch checked={autoBackup} onCheckedChange={setAutoBackup} /><Label>{language === 'fr' ? 'Activer Sauvegarde Automatique' : 'Enable Automatic Backup'}</Label></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Fréquence de Sauvegarde' : 'Backup Frequency'}</Label>
+                <Select value={backupFreq} onValueChange={setBackupFreq}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="daily">{language === 'fr' ? 'Quotidienne' : 'Daily'}</SelectItem><SelectItem value="weekly">{language === 'fr' ? 'Hebdomadaire' : 'Weekly'}</SelectItem><SelectItem value="monthly">{language === 'fr' ? 'Mensuelle' : 'Monthly'}</SelectItem></SelectContent></Select>
               </div>
-            </div>
-            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveInfo}>
-              <Save className="h-4 w-4 mr-2" />{t('save', language)}
-            </Button>
-          </CardContent>
-        </Card>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Destination de Sauvegarde' : 'Backup Destination'}</Label>
+                <Select value={backupDest} onValueChange={setBackupDest}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="local">{language === 'fr' ? 'Téléchargement Local' : 'Local Download'}</SelectItem><SelectItem value="cloud">{language === 'fr' ? 'Stockage Cloud' : 'Cloud Storage'}</SelectItem></SelectContent></Select>
+              </div>
+              <p className="text-sm text-muted-foreground"><span className="font-medium">{language === 'fr' ? 'Dernière Sauvegarde' : 'Last Backup'}:</span> {lastBackup ? new Date(lastBackup).toLocaleString() : (language === 'fr' ? 'Jamais' : 'Never')}</p>
+            </CardContent>
+          </Card>
+
+          {/* Backup Includes */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Sauvegarde Inclut' : 'Backup Includes'}</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {Object.entries(backupIncludes).map(([key, val]) => (
+                <div key={key} className="flex items-center gap-3"><Checkbox checked={val} onCheckedChange={(c) => setBackupIncludes({ ...backupIncludes, [key]: !!c })} /><Label>{language === 'fr' ? { students: 'Dossiers Étudiants', attendance: 'Données de Présence', grades: 'Données de Notes', settings: 'Données de Paramètres' }[key] : { students: 'Student Folders', attendance: 'Attendance Data', grades: 'Grade Data', settings: 'Settings Data' }[key]}</Label></div>
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* Manual Backup */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Sauvegarde Manuelle' : 'Manual Backup'}</CardTitle></CardHeader>
+            <CardContent className="flex flex-wrap gap-3">
+              <Button className="bg-blue-600 hover:bg-blue-700" onClick={createBackup}><Save className="h-4 w-4 mr-2" />{language === 'fr' ? 'Sauvegarder Maintenant' : 'Backup Now'}</Button>
+              <label className="cursor-pointer"><input type="file" accept=".json" className="hidden" onChange={restoreBackup} /><Button variant="outline" className="border-blue-400 text-blue-600" asChild><span><RefreshCw className="h-4 w-4 mr-2" />{language === 'fr' ? 'Restaurer Sauvegarde' : 'Restore Backup'}</span></Button></label>
+              <Button variant="outline" className="border-orange-400 text-orange-600" onClick={() => setShowBackupHistory(true)}><Clock className="h-4 w-4 mr-2" />{language === 'fr' ? 'Historique des Sauvegardes' : 'Backup History'}</Button>
+            </CardContent>
+          </Card>
+
+          {/* Cloud Storage Config */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Configurer Stockage Cloud' : 'Configure Cloud Storage'}</CardTitle><CardDescription>{language === 'fr' ? 'Configurez vos clés API pour la sauvegarde automatique.' : 'Configure your API keys for automatic backup.'}</CardDescription></CardHeader>
+            <CardContent className="space-y-4 max-w-lg">
+              <div className="space-y-2"><Label>Google Drive API Key</Label><Input value={cloudConfig.gdrive} onChange={e => setCloudConfig({ ...cloudConfig, gdrive: e.target.value })} placeholder="Enter API key" /></div>
+              <div className="space-y-2"><Label>Dropbox Access Token</Label><Input value={cloudConfig.dropbox} onChange={e => setCloudConfig({ ...cloudConfig, dropbox: e.target.value })} placeholder="Enter access token" /></div>
+              <div className="space-y-2"><Label>OneDrive Client ID</Label><Input value={cloudConfig.onedriveId} onChange={e => setCloudConfig({ ...cloudConfig, onedriveId: e.target.value })} placeholder="Enter client ID" /></div>
+              <div className="space-y-2"><Label>OneDrive Client Secret</Label><Input type="password" value={cloudConfig.onedriveSecret} onChange={e => setCloudConfig({ ...cloudConfig, onedriveSecret: e.target.value })} placeholder="Enter client secret" /></div>
+              <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => { localStorage.setItem('cloud_config', JSON.stringify(cloudConfig)); toast.success(language === 'fr' ? 'Configuration cloud sauvegardée' : 'Cloud config saved'); }}><Save className="h-4 w-4 mr-2" />{language === 'fr' ? 'Sauvegarder Configuration Cloud' : 'Save Cloud Configuration'}</Button>
+            </CardContent>
+          </Card>
+
+          {/* Backup History Dialog */}
+          <Dialog open={showBackupHistory} onOpenChange={setShowBackupHistory}>
+            <DialogContent className="max-w-md"><DialogHeader><DialogTitle>{language === 'fr' ? 'Historique des Sauvegardes' : 'Backup History'}</DialogTitle></DialogHeader>
+              <div className="max-h-64 overflow-y-auto custom-scrollbar">{backupHistory.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">{language === 'fr' ? 'Aucune sauvegarde' : 'No backups'}</p> : backupHistory.map((b: { id: string; date: string; size: number }) => (<div key={b.id} className="flex justify-between items-center py-2 border-b last:border-0"><span className="text-sm">{new Date(b.date).toLocaleString()}</span><span className="text-xs text-muted-foreground">{(b.size / 1024).toFixed(1)} KB</span></div>))}</div>
+            </DialogContent>
+          </Dialog>
+        </div>
       </TabsContent>
 
       {/* Teachers */}
       <TabsContent value="teachers">
         <div className="space-y-4">
           <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{t('teachers_management', language)}</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Gestion des Enseignants' : 'Teacher Management'}</CardTitle></CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-2 gap-4 max-w-2xl">
                 <div className="space-y-2"><Label>{language === 'fr' ? 'Nom' : 'Name'} *</Label><Input value={teacherForm.name} onChange={e => setTeacherForm({ ...teacherForm, name: e.target.value })} /></div>
@@ -2410,40 +2688,11 @@ function SettingsPage() {
               <Button className="mt-4 bg-emerald-600 hover:bg-emerald-700" onClick={handleAddTeacher}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
             </CardContent>
           </Card>
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-0">
-              {teachers.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
-                <div className="max-h-72 overflow-y-auto custom-scrollbar">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{language === 'fr' ? 'Nom' : 'Name'}</TableHead>
-                        <TableHead>{language === 'fr' ? 'Matière' : 'Subject'}</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead className="hidden md:table-cell">{language === 'fr' ? 'Tél' : 'Phone'}</TableHead>
-                        <TableHead className="w-16"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {teachers.map(tch => (
-                        <TableRow key={tch.id}>
-                          <TableCell className="font-medium">{tch.name}</TableCell>
-                          <TableCell>{tch.subject || '-'}</TableCell>
-                          <TableCell>{tch.email || '-'}</TableCell>
-                          <TableCell className="hidden md:table-cell">{tch.phone || '-'}</TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => setTeachers(teachers.filter(t => t.id !== tch.id))}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <Card className="border-0 shadow-sm"><CardContent className="p-0">
+            {teachers.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+              <div className="max-h-72 overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow><TableHead>{language === 'fr' ? 'Nom' : 'Name'}</TableHead><TableHead>{language === 'fr' ? 'Matière' : 'Subject'}</TableHead><TableHead>Email</TableHead><TableHead className="hidden md:table-cell">{language === 'fr' ? 'Tél' : 'Phone'}</TableHead><TableHead className="w-16"></TableHead></TableRow></TableHeader>
+              <TableBody>{teachers.map(tch => (<TableRow key={tch.id}><TableCell className="font-medium">{tch.name}</TableCell><TableCell>{tch.subject || '-'}</TableCell><TableCell>{tch.email || '-'}</TableCell><TableCell className="hidden md:table-cell">{tch.phone || '-'}</TableCell><TableCell><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => setTeachers(teachers.filter(t => t.id !== tch.id))}><Trash2 className="h-4 w-4" /></Button></TableCell></TableRow>))}</TableBody></Table></div>)}
+          </CardContent></Card>
         </div>
       </TabsContent>
 
@@ -2451,7 +2700,7 @@ function SettingsPage() {
       <TabsContent value="employees">
         <div className="space-y-4">
           <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{t('employees_management', language)}</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Gestion des Employés' : 'Employee Management'}</CardTitle></CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-2 gap-4 max-w-2xl">
                 <div className="space-y-2"><Label>{language === 'fr' ? 'Nom Complet' : 'Full Name'} *</Label><Input value={employeeForm.fullName} onChange={e => setEmployeeForm({ ...employeeForm, fullName: e.target.value })} /></div>
@@ -2463,95 +2712,70 @@ function SettingsPage() {
               <Button className="mt-4 bg-emerald-600 hover:bg-emerald-700" onClick={handleAddEmployee}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
             </CardContent>
           </Card>
+          <Card className="border-0 shadow-sm"><CardContent className="p-0">
+            {employees.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+              <div className="max-h-72 overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow><TableHead>{language === 'fr' ? 'Nom' : 'Name'}</TableHead><TableHead>{language === 'fr' ? 'Département' : 'Department'}</TableHead><TableHead>{language === 'fr' ? 'Position' : 'Position'}</TableHead><TableHead className="hidden md:table-cell">Email</TableHead><TableHead className="w-16"></TableHead></TableRow></TableHeader>
+              <TableBody>{employees.map(emp => (<TableRow key={emp.id}><TableCell className="font-medium">{emp.fullName}</TableCell><TableCell>{emp.department || '-'}</TableCell><TableCell>{emp.position || '-'}</TableCell><TableCell className="hidden md:table-cell">{emp.email || '-'}</TableCell><TableCell><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => setEmployees(employees.filter(e => e.id !== emp.id))}><Trash2 className="h-4 w-4" /></Button></TableCell></TableRow>))}</TableBody></Table></div>)}
+          </CardContent></Card>
+        </div>
+      </TabsContent>
+
+      {/* School Info */}
+      <TabsContent value="school">
+        <Card className="border-0 shadow-sm">
+          <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Info École' : 'School Info'}</CardTitle></CardHeader>
+          <CardContent className="space-y-4 max-w-lg">
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Nom de l\'école' : 'School Name'}</Label><Input value={infoForm.name} onChange={e => setInfoForm({ ...infoForm, name: e.target.value })} /></div>
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Adresse' : 'Address'}</Label><Input value={infoForm.address} onChange={e => setInfoForm({ ...infoForm, address: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Téléphone' : 'Phone'}</Label><Input value={infoForm.phone} onChange={e => setInfoForm({ ...infoForm, phone: e.target.value })} /></div><div className="space-y-2"><Label>Email</Label><Input value={infoForm.email} onChange={e => setInfoForm({ ...infoForm, email: e.target.value })} /></div></div>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveInfo}><Save className="h-4 w-4 mr-2" />{t('save', language)}</Button>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      {/* Data Management */}
+      <TabsContent value="data">
+        <div className="space-y-4">
           <Card className="border-0 shadow-sm">
-            <CardContent className="p-0">
-              {employees.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
-                <div className="max-h-72 overflow-y-auto custom-scrollbar">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{language === 'fr' ? 'Nom' : 'Name'}</TableHead>
-                        <TableHead>{language === 'fr' ? 'Département' : 'Department'}</TableHead>
-                        <TableHead>{language === 'fr' ? 'Position' : 'Position'}</TableHead>
-                        <TableHead className="hidden md:table-cell">Email</TableHead>
-                        <TableHead className="w-16"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {employees.map(emp => (
-                        <TableRow key={emp.id}>
-                          <TableCell className="font-medium">{emp.fullName}</TableCell>
-                          <TableCell>{emp.department || '-'}</TableCell>
-                          <TableCell>{emp.position || '-'}</TableCell>
-                          <TableCell className="hidden md:table-cell">{emp.email || '-'}</TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => setEmployees(employees.filter(e => e.id !== emp.id))}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
+            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Statistiques des Données' : 'Data Statistics'}</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[{ label: language === 'fr' ? 'Étudiants' : 'Students', value: students.length }, { label: language === 'fr' ? 'Classes' : 'Classes', value: classes.length }, { label: language === 'fr' ? 'Modules' : 'Modules', value: modules.length }, { label: language === 'fr' ? 'Présence' : 'Attendance', value: attendance.length }, { label: language === 'fr' ? 'Notes' : 'Grades', value: grades.length }, { label: language === 'fr' ? 'Comportement' : 'Behavior', value: behavior.length }, { label: language === 'fr' ? 'Tâches' : 'Tasks', value: tasks.length }, { label: language === 'fr' ? 'Incidents' : 'Incidents', value: incidents.length }].map((s, i) => (
+                  <div key={i} className="p-3 bg-muted rounded-lg text-center"><p className="text-2xl font-bold">{s.value}</p><p className="text-xs text-muted-foreground">{s.label}</p></div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-sm">
+            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Actions' : 'Actions'}</CardTitle></CardHeader>
+            <CardContent className="flex flex-wrap gap-3">
+              <Button className="bg-blue-600 hover:bg-blue-700" onClick={createBackup}><Download className="h-4 w-4 mr-2" />{language === 'fr' ? 'Exporter Toutes les Données (JSON)' : 'Export All Data (JSON)'}</Button>
+              <label className="cursor-pointer"><input type="file" accept=".json" className="hidden" onChange={restoreBackup} /><Button variant="outline" className="border-blue-400 text-blue-600" asChild><span><Upload className="h-4 w-4 mr-2" />{language === 'fr' ? 'Importer des Données' : 'Import Data'}</span></Button></label>
+              <Button variant="outline" className="border-red-400 text-red-600 hover:bg-red-50" onClick={handleClearAllData}><Trash2 className="h-4 w-4 mr-2" />{language === 'fr' ? 'Supprimer Toutes les Données' : 'Clear All Data'}</Button>
             </CardContent>
           </Card>
         </div>
       </TabsContent>
 
-      {/* Academic Years */}
-      <TabsContent value="years">
+      {/* Admin Users */}
+      <TabsContent value="admins">
         <div className="space-y-4">
           <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{t('academic_year_management', language)}</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Utilisateurs Admin' : 'Admin Users'}</CardTitle></CardHeader>
             <CardContent>
-              <div className="grid md:grid-cols-2 gap-4 max-w-2xl">
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Nom' : 'Name'} *</Label><Input value={yearForm.name} onChange={e => setYearForm({ ...yearForm, name: e.target.value })} placeholder="2024-2025" /></div>
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Date début' : 'Start Date'}</Label><Input type="date" value={yearForm.startDate} onChange={e => setYearForm({ ...yearForm, startDate: e.target.value })} /></div>
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Date fin' : 'End Date'}</Label><Input type="date" value={yearForm.endDate} onChange={e => setYearForm({ ...yearForm, endDate: e.target.value })} /></div>
-                <div className="flex items-center gap-2 pt-6">
-                  <Switch checked={yearForm.isCurrent} onCheckedChange={v => setYearForm({ ...yearForm, isCurrent: v })} />
-                  <Label>{language === 'fr' ? 'Année en cours' : 'Current Year'}</Label>
-                </div>
+              <div className="grid md:grid-cols-3 gap-4 max-w-2xl">
+                <div className="space-y-2"><Label>Username *</Label><Input value={adminForm.username} onChange={e => setAdminForm({ ...adminForm, username: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Email</Label><Input value={adminForm.email} onChange={e => setAdminForm({ ...adminForm, email: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Role</Label><Select value={adminForm.role} onValueChange={v => setAdminForm({ ...adminForm, role: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">Admin</SelectItem><SelectItem value="teacher">Teacher</SelectItem><SelectItem value="employee">Employee</SelectItem></SelectContent></Select></div>
               </div>
-              <Button className="mt-4 bg-emerald-600 hover:bg-emerald-700" onClick={handleAddYear}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
+              <Button className="mt-4 bg-emerald-600 hover:bg-emerald-700" onClick={handleAddAdmin}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter Admin' : 'Add Admin'}</Button>
             </CardContent>
           </Card>
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-0">
-              {academicYears.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
-                <div className="max-h-72 overflow-y-auto custom-scrollbar">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{language === 'fr' ? 'Nom' : 'Name'}</TableHead>
-                        <TableHead>{language === 'fr' ? 'Début' : 'Start'}</TableHead>
-                        <TableHead>{language === 'fr' ? 'Fin' : 'End'}</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="w-16"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {academicYears.map(y => (
-                        <TableRow key={y.id}>
-                          <TableCell className="font-medium">{y.name}</TableCell>
-                          <TableCell>{y.startDate || '-'}</TableCell>
-                          <TableCell>{y.endDate || '-'}</TableCell>
-                          <TableCell>{y.isCurrent ? <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">Current</Badge> : '-'}</TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => setAcademicYears(academicYears.filter(a => a.id !== y.id))}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <Card className="border-0 shadow-sm"><CardContent className="p-0">
+            {adminUsers.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+              <div className="max-h-72 overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow><TableHead>Username</TableHead><TableHead>Email</TableHead><TableHead>Role</TableHead><TableHead className="w-16"></TableHead></TableRow></TableHeader>
+              <TableBody>{adminUsers.map(a => (<TableRow key={a.id}><TableCell className="font-medium">{a.username}</TableCell><TableCell>{a.email || '-'}</TableCell><TableCell><StatusBadge status={a.role} /></TableCell><TableCell><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleDeleteAdmin(a.id)}><Trash2 className="h-4 w-4" /></Button></TableCell></TableRow>))}</TableBody></Table></div>)}
+          </CardContent></Card>
         </div>
       </TabsContent>
     </Tabs>
