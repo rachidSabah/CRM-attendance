@@ -739,7 +739,7 @@ function CrudPage<T extends { id: string; createdAt: string }>({ title, items, s
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Partial<T> | null>(null);
   const [form, setForm] = useState<Partial<T>>({});
-  const filtered = filterItems ? filterItems(items, search) : items.filter(item => columns.some(col => String((item as Record<string, unknown>)[col.key] ?? '').toLowerCase().includes(search.toLowerCase()));
+  const filtered = filterItems ? filterItems(items, search) : items.filter(item => columns.some(col => { const val = (item as Record<string, unknown>)[col.key]; return String(val || "").toLowerCase().includes(search.toLowerCase()); }));
 
   const handleSave = () => {
     if (editing?.id) { setItems(items.map(i => i.id === editing.id ? { ...i, ...form } as T : i)); toast.success(language === 'fr' ? 'Modifié' : 'Updated'); }
@@ -754,9 +754,18 @@ function CrudPage<T extends { id: string; createdAt: string }>({ title, items, s
         <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { setEditing(null); setForm({}); setDialogOpen(true); }}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
       </div>
       <Card className="border-0 shadow-sm"><CardContent className="p-0">{filtered.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
-        <div className="max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow>{columns.map(col => <TableHead key={col.key}>{col.label}</TableHead>)<TableHead className="w-24">{t('actions', language)}</TableHead></TableRow></TableHeader><TableBody>
-          {filtered.map(item => <TableRow key={item.id}>{columns.map(col => <TableCell key={col.key}>{col.render ? col.render(item) : String((item as Record<string, unknown>)[col.key] ?? '-')}</TableCell>)}
-            <TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditing(item); setForm({ ...item }); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => { setItems(items.filter(i => i.id !== item.id)); toast.success('Deleted'); }}><Trash2 className="h-4 w-4" /></Button></div></TableCell></TableRow>)}
+        <div className="max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow>
+          {columns.map(col => <TableHead key={col.key}>{col.label}</TableHead>)}
+          <TableHead className="w-24">{t('actions', language)}</TableHead>
+        </TableRow></TableHeader><TableBody>
+          {filtered.map(item => (
+            <TableRow key={item.id}>
+              {columns.map(col => (
+                <TableCell key={col.key}>{col.render ? col.render(item) : String((item as Record<string, unknown>)[col.key] || '-')}</TableCell>
+              ))}
+              <TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditing(item); setForm({ ...item }); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => { setItems(items.filter(i => i.id !== item.id)); toast.success('Deleted'); }}><Trash2 className="h-4 w-4" /></Button></div></TableCell>
+            </TableRow>
+          ))}
         </TableBody></Table></div>
       )}</CardContent></Card>
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{editing ? t('edit', language) : t('add', language)} {title}</DialogTitle></DialogHeader><div className="py-4">{renderForm(form, setForm)}</div><DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter></DialogContent></Dialog>
@@ -778,7 +787,7 @@ function ClassesPage() {
       <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Enseignant' : 'Teacher'}</Label><Input value={String(item.teacher || '')} onChange={e => onChange({ ...item, teacher: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Salle' : 'Room'}</Label><Input value={String(item.room || '')} onChange={e => onChange({ ...item, room: e.target.value })} /></div></div>
       <div className="space-y-2"><Label>{language === 'fr' ? 'Capacité' : 'Capacity'}</Label><Input type="number" value={String(item.capacity || 30)} onChange={e => onChange({ ...item, capacity: parseInt(e.target.value) || 30 })} /></div>
     </div>
-  />} />;
+  )} />
 }
 
 // ==================== MODULES PAGE ====================
@@ -793,7 +802,7 @@ function ModulesPage() {
       <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Année' : 'Year'}</Label><Input value={String(item.year || '')} onChange={e => onChange({ ...item, year: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Semestre' : 'Semester'}</Label><Input value={String(item.semester || '')} onChange={e => onChange({ ...item, semester: e.target.value })} /></div></div>
       <div className="space-y-2"><Label>Description</Label><Textarea value={String(item.description || '')} onChange={e => onChange({ ...item, description: e.target.value })} rows={2} /></div>
     </div>
-  />} />;
+  )} />
 }
 
 // ==================== ATTENDANCE PAGE (with Quick Mode) ====================
@@ -993,10 +1002,17 @@ function CalendarPage() {
             {selectedRecords.slice(0, 10).map(r => { const s = students.find(st => st.id === r.studentId); return <TableRow key={r.id}><TableCell className="font-medium">{s?.fullName || 'Unknown'}</TableCell><TableCell><StatusBadge status={r.status} /></TableCell></TableRow>; })}
           </TableBody></Table></div>}
           {selectedEvents.length > 0 && <div className="mb-4"><p className="text-sm font-medium mb-2">{language === 'fr' ? 'Événements' : 'Events'}</p>{selectedEvents.map(e => (
-            <div key={e.id} className="flex items-center justify-between py-2 border-b border-border/50"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: e.color || typeColors[e.type] || '#6b7280' }} /><div><p className="text-sm font-medium">{e.title}</p><p className="text-xs text-muted-foreground">{e.type}</p></div></div>
-              <div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditEvent(e)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDeleteEvent(e.id)}><Trash2 className="h-3.5 w-3.5" /></Button></div>
+            <div key={e.id} className="flex items-center justify-between py-2 border-b border-border/50">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: e.color || typeColors[e.type] || '#6b7280' }} />
+                <div><p className="text-sm font-medium">{e.title}</p><p className="text-xs text-muted-foreground">{e.type}</p></div>
+              </div>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditEvent(e)}><Pencil className="h-3.5 w-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDeleteEvent(e.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+              </div>
             </div>
-          ))}</div>
+          ))}</div>}
           {selectedRecords.length === 0 && selectedEvents.length === 0 && <EmptyState message={t('no_data', language)} />}
         </CardContent></Card>
       )}
@@ -1011,6 +1027,1052 @@ function CalendarPage() {
         </div>
         <DialogFooter><Button variant="outline" onClick={() => setEventOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddEvent}>{t('save', language)}</Button></DialogFooter>
       </DialogContent></Dialog>
+    </div>
+  );
+}
+
+// ==================== EXPORT DATA DIALOG ====================
+function ExportDataDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, language } = useAppStore();
+  const data = { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees };
+
+  const options = [
+    { key: 'students', label: t('students', language), fn: () => exportUtils.exportStudentsCSV(students, classes) },
+    { key: 'attendance', label: t('attendance', language), fn: () => exportUtils.exportAttendanceCSV(attendance, students, classes) },
+    { key: 'grades', label: t('grades', language), fn: () => exportUtils.exportGradesCSV(grades, students, modules) },
+    { key: 'classes', label: t('classes', language), fn: () => exportUtils.exportClassesCSV(classes, students) },
+    { key: 'modules', label: t('modules', language), fn: () => exportUtils.exportModulesCSV(modules) },
+    { key: 'behavior', label: t('behavior', language), fn: () => exportUtils.exportBehaviorCSV(behavior, students) },
+    { key: 'tasks', label: t('tasks', language), fn: () => exportUtils.exportTasksCSV(tasks) },
+    { key: 'incidents', label: t('incidents', language), fn: () => exportUtils.exportIncidentsCSV(incidents, students) },
+    { key: 'teachers', label: t('teachers_management', language), fn: () => exportUtils.exportTeachersCSV(teachers) },
+    { key: 'employees', label: t('employees_management', language), fn: () => exportUtils.exportEmployeesCSV(employees) },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>{t('export', language)}</DialogTitle><DialogDescription>{language === 'fr' ? 'Choisir les données à exporter' : 'Choose data to export'}</DialogDescription></DialogHeader>
+        <div className="grid gap-2 py-4">
+          {options.map(o => (
+            <button key={o.key} onClick={() => { o.fn(); onOpenChange(false); toast.success(language === 'fr' ? 'Exporté!' : 'Exported!'); }} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border hover:bg-muted transition-colors text-left">
+              <FileDown className="h-4 w-4 text-emerald-600" />
+              <span className="text-sm font-medium">{o.label}</span>
+              <span className="ml-auto text-xs text-muted-foreground">{language === 'fr' ? 'CSV' : 'CSV'}</span>
+            </button>
+          ))}
+          <Separator className="my-1" />
+          <button onClick={() => { exportUtils.exportAllCSV(data); onOpenChange(false); toast.success(language === 'fr' ? 'Export complet!' : 'Full export!'); }} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">
+            <Download className="h-4 w-4" /><span className="text-sm font-medium">{t('export_all_data', language)}</span>
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ==================== GRADES PAGE ====================
+function GradesPage() {
+  const { students, classes, modules, grades, language, setGrades } = useAppStore();
+  const [classFilter, setClassFilter] = useState('');
+  const [moduleFilter, setModuleFilter] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editGrade, setEditGrade] = useState<Grade | null>(null);
+  const [form, setForm] = useState({ studentId: '', moduleId: '', grade: '', percentage: '', date: new Date().toISOString().split('T')[0] });
+
+  const filteredGrades = useMemo(() => {
+    let g = [...grades];
+    if (classFilter) {
+      const classStudentIds = new Set(students.filter(s => s.classId === classFilter).map(s => s.id));
+      g = g.filter(gr => classStudentIds.has(gr.studentId));
+    }
+    if (moduleFilter) g = g.filter(gr => gr.moduleId === moduleFilter);
+    return g.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  }, [grades, classFilter, moduleFilter, students]);
+
+  const classAvg = filteredGrades.length > 0 ? Math.round(filteredGrades.reduce((s, g) => s + (g.percentage || 0), 0) / filteredGrades.length) : 0;
+  const distData = useMemo(() => {
+    const buckets = ['0-39', '40-59', '60-69', '70-79', '80-89', '90-100'];
+    const counts = [0, 0, 0, 0, 0, 0];
+    filteredGrades.forEach(g => {
+      const p = g.percentage || 0;
+      if (p < 40) counts[0]++;
+      else if (p < 60) counts[1]++;
+      else if (p < 70) counts[2]++;
+      else if (p < 80) counts[3]++;
+      else if (p < 90) counts[4]++;
+      else counts[5]++;
+    });
+    return buckets.map((b, i) => ({ range: b, count: counts[i] }));
+  }, [filteredGrades]);
+
+  const openAdd = () => { setEditGrade(null); setForm({ studentId: '', moduleId: '', grade: '', percentage: '', date: new Date().toISOString().split('T')[0] }); setDialogOpen(true); };
+  const openEdit = (g: Grade) => { setEditGrade(g); setForm({ studentId: g.studentId, moduleId: g.moduleId, grade: g.grade || '', percentage: g.percentage != null ? String(g.percentage) : '', date: g.date || '' }); setDialogOpen(true); };
+
+  const handleSave = () => {
+    if (!form.studentId || !form.moduleId) return;
+    if (editGrade) {
+      setGrades(grades.map(g => g.id === editGrade.id ? { ...g, studentId: form.studentId, moduleId: form.moduleId, grade: form.grade, percentage: Number(form.percentage) || undefined, date: form.date } : g));
+      toast.success(language === 'fr' ? 'Note mise à jour' : 'Grade updated');
+    } else {
+      setGrades([...grades, { id: genId(), studentId: form.studentId, moduleId: form.moduleId, grade: form.grade, percentage: Number(form.percentage) || undefined, date: form.date, createdAt: new Date().toISOString() }]);
+      toast.success(language === 'fr' ? 'Note ajoutée' : 'Grade added');
+    }
+    setDialogOpen(false);
+  };
+
+  const handleDelete = (id: string) => { setGrades(grades.filter(g => g.id !== id)); toast.success(language === 'fr' ? 'Note supprimée' : 'Grade deleted'); };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div className="flex flex-wrap gap-2">
+          <Select value={classFilter} onValueChange={v => setClassFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('class_name', language)} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Toutes les classes' : 'All Classes'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+          <Select value={moduleFilter} onValueChange={v => setModuleFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('modules', language)} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Tous les modules' : 'All Modules'}</SelectItem>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select>
+        </div>
+        <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Moyenne de classe' : 'Class Average'}</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold" style={{ color: classAvg >= 70 ? '#10b981' : classAvg >= 50 ? '#f59e0b' : '#ef4444' }}>{classAvg}%</p><Progress value={classAvg} className="mt-2" /></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Distribution des notes' : 'Grade Distribution'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={100}><BarChart data={distData}><Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]} /><XAxis dataKey="range" tick={{ fontSize: 10 }} /></BarChart></ResponsiveContainer></CardContent></Card>
+      </div>
+      {filteredGrades.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+        <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{t('students', language)}</TableHead><TableHead>{t('modules', language)}</TableHead><TableHead>{language === 'fr' ? 'Note' : 'Grade'}</TableHead><TableHead>%</TableHead><TableHead>{language === 'fr' ? 'Date' : 'Date'}</TableHead><TableHead className="w-24">{t('actions', language)}</TableHead></TableRow></TableHeader><TableBody>
+          {filteredGrades.map(g => { const s = students.find(st => st.id === g.studentId); const m = modules.find(mod => mod.id === g.moduleId); const pct = g.percentage || 0; return <TableRow key={g.id}><TableCell className="font-medium">{s?.fullName || '-'}</TableCell><TableCell>{m?.name || '-'}</TableCell><TableCell>{g.grade || '-'}</TableCell><TableCell><span className="font-semibold" style={{ color: pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444' }}>{pct}%</span></TableCell><TableCell className="text-sm text-muted-foreground">{g.date || '-'}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(g)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDelete(g.id)}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell></TableRow>; })}
+        </TableBody></Table></div></CardContent></Card>
+      )}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent><DialogHeader><DialogTitle>{editGrade ? t('edit', language) : t('add', language)} {t('grades', language)}</DialogTitle></DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="space-y-2"><Label>{t('students', language)} *</Label><Select value={form.studentId} onValueChange={v => setForm({ ...form, studentId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{students.filter(s => !classFilter || s.classId === classFilter).map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label>{t('modules', language)} *</Label><Select value={form.moduleId} onValueChange={v => setForm({ ...form, moduleId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Note' : 'Grade'}</Label><Input value={form.grade} onChange={e => setForm({ ...form, grade: e.target.value })} placeholder="A, B, 18/20" /></div>
+            <div className="space-y-2"><Label>%</Label><Input type="number" min="0" max="100" value={form.percentage} onChange={e => setForm({ ...form, percentage: e.target.value })} /></div>
+          </div>
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Date' : 'Date'}</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter>
+      </DialogContent></Dialog>
+    </div>
+  );
+}
+
+// ==================== BEHAVIOR PAGE ====================
+function BehaviorPage() {
+  const { students, behavior, language, setBehavior, currentUser } = useAppStore();
+  const [typeFilter, setTypeFilter] = useState('');
+  const [studentFilter, setStudentFilter] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editRec, setEditRec] = useState<BehaviorRecord | null>(null);
+  const [form, setForm] = useState({ studentId: '', type: 'positive' as 'positive' | 'negative', description: '', points: '0', date: new Date().toISOString().split('T')[0] });
+
+  const filtered = useMemo(() => {
+    let b = [...behavior];
+    if (typeFilter) b = b.filter(r => r.type === typeFilter);
+    if (studentFilter) b = b.filter(r => r.studentId === studentFilter);
+    return b.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  }, [behavior, typeFilter, studentFilter]);
+
+  const pointsSummary = useMemo(() => {
+    const map = new Map<string, { pos: number; neg: number; name: string }>();
+    behavior.forEach(b => {
+      const s = students.find(st => st.id === b.studentId);
+      if (!s) return;
+      const d = map.get(b.studentId) || { pos: 0, neg: 0, name: s.fullName };
+      if (b.type === 'positive') d.pos += b.points || 1; else d.neg += b.points || 1;
+      map.set(b.studentId, d);
+    });
+    return Array.from(map.entries()).map(([id, d]) => ({ id, ...d, total: d.pos + d.neg })).sort((a, b) => b.total - a.total);
+  }, [behavior, students]);
+
+  const openAdd = () => { setEditRec(null); setForm({ studentId: '', type: 'positive', description: '', points: '1', date: new Date().toISOString().split('T')[0] }); setDialogOpen(true); };
+  const openEdit = (r: BehaviorRecord) => { setEditRec(r); setForm({ studentId: r.studentId, type: r.type, description: r.description, points: String(r.points || 0), date: r.date }); setDialogOpen(true); };
+
+  const handleSave = () => {
+    if (!form.studentId || !form.description) return;
+    if (editRec) {
+      setBehavior(behavior.map(b => b.id === editRec.id ? { ...b, studentId: form.studentId, type: form.type, description: form.description, points: Number(form.points) || 0, date: form.date, teacher: currentUser?.fullName } : b));
+      toast.success(language === 'fr' ? 'Enregistrement mis à jour' : 'Record updated');
+    } else {
+      setBehavior([...behavior, { id: genId(), studentId: form.studentId, type: form.type, description: form.description, points: Number(form.points) || 0, date: form.date, teacher: currentUser?.fullName, createdAt: new Date().toISOString() }]);
+      toast.success(language === 'fr' ? 'Enregistrement ajouté' : 'Record added');
+    }
+    setDialogOpen(false);
+  };
+
+  const handleDelete = (id: string) => { setBehavior(behavior.filter(b => b.id !== id)); toast.success(language === 'fr' ? 'Supprimé' : 'Deleted'); };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div className="flex flex-wrap gap-2">
+          <Select value={typeFilter} onValueChange={v => setTypeFilter(v)}><SelectTrigger className="w-36"><SelectValue placeholder={language === 'fr' ? 'Type' : 'Type'} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Tous' : 'All'}</SelectItem><SelectItem value="positive">{t('positive', language)}</SelectItem><SelectItem value="negative">{t('negative', language)}</SelectItem></SelectContent></Select>
+          <Select value={studentFilter} onValueChange={v => setStudentFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('students', language)} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Tous' : 'All'}</SelectItem>{students.map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}</SelectContent></Select>
+        </div>
+        <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
+      </div>
+      {pointsSummary.length > 0 && <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Résumé des points' : 'Points Summary'}</CardTitle></CardHeader><CardContent><div className="max-h-40 overflow-y-auto space-y-1">{pointsSummary.slice(0, 10).map(p => (<div key={p.id} className="flex items-center justify-between py-1 text-sm"><span className="font-medium">{p.name}</span><div className="flex gap-3"><span className="text-emerald-600">+{p.pos}</span><span className="text-red-500">-{p.neg}</span><Badge variant={p.total >= 0 ? 'secondary' : 'destructive'}>{p.total > 0 ? '+' : ''}{p.total}</Badge></div></div>))}</div></CardContent></Card>}
+      {filtered.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+        <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{t('students', language)}</TableHead><TableHead>{language === 'fr' ? 'Type' : 'Type'}</TableHead><TableHead>{language === 'fr' ? 'Description' : 'Description'}</TableHead><TableHead>{language === 'fr' ? 'Points' : 'Points'}</TableHead><TableHead>{language === 'fr' ? 'Date' : 'Date'}</TableHead><TableHead className="w-24">{t('actions', language)}</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => { const s = students.find(st => st.id === r.studentId); return <TableRow key={r.id}><TableCell className="font-medium">{s?.fullName || '-'}</TableCell><TableCell><StatusBadge status={r.type} /></TableCell><TableCell className="max-w-[200px] truncate">{r.description}</TableCell><TableCell><span className={r.type === 'positive' ? 'text-emerald-600' : 'text-red-500'}>{r.points && r.points > 0 ? '+' : ''}{r.points || 0}</span></TableCell><TableCell className="text-sm text-muted-foreground">{r.date}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(r)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDelete(r.id)}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell></TableRow>; })}
+        </TableBody></Table></div></CardContent></Card>
+      )}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent><DialogHeader><DialogTitle>{editRec ? t('edit', language) : t('add', language)} {t('behavior', language)}</DialogTitle></DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="space-y-2"><Label>{t('students', language)} *</Label><Select value={form.studentId} onValueChange={v => setForm({ ...form, studentId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{students.map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Type' : 'Type'}</Label><Select value={form.type} onValueChange={v => setForm({ ...form, type: v as 'positive' | 'negative', points: v === 'positive' ? '1' : '-1' })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="positive">👍 {t('positive', language)}</SelectItem><SelectItem value="negative">👎 {t('negative', language)}</SelectItem></SelectContent></Select></div>
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Description' : 'Description'} *</Label><Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Points' : 'Points'}</Label><Input type="number" value={form.points} onChange={e => setForm({ ...form, points: e.target.value })} /></div>
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Date' : 'Date'}</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+          </div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter>
+      </DialogContent></Dialog>
+    </div>
+  );
+}
+
+// ==================== TASKS PAGE ====================
+function TasksPage() {
+  const { tasks, language, setTasks, currentUser, teachers } = useAppStore();
+  const [statusFilter, setStatusFilter] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [editTask, setEditTask] = useState<Task | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [form, setForm] = useState({ title: '', description: '', assignedTo: '', priority: 'medium' as Task['priority'], status: 'pending' as Task['status'], category: '', dueDate: '', progress: '0' });
+  const [commentText, setCommentText] = useState('');
+
+  const filtered = useMemo(() => {
+    let t = [...tasks];
+    if (statusFilter) t = t.filter(tk => tk.status === statusFilter);
+    if (priorityFilter) t = t.filter(tk => tk.priority === priorityFilter);
+    return t.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  }, [tasks, statusFilter, priorityFilter]);
+
+  const counts = useMemo(() => ({
+    all: tasks.length, pending: tasks.filter(t => t.status === 'pending').length, in_progress: tasks.filter(t => t.status === 'in_progress').length, completed: tasks.filter(t => t.status === 'completed').length, overdue: tasks.filter(t => t.status === 'overdue').length,
+  }), [tasks]);
+
+  const openAdd = () => { setEditTask(null); setForm({ title: '', description: '', assignedTo: '', priority: 'medium', status: 'pending', category: '', dueDate: '', progress: '0' }); setDialogOpen(true); };
+  const openEdit = (tk: Task) => { setEditTask(tk); setForm({ title: tk.title, description: tk.description || '', assignedTo: tk.assignedTo || '', priority: tk.priority, status: tk.status, category: tk.category || '', dueDate: tk.dueDate || '', progress: String(tk.progress || 0) }); setDialogOpen(true); };
+  const openDetail = (tk: Task) => { setSelectedTask(tk); setCommentText(''); setDetailOpen(true); };
+
+  const handleSave = () => {
+    if (!form.title) return;
+    if (editTask) {
+      setTasks(tasks.map(t => t.id === editTask.id ? { ...t, title: form.title, description: form.description, assignedTo: form.assignedTo, priority: form.priority, status: form.status, category: form.category, dueDate: form.dueDate, progress: Number(form.progress) || 0, completedAt: form.status === 'completed' ? new Date().toISOString() : t.completedAt } : t));
+      toast.success(language === 'fr' ? 'Tâche mise à jour' : 'Task updated');
+    } else {
+      const ticket = 'TK-' + genId().substring(0, 6).toUpperCase();
+      setTasks([...tasks, { id: genId(), title: form.title, description: form.description, assignedTo: form.assignedTo, assignedBy: currentUser?.fullName, priority: form.priority, status: form.status, category: form.category, dueDate: form.dueDate, progress: Number(form.progress) || 0, ticketNumber: ticket, comments: [], createdAt: new Date().toISOString() }]);
+      toast.success(language === 'fr' ? 'Tâche créée' : 'Task created');
+    }
+    setDialogOpen(false);
+  };
+
+  const handleDelete = (id: string) => { setTasks(tasks.filter(t => t.id !== id)); toast.success(language === 'fr' ? 'Tâche supprimée' : 'Task deleted'); };
+
+  const handleAddComment = () => {
+    if (!commentText || !selectedTask) return;
+    const newComment = { id: genId(), text: commentText, author: currentUser?.fullName, createdAt: new Date().toISOString() };
+    setTasks(tasks.map(t => t.id === selectedTask.id ? { ...t, comments: [...(t.comments || []), newComment] } : t));
+    setSelectedTask({ ...selectedTask, comments: [...(selectedTask.comments || []), newComment] });
+    setCommentText('');
+    toast.success(language === 'fr' ? 'Commentaire ajouté' : 'Comment added');
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {([['all', 'total_students', counts.all], ['pending', 'pending', counts.pending], ['in_progress', 'in_progress', counts.in_progress], ['completed', 'completed', counts.completed], ['overdue', 'overdue', counts.overdue]] as const).map(([key, labelKey, count]) => (
+          <button key={key} onClick={() => setStatusFilter(statusFilter === key ? '' : key)} className={`rounded-lg p-3 text-center transition-colors border ${statusFilter === key ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'hover:bg-muted'}`}>
+            <p className="text-xl font-bold">{count}</p><p className="text-xs text-muted-foreground">{t(labelKey as string, language)}</p>
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div className="flex flex-wrap gap-2">
+          <Select value={priorityFilter} onValueChange={v => setPriorityFilter(v)}><SelectTrigger className="w-36"><SelectValue placeholder={language === 'fr' ? 'Priorité' : 'Priority'} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Toutes' : 'All'}</SelectItem><SelectItem value="urgent">{t('urgent', language)}</SelectItem><SelectItem value="high">{t('high', language)}</SelectItem><SelectItem value="medium">{t('medium', language)}</SelectItem><SelectItem value="low">{t('low', language)}</SelectItem></SelectContent></Select>
+        </div>
+        <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />{t('add', language)} {t('tasks', language)}</Button>
+      </div>
+      {filtered.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+        <div className="grid gap-3">
+          {filtered.map(tk => (
+            <Card key={tk.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => openDetail(tk)}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{tk.ticketNumber || ''}</span>
+                      <StatusBadge status={tk.priority} /><StatusBadge status={tk.status} />
+                    </div>
+                    <h3 className="font-semibold text-sm truncate">{tk.title}</h3>
+                    {tk.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{tk.description}</p>}
+                    <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                      {tk.assignedTo && <span>👤 {tk.assignedTo}</span>}
+                      {tk.dueDate && <span>📅 {tk.dueDate}</span>}
+                      {tk.comments && tk.comments.length > 0 && <span>💬 {tk.comments.length}</span>}
+                    </div>
+                    {(tk.progress || 0) > 0 && <div className="mt-2"><Progress value={tk.progress || 0} className="h-1.5" /></div>}
+                  </div>
+                  <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(tk)}><Pencil className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDelete(tk.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+      {/* Task Detail Dialog */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{selectedTask?.ticketNumber} — {selectedTask?.title}</DialogTitle></DialogHeader>
+        {selectedTask && <ScrollArea className="max-h-[60vh]">
+          <div className="space-y-4 p-1">
+            <div className="flex flex-wrap gap-2"><StatusBadge status={selectedTask.priority} /><StatusBadge status={selectedTask.status} />{selectedTask.category && <Badge variant="outline">{selectedTask.category}</Badge>}</div>
+            {selectedTask.description && <p className="text-sm text-muted-foreground">{selectedTask.description}</p>}
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><span className="text-muted-foreground">{language === 'fr' ? 'Assigné à' : 'Assigned to'}:</span> <span className="font-medium ml-1">{selectedTask.assignedTo || '-'}</span></div>
+              <div><span className="text-muted-foreground">{language === 'fr' ? 'Assigné par' : 'Assigned by'}:</span> <span className="font-medium ml-1">{selectedTask.assignedBy || '-'}</span></div>
+              <div><span className="text-muted-foreground">{language === 'fr' ? 'Échéance' : 'Due'}:</span> <span className="font-medium ml-1">{selectedTask.dueDate || '-'}</span></div>
+              <div><span className="text-muted-foreground">{language === 'fr' ? 'Progression' : 'Progress'}:</span> <span className="font-medium ml-1">{selectedTask.progress || 0}%</span></div>
+            </div>
+            {(selectedTask.progress || 0) > 0 && <Progress value={selectedTask.progress || 0} />}
+            <Separator />
+            <div>
+              <h4 className="text-sm font-semibold mb-2">{t('comments', language)} ({selectedTask.comments?.length || 0})</h4>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {(selectedTask.comments || []).map(c => (
+                  <div key={c.id || c.text} className="rounded-lg bg-muted/50 p-2.5"><div className="flex items-center gap-2 mb-1"><span className="text-xs font-semibold">{c.author || 'Anonymous'}</span><span className="text-[10px] text-muted-foreground">{c.createdAt ? new Date(c.createdAt).toLocaleDateString() : ''}</span></div><p className="text-sm">{c.text}</p></div>
+                ))}
+              </div>
+              <div className="flex gap-2 mt-2"><Input value={commentText} onChange={e => setCommentText(e.target.value)} placeholder={t('add_comment', language)} className="flex-1" onKeyDown={e => e.key === 'Enter' && handleAddComment()} /><Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddComment}><Send className="h-4 w-4" /></Button></div>
+            </div>
+          </div>
+        </ScrollArea>}</DialogContent></Dialog>
+      {/* Add/Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent><DialogHeader><DialogTitle>{editTask ? t('edit', language) : t('add', language)} {t('tasks', language)}</DialogTitle></DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Titre' : 'Title'} *</Label><Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Description' : 'Description'}</Label><Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Assigné à' : 'Assigned to'}</Label><Input value={form.assignedTo} onChange={e => setForm({ ...form, assignedTo: e.target.value })} placeholder={language === 'fr' ? 'Nom' : 'Name'} /></div>
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Catégorie' : 'Category'}</Label><Input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} /></div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Priorité' : 'Priority'}</Label><Select value={form.priority} onValueChange={v => setForm({ ...form, priority: v as Task['priority'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="urgent">{t('urgent', language)}</SelectItem><SelectItem value="high">{t('high', language)}</SelectItem><SelectItem value="medium">{t('medium', language)}</SelectItem><SelectItem value="low">{t('low', language)}</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>{t('status', language)}</Label><Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Task['status'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">{t('pending', language)}</SelectItem><SelectItem value="in_progress">{t('in_progress', language)}</SelectItem><SelectItem value="completed">{t('completed', language)}</SelectItem><SelectItem value="overdue">{t('overdue', language)}</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Progression' : 'Progress'} %</Label><Input type="number" min="0" max="100" value={form.progress} onChange={e => setForm({ ...form, progress: e.target.value })} /></div>
+          </div>
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Échéance' : 'Due Date'}</Label><Input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} /></div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter>
+      </DialogContent></Dialog>
+    </div>
+  );
+}
+
+// ==================== INCIDENTS PAGE ====================
+function IncidentsPage() {
+  const { incidents, students, language, setIncidents, currentUser } = useAppStore();
+  const [severityFilter, setSeverityFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [editInc, setEditInc] = useState<Incident | null>(null);
+  const [selectedInc, setSelectedInc] = useState<Incident | null>(null);
+  const [form, setForm] = useState({ studentId: '', incidentType: '', severity: 'medium' as Incident['severity'], status: 'open' as Incident['status'], description: '', actionTaken: '', date: new Date().toISOString().split('T')[0], followUpNotes: '' });
+
+  const filtered = useMemo(() => {
+    let i = [...incidents];
+    if (severityFilter) i = i.filter(inc => inc.severity === severityFilter);
+    if (statusFilter) i = i.filter(inc => inc.status === statusFilter);
+    return i.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  }, [incidents, severityFilter, statusFilter]);
+
+  const severityCounts = useMemo(() => ({
+    all: incidents.length, low: incidents.filter(i => i.severity === 'low').length, medium: incidents.filter(i => i.severity === 'medium').length, high: incidents.filter(i => i.severity === 'high').length, critical: incidents.filter(i => i.severity === 'critical').length,
+  }), [incidents]);
+
+  const openAdd = () => { setEditInc(null); setForm({ studentId: '', incidentType: '', severity: 'medium', status: 'open', description: '', actionTaken: '', date: new Date().toISOString().split('T')[0], followUpNotes: '' }); setDialogOpen(true); };
+  const openEdit = (inc: Incident) => { setEditInc(inc); setForm({ studentId: inc.studentId, incidentType: inc.incidentType || '', severity: inc.severity, status: inc.status, description: inc.description || '', actionTaken: inc.actionTaken || '', date: inc.date || '', followUpNotes: inc.followUpNotes || '' }); setDialogOpen(true); };
+  const openDetail = (inc: Incident) => { setSelectedInc(inc); setDetailOpen(true); };
+
+  const handleSave = () => {
+    if (!form.studentId) return;
+    if (editInc) {
+      setIncidents(incidents.map(i => i.id === editInc.id ? { ...i, studentId: form.studentId, incidentType: form.incidentType, severity: form.severity, status: form.status, description: form.description, actionTaken: form.actionTaken, date: form.date, followUpNotes: form.followUpNotes, reportedBy: currentUser?.fullName } : i));
+      toast.success(language === 'fr' ? 'Incident mis à jour' : 'Incident updated');
+    } else {
+      setIncidents([...incidents, { id: genId(), studentId: form.studentId, incidentType: form.incidentType, severity: form.severity, status: form.status, description: form.description, actionTaken: form.actionTaken, date: form.date, followUpNotes: form.followUpNotes, reportedBy: currentUser?.fullName, createdAt: new Date().toISOString() }]);
+      toast.success(language === 'fr' ? 'Incident créé' : 'Incident created');
+    }
+    setDialogOpen(false);
+  };
+
+  const handleDelete = (id: string) => { setIncidents(incidents.filter(i => i.id !== id)); toast.success(language === 'fr' ? 'Incident supprimé' : 'Incident deleted'); };
+
+  const sevIcon: Record<string, string> = { low: '🟡', medium: '🟠', high: '🔴', critical: '⚡' };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {([['', 'total_students', severityCounts.all], ['low', 'low', severityCounts.low], ['medium', 'medium', severityCounts.medium], ['high', 'high', severityCounts.high], ['critical', 'critical', severityCounts.critical]] as const).map(([key, labelKey, count]) => (
+          <button key={key} onClick={() => setSeverityFilter(severityFilter === key ? '' : key)} className={`rounded-lg p-3 text-center transition-colors border ${severityFilter === key ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'hover:bg-muted'}`}>
+            <p className="text-xl font-bold">{count}</p><p className="text-xs text-muted-foreground">{key ? `${sevIcon[key]} ${t(labelKey as string, language)}` : t(labelKey as string, language)}</p>
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <Select value={statusFilter} onValueChange={v => setStatusFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('status', language)} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Tous' : 'All'}</SelectItem><SelectItem value="open">{t('open', language)}</SelectItem><SelectItem value="investigating">{t('investigating', language)}</SelectItem><SelectItem value="resolved">{t('resolved', language)}</SelectItem><SelectItem value="closed">{t('closed', language)}</SelectItem></SelectContent></Select>
+        <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />{t('add', language)} {t('incidents', language)}</Button>
+      </div>
+      {filtered.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+        <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{t('students', language)}</TableHead><TableHead>{language === 'fr' ? 'Type' : 'Type'}</TableHead><TableHead>{language === 'fr' ? 'Sévérité' : 'Severity'}</TableHead><TableHead>{t('status', language)}</TableHead><TableHead>{language === 'fr' ? 'Date' : 'Date'}</TableHead><TableHead className="w-24">{t('actions', language)}</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(inc => { const s = students.find(st => st.id === inc.studentId); return <TableRow key={inc.id} className="cursor-pointer" onClick={() => openDetail(inc)}><TableCell className="font-medium">{s?.fullName || '-'}</TableCell><TableCell>{inc.incidentType || '-'}</TableCell><TableCell><StatusBadge status={inc.severity} /></TableCell><TableCell><StatusBadge status={inc.status} /></TableCell><TableCell className="text-sm text-muted-foreground">{inc.date || '-'}</TableCell><TableCell><div className="flex gap-1" onClick={e => e.stopPropagation()}><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(inc)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDelete(inc.id)}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell></TableRow>; })}
+        </TableBody></Table></div></CardContent></Card>
+      )}
+      {/* Detail Dialog */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{t('incident_detail', language)}</DialogTitle></DialogHeader>
+        {selectedInc && <ScrollArea className="max-h-[60vh]"><div className="space-y-4 p-1">
+          <div className="flex flex-wrap gap-2"><StatusBadge status={selectedInc.severity} /><StatusBadge status={selectedInc.status} />{selectedInc.incidentType && <Badge variant="outline">{selectedInc.incidentType}</Badge>}</div>
+          {selectedInc.description && <div><h4 className="text-xs font-semibold text-muted-foreground mb-1">{language === 'fr' ? 'Description' : 'Description'}</h4><p className="text-sm">{selectedInc.description}</p></div>}
+          {selectedInc.actionTaken && <div><h4 className="text-xs font-semibold text-muted-foreground mb-1">{language === 'fr' ? 'Action prise' : 'Action Taken'}</h4><p className="text-sm">{selectedInc.actionTaken}</p></div>}
+          {selectedInc.followUpNotes && <div><h4 className="text-xs font-semibold text-muted-foreground mb-1">{t('follow_up_notes', language)}</h4><p className="text-sm">{selectedInc.followUpNotes}</p></div>}
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div><span className="text-muted-foreground">{t('students', language)}:</span> <span className="font-medium ml-1">{students.find(s => s.id === selectedInc.studentId)?.fullName || '-'}</span></div>
+            <div><span className="text-muted-foreground">{language === 'fr' ? 'Signalé par' : 'Reported by'}:</span> <span className="font-medium ml-1">{selectedInc.reportedBy || '-'}</span></div>
+            <div><span className="text-muted-foreground">{language === 'fr' ? 'Date' : 'Date'}:</span> <span className="font-medium ml-1">{selectedInc.date || '-'}</span></div>
+          </div>
+        </div></ScrollArea>}
+      </DialogContent></Dialog>
+      {/* Add/Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{editInc ? t('edit', language) : t('add', language)} {t('incidents', language)}</DialogTitle></DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="space-y-2"><Label>{t('students', language)} *</Label><Select value={form.studentId} onValueChange={v => setForm({ ...form, studentId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{students.map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}</SelectContent></Select></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Type' : 'Type'}</Label><Select value={form.incidentType} onValueChange={v => setForm({ ...form, incidentType: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="disciplinary">{t('disciplinary', language)}</SelectItem><SelectItem value="academic">{t('academic', language)}</SelectItem><SelectItem value="behavioral">{t('behavioral', language)}</SelectItem><SelectItem value="safety">{t('safety', language)}</SelectItem><SelectItem value="other">{t('other', language)}</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Sévérité' : 'Severity'}</Label><Select value={form.severity} onValueChange={v => setForm({ ...form, severity: v as Incident['severity'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">{t('low', language)}</SelectItem><SelectItem value="medium">{t('medium', language)}</SelectItem><SelectItem value="high">{t('high', language)}</SelectItem><SelectItem value="critical">{t('critical', language)}</SelectItem></SelectContent></Select></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2"><Label>{t('status', language)}</Label><Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Incident['status'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">{t('open', language)}</SelectItem><SelectItem value="investigating">{t('investigating', language)}</SelectItem><SelectItem value="resolved">{t('resolved', language)}</SelectItem><SelectItem value="closed">{t('closed', language)}</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Date' : 'Date'}</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+          </div>
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Description' : 'Description'}</Label><Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Action prise' : 'Action Taken'}</Label><Textarea value={form.actionTaken} onChange={e => setForm({ ...form, actionTaken: e.target.value })} rows={2} /></div>
+          <div className="space-y-2"><Label>{t('follow_up_notes', language)}</Label><Textarea value={form.followUpNotes} onChange={e => setForm({ ...form, followUpNotes: e.target.value })} rows={2} /></div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter>
+      </DialogContent></Dialog>
+    </div>
+  );
+}
+
+// ==================== MESSAGING PAGE ====================
+function MessagingPage() {
+  const { students, classes, templates, language, setTemplates, attendance } = useAppStore();
+  const [mode, setMode] = useState<'individual' | 'bulk' | 'template'>('individual');
+  const [classFilter, setClassFilter] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState('');
+  const [message, setMessage] = useState('');
+  const [templateName, setTemplateName] = useState('');
+  const [templateCategory, setTemplateCategory] = useState('');
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+
+  const filteredStudents = useMemo(() => {
+    let s = [...students].filter(st => st.status === 'active');
+    if (classFilter) s = s.filter(st => st.classId === classFilter);
+    return s;
+  }, [students, classFilter]);
+
+  const today = new Date().toISOString().split('T')[0];
+  const absentToday = useMemo(() => {
+    const absentIds = new Set(attendance.filter(a => a.date === today && a.status === 'absent').map(a => a.studentId));
+    return students.filter(s => absentIds.has(s.id));
+  }, [students, attendance, today]);
+
+  const lateToday = useMemo(() => {
+    const lateIds = new Set(attendance.filter(a => a.date === today && a.status === 'late').map(a => a.studentId));
+    return students.filter(s => lateIds.has(s.id));
+  }, [students, attendance, today]);
+
+  const sendWhatsApp = (phone: string | undefined, msg: string) => {
+    const formatted = formatWhatsAppPhone(phone);
+    if (!formatted) { toast.error(language === 'fr' ? 'Numéro invalide' : 'Invalid phone number'); return; }
+    window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(msg)}`, '_blank');
+    toast.success(language === 'fr' ? 'Ouverture WhatsApp...' : 'Opening WhatsApp...');
+  };
+
+  const handleSendIndividual = () => {
+    const s = students.find(st => st.id === selectedStudent);
+    if (!s) return;
+    sendWhatsApp(s.guardianPhone || s.phone, message);
+  };
+
+  const handleSendBulk = () => {
+    const targets = classFilter ? filteredStudents : students.filter(s => s.status === 'active');
+    const phones = targets.map(s => s.guardianPhone || s.phone).filter(Boolean);
+    if (phones.length === 0) { toast.error(language === 'fr' ? 'Aucun numéro trouvé' : 'No phone numbers found'); return; }
+    phones.forEach(p => sendWhatsApp(p, message));
+  };
+
+  const handleSaveTemplate = () => {
+    if (!templateName || !message) return;
+    setTemplates([...templates, { id: genId(), name: templateName, content: message, category: templateCategory || 'general', createdAt: new Date().toISOString() }]);
+    setSaveDialogOpen(false);
+    toast.success(language === 'fr' ? 'Modèle sauvegardé' : 'Template saved');
+  };
+
+  const applyTemplate = (content: string) => { setMessage(content); setMode('individual'); };
+
+  const absenceTemplate = (s: Student) => `${language === 'fr' ? 'Bonjour, Nous vous informons que' : 'Hello, We inform you that'} ${s.fullName} ${language === 'fr' ? 'est absent(e) aujourd\'hui.' : 'is absent today.'} ${language === 'fr' ? 'Merci de nous contacter.' : 'Please contact us.'}`;
+
+  const lateTemplate = (s: Student) => `${language === 'fr' ? 'Bonjour, Nous vous informons que' : 'Hello, We inform you that'} ${s.fullName} ${language === 'fr' ? 'est arrivé(e) en retard aujourd\'hui.' : 'arrived late today.'} ${language === 'fr' ? 'Merci de nous contacter.' : 'Please contact us.'}`;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        {([['individual', language === 'fr' ? 'Individuel' : 'Individual'], ['bulk', language === 'fr' ? 'Groupé' : 'Bulk'], ['template', language === 'fr' ? 'Modèles' : 'Templates']] as const).map(([m, label]) => (
+          <Button key={m} variant={mode === m ? 'default' : 'outline'} size="sm" onClick={() => setMode(m)} className={mode === m ? 'bg-emerald-600 hover:bg-emerald-700' : ''}>{label}</Button>
+        ))}
+      </div>
+
+      {mode === 'template' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-semibold">{language === 'fr' ? 'Modèles enregistrés' : 'Saved Templates'} ({templates.length})</h3>
+            <Button variant="outline" size="sm" onClick={() => setSaveDialogOpen(true)}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Nouveau modèle' : 'New Template'}</Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {templates.map(tp => (
+              <Card key={tp.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => applyTemplate(tp.content)}>
+                <CardContent className="p-4"><div className="flex items-start justify-between"><div><h4 className="font-semibold text-sm">{tp.name}</h4>{tp.category && <Badge variant="outline" className="mt-1 text-xs">{tp.category}</Badge>}<p className="text-sm text-muted-foreground mt-2 line-clamp-3">{tp.content}</p></div><Button variant="ghost" size="sm" className="shrink-0"><Send className="h-4 w-4" /></Button></div></CardContent>
+              </Card>
+            ))}
+          </div>
+          {templates.length === 0 && <EmptyState message={language === 'fr' ? 'Aucun modèle sauvegardé' : 'No saved templates'} />}
+          <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}><DialogContent><DialogHeader><DialogTitle>{language === 'fr' ? 'Sauvegarder comme modèle' : 'Save as Template'}</DialogTitle></DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Nom du modèle' : 'Template Name'}</Label><Input value={templateName} onChange={e => setTemplateName(e.target.value)} /></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Catégorie' : 'Category'}</Label><Input value={templateCategory} onChange={e => setTemplateCategory(e.target.value)} placeholder="general, absence, ..." /></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Contenu' : 'Content'}</Label><Textarea value={message} onChange={e => setMessage(e.target.value)} rows={4} /></div>
+            </div>
+            <DialogFooter><Button variant="outline" onClick={() => setSaveDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveTemplate}>{t('save', language)}</Button></DialogFooter>
+          </DialogContent></Dialog>
+        </div>
+      )}
+
+      {mode === 'individual' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card><CardHeader className="pb-3"><CardTitle className="text-base">{language === 'fr' ? 'Envoyer un message' : 'Send Message'}</CardTitle></CardHeader><CardContent className="space-y-4">
+            <div className="space-y-2"><Label>{t('students', language)}</Label><Select value={selectedStudent} onValueChange={v => setSelectedStudent(v)}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Choisir un étudiant' : 'Select student'} /></SelectTrigger><SelectContent>{students.filter(s => s.status === 'active').map(s => <SelectItem key={s.id} value={s.id}>{s.fullName} — {s.guardianPhone || s.phone || language === 'fr' ? 'pas de tél' : 'no phone'}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Message' : 'Message'}</Label><Textarea value={message} onChange={e => setMessage(e.target.value)} rows={5} placeholder={language === 'fr' ? 'Écrire votre message...' : 'Write your message...'} /></div>
+            <div className="flex gap-2">
+              <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSendIndividual} disabled={!selectedStudent || !message}><Send className="h-4 w-4 mr-1" />WhatsApp</Button>
+              <Button variant="outline" onClick={() => setSaveDialogOpen(true)}><Save className="h-4 w-4 mr-1" />{language === 'fr' ? 'Sauvegarder' : 'Save'}</Button>
+            </div>
+          </CardContent></Card>
+          <Card><CardHeader className="pb-3"><CardTitle className="text-base">{language === 'fr' ? 'Actions rapides' : 'Quick Actions'}</CardTitle></CardHeader><CardContent className="space-y-2">
+            {absentToday.length > 0 && <div className="rounded-lg border p-3"><p className="text-xs font-semibold text-red-600 mb-2">🚫 {language === 'fr' ? `Absents aujourd'hui (${absentToday.length})` : `Absent today (${absentToday.length})`}</p><div className="space-y-1 max-h-32 overflow-y-auto">{absentToday.slice(0, 5).map(s => (<button key={s.id} onClick={() => { setSelectedStudent(s.id); setMessage(absenceTemplate(s)); }} className="w-full text-left text-xs p-1.5 rounded hover:bg-muted flex justify-between"><span className="font-medium">{s.fullName}</span><span className="text-muted-foreground">{s.guardianPhone || '-'}</span></button>))}</div></div>}
+            {lateToday.length > 0 && <div className="rounded-lg border p-3"><p className="text-xs font-semibold text-amber-600 mb-2">⏰ {language === 'fr' ? `Retards aujourd'hui (${lateToday.length})` : `Late today (${lateToday.length})`}</p><div className="space-y-1 max-h-32 overflow-y-auto">{lateToday.slice(0, 5).map(s => (<button key={s.id} onClick={() => { setSelectedStudent(s.id); setMessage(lateTemplate(s)); }} className="w-full text-left text-xs p-1.5 rounded hover:bg-muted flex justify-between"><span className="font-medium">{s.fullName}</span><span className="text-muted-foreground">{s.guardianPhone || '-'}</span></button>))}</div></div>}
+          </CardContent></Card>
+        </div>
+      )}
+
+      {mode === 'bulk' && (
+        <Card><CardHeader className="pb-3"><CardTitle className="text-base">{language === 'fr' ? 'Envoi groupé' : 'Bulk Messaging'}</CardTitle></CardHeader><CardContent className="space-y-4">
+          <div className="space-y-2"><Label>{t('class_name', language)}</Label><Select value={classFilter} onValueChange={v => setClassFilter(v)}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Toutes les classes' : 'All Classes'} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Tous les étudiants' : 'All Students'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({students.filter(s => s.classId === c.id && s.status === 'active').length})</SelectItem>)}</SelectContent></Select></div>
+          <p className="text-sm text-muted-foreground">{language === 'fr' ? 'Destinataires' : 'Recipients'}: <strong>{filteredStudents.length}</strong></p>
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Message' : 'Message'}</Label><Textarea value={message} onChange={e => setMessage(e.target.value)} rows={5} placeholder={language === 'fr' ? 'Écrire le message groupé...' : 'Write bulk message...'} /></div>
+          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSendBulk} disabled={!message}><Send className="h-4 w-4 mr-1" />{language === 'fr' ? 'Envoyer à tous' : 'Send to All'}</Button>
+        </CardContent></Card>
+      )}
+    </div>
+  );
+}
+
+// ==================== REPORTS PAGE ====================
+function ReportsPage() {
+  const { students, classes, attendance, grades, behavior, language } = useAppStore();
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [reportType, setReportType] = useState('attendance');
+
+  const filteredAttendance = useMemo(() => {
+    let a = [...attendance];
+    if (dateFrom) a = a.filter(r => r.date >= dateFrom);
+    if (dateTo) a = a.filter(r => r.date <= dateTo);
+    return a;
+  }, [attendance, dateFrom, dateTo]);
+
+  const attendanceStats = useMemo(() => {
+    const present = filteredAttendance.filter(r => r.status === 'present').length;
+    const absent = filteredAttendance.filter(r => r.status === 'absent').length;
+    const late = filteredAttendance.filter(r => r.status === 'late').length;
+    const excused = filteredAttendance.filter(r => r.status === 'excused').length;
+    const total = filteredAttendance.length;
+    const rate = total > 0 ? Math.round((present / total) * 100) : 0;
+    return { present, absent, late, excused, total, rate };
+  }, [filteredAttendance]);
+
+  const attendancePieData = useMemo(() => [
+    { name: t('present', language), value: attendanceStats.present, fill: '#10b981' },
+    { name: t('absent', language), value: attendanceStats.absent, fill: '#ef4444' },
+    { name: t('late', language), value: attendanceStats.late, fill: '#f59e0b' },
+    { name: t('excused', language), value: attendanceStats.excused, fill: '#3b82f6' },
+  ].filter(d => d.value > 0), [attendanceStats, language]);
+
+  const classAttendance = useMemo(() => {
+    return classes.map(c => {
+      const classStudents = new Set(students.filter(s => s.classId === c.id).map(s => s.id));
+      const classAtt = filteredAttendance.filter(a => classStudents.has(a.studentId));
+      const present = classAtt.filter(a => a.status === 'present').length;
+      const rate = classAtt.length > 0 ? Math.round((present / classAtt.length) * 100) : 0;
+      return { name: c.name, rate, total: classAtt.length };
+    });
+  }, [classes, students, filteredAttendance]);
+
+  const gradeDistribution = useMemo(() => {
+    const buckets = ['0-39', '40-59', '60-69', '70-79', '80-89', '90-100'];
+    const counts = [0, 0, 0, 0, 0, 0];
+    grades.forEach(g => {
+      const p = g.percentage || 0;
+      if (p < 40) counts[0]++; else if (p < 60) counts[1]++; else if (p < 70) counts[2]++; else if (p < 80) counts[3]++; else if (p < 90) counts[4]++; else counts[5]++;
+    });
+    return buckets.map((b, i) => ({ range: b, count: counts[i] }));
+  }, [grades]);
+
+  const behaviorSummary = useMemo(() => {
+    const pos = behavior.filter(b => b.type === 'positive').length;
+    const neg = behavior.filter(b => b.type === 'negative').length;
+    const totalPoints = behavior.reduce((s, b) => s + (b.points || 0), 0);
+    return { positive: pos, negative: neg, totalPoints };
+  }, [behavior]);
+
+  const handleExportReport = () => {
+    if (reportType === 'attendance') exportUtils.exportAttendanceCSV(filteredAttendance, students, classes);
+    else if (reportType === 'grades') exportUtils.exportGradesCSV(grades, students, []);
+    else if (reportType === 'behavior') exportUtils.exportBehaviorCSV(behavior, students);
+    toast.success(language === 'fr' ? 'Rapport exporté' : 'Report exported');
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div className="flex flex-wrap gap-2">
+          <Select value={reportType} onValueChange={setReportType}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="attendance">{t('attendance', language)}</SelectItem><SelectItem value="grades">{t('grades', language)}</SelectItem><SelectItem value="behavior">{t('behavior', language)}</SelectItem></SelectContent></Select>
+          <div className="flex items-center gap-2"><Label className="text-xs whitespace-nowrap">{t('date_range', language)}:</Label><Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36" /><span className="text-xs">→</span><Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36" /></div>
+        </div>
+        <Button variant="outline" onClick={handleExportReport}><FileDown className="h-4 w-4 mr-1" />{t('export_csv', language)}</Button>
+      </div>
+
+      {reportType === 'attendance' && (<>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {[{ label: t('present_today', language), val: attendanceStats.present, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20' }, { label: t('absent', language), val: attendanceStats.absent, color: 'bg-red-100 text-red-700 dark:bg-red-900/20' }, { label: t('late', language), val: attendanceStats.late, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/20' }, { label: t('excused', language), val: attendanceStats.excused, color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/20' }, { label: t('attendance_rate', language), val: `${attendanceStats.rate}%`, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/20' }].map((s, i) => (
+            <div key={i} className={`rounded-lg p-3 text-center ${s.color}`}><p className="text-xl font-bold">{s.val}</p><p className="text-xs opacity-70">{s.label}</p></div>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Présence par classe' : 'Attendance by Class'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={250}><BarChart data={classAttendance}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} domain={[0, 100]} /><ReTooltip /><Bar dataKey="rate" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Répartition des statuts' : 'Status Distribution'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={250}><PieChart><Pie data={attendancePieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value"><Cell fill="#10b981" /><Cell fill="#ef4444" /><Cell fill="#f59e0b" /><Cell fill="#3b82f6" /></Pie><ReTooltip /><Legend /></PieChart></ResponsiveContainer></CardContent></Card>
+        </div>
+      </>)}
+
+      {reportType === 'grades' && (<>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Distribution des notes' : 'Grade Distribution'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={250}><BarChart data={gradeDistribution}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="range" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} /><ReTooltip /><Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Résumé' : 'Summary'}</CardTitle></CardHeader><CardContent className="space-y-3"><div className="flex justify-between text-sm"><span className="text-muted-foreground">{language === 'fr' ? 'Total des notes' : 'Total Grades'}</span><span className="font-bold">{grades.length}</span></div><div className="flex justify-between text-sm"><span className="text-muted-foreground">{language === 'fr' ? 'Moyenne' : 'Average'}</span><span className="font-bold">{grades.length > 0 ? Math.round(grades.reduce((s, g) => s + (g.percentage || 0), 0) / grades.length) : 0}%</span></div><div className="flex justify-between text-sm"><span className="text-muted-foreground">{language === 'fr' ? 'Au-dessus de 70%' : 'Above 70%'}</span><span className="font-bold text-emerald-600">{grades.filter(g => (g.percentage || 0) >= 70).length}</span></div><div className="flex justify-between text-sm"><span className="text-muted-foreground">{language === 'fr' ? 'En dessous de 50%' : 'Below 50%'}</span><span className="font-bold text-red-600">{grades.filter(g => (g.percentage || 0) < 50).length}</span></div></CardContent></Card>
+        </div>
+      </>)}
+
+      {reportType === 'behavior' && (<>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-lg p-4 text-center bg-emerald-100 dark:bg-emerald-900/20"><p className="text-3xl font-bold text-emerald-700">{behaviorSummary.positive}</p><p className="text-xs text-emerald-600">{t('positive', language)}</p></div>
+          <div className="rounded-lg p-4 text-center bg-red-100 dark:bg-red-900/20"><p className="text-3xl font-bold text-red-700">{behaviorSummary.negative}</p><p className="text-xs text-red-600">{t('negative', language)}</p></div>
+          <div className={`rounded-lg p-4 text-center ${behaviorSummary.totalPoints >= 0 ? 'bg-emerald-100 dark:bg-emerald-900/20' : 'bg-red-100 dark:bg-red-900/20'}`}><p className={`text-3xl font-bold ${behaviorSummary.totalPoints >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{behaviorSummary.totalPoints > 0 ? '+' : ''}{behaviorSummary.totalPoints}</p><p className="text-xs">{language === 'fr' ? 'Total Points' : 'Total Points'}</p></div>
+        </div>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Comportement' : 'Behavior'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={200}><PieChart><Pie data={[{ name: t('positive', language), value: behaviorSummary.positive }, { name: t('negative', language), value: behaviorSummary.negative }]} cx="50%" cy="50%" outerRadius={80} dataKey="value" fill="#8884d8"><Cell fill="#10b981" /><Cell fill="#ef4444" /></Pie><ReTooltip /><Legend /></PieChart></ResponsiveContainer></CardContent></Card>
+      </>)}
+    </div>
+  );
+}
+
+// ==================== SETTINGS PAGE ====================
+function SettingsPage() {
+  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser } = useAppStore();
+  const [activeTab, setActiveTab] = useState('general');
+
+  // Teachers state
+  const [teacherDialog, setTeacherDialog] = useState(false);
+  const [editTeacher, setEditTeacher] = useState<Teacher | null>(null);
+  const [tForm, setTForm] = useState({ name: '', subject: '', email: '', phone: '', experience: '0', qualification: '' });
+
+  // Employees state
+  const [empDialog, setEmpDialog] = useState(false);
+  const [editEmp, setEditEmp] = useState<Employee | null>(null);
+  const [eForm, setEForm] = useState({ fullName: '', department: '', position: '', email: '', phone: '' });
+
+  // Academic Year state
+  const [ayDialog, setAyDialog] = useState(false);
+  const [editAy, setEditAy] = useState<AcademicYear | null>(null);
+  const [ayForm, setAyForm] = useState({ name: '', startDate: '', endDate: '', isCurrent: false });
+
+  // Password state
+  const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' });
+
+  // School info
+  const [sForm, setSForm] = useState({ name: schoolInfo?.name || '', address: schoolInfo?.address || '', phone: schoolInfo?.phone || '', email: schoolInfo?.email || '' });
+
+  // Language & timezone
+  const [lang, setLang] = useState<'en' | 'fr'>(language);
+  const [tz, setTz] = useState('Africa/Casablanca');
+
+  // Teacher handlers
+  const openAddTeacher = () => { setEditTeacher(null); setTForm({ name: '', subject: '', email: '', phone: '', experience: '0', qualification: '' }); setTeacherDialog(true); };
+  const openEditTeacher = (t: Teacher) => { setEditTeacher(t); setTForm({ name: t.name, subject: t.subject || '', email: t.email || '', phone: t.phone || '', experience: String(t.experience || 0), qualification: t.qualification || '' }); setTeacherDialog(true); };
+  const saveTeacher = () => {
+    if (!tForm.name) return;
+    if (editTeacher) { setTeachers(teachers.map(t => t.id === editTeacher.id ? { ...t, name: tForm.name, subject: tForm.subject, email: tForm.email, phone: tForm.phone, experience: Number(tForm.experience), qualification: tForm.qualification } : t)); toast.success('Updated'); }
+    else { setTeachers([...teachers, { id: genId(), name: tForm.name, subject: tForm.subject, email: tForm.email, phone: tForm.phone, experience: Number(tForm.experience), qualification: tForm.qualification, createdAt: new Date().toISOString() }]); toast.success('Added'); }
+    setTeacherDialog(false);
+  };
+  const deleteTeacher = (id: string) => { setTeachers(teachers.filter(t => t.id !== id)); toast.success('Deleted'); };
+
+  // Employee handlers
+  const openAddEmp = () => { setEditEmp(null); setEForm({ fullName: '', department: '', position: '', email: '', phone: '' }); setEmpDialog(true); };
+  const openEditEmp = (e: Employee) => { setEditEmp(e); setEForm({ fullName: e.fullName, department: e.department || '', position: e.position || '', email: e.email || '', phone: e.phone || '' }); setEmpDialog(true); };
+  const saveEmp = () => {
+    if (!eForm.fullName) return;
+    if (editEmp) { setEmployees(employees.map(e => e.id === editEmp.id ? { ...e, fullName: eForm.fullName, department: eForm.department, position: eForm.position, email: eForm.email, phone: eForm.phone } : e)); toast.success('Updated'); }
+    else { setEmployees([...employees, { id: genId(), fullName: eForm.fullName, department: eForm.department, position: eForm.position, email: eForm.email, phone: eForm.phone, createdAt: new Date().toISOString() }]); toast.success('Added'); }
+    setEmpDialog(false);
+  };
+  const deleteEmp = (id: string) => { setEmployees(employees.filter(e => e.id !== id)); toast.success('Deleted'); };
+
+  // Academic Year handlers
+  const openAddAy = () => { setEditAy(null); setAyForm({ name: '', startDate: '', endDate: '', isCurrent: false }); setAyDialog(true); };
+  const openEditAy = (ay: AcademicYear) => { setEditAy(ay); setAyForm({ name: ay.name, startDate: ay.startDate || '', endDate: ay.endDate || '', isCurrent: ay.isCurrent || false }); setAyDialog(true); };
+  const saveAy = () => {
+    if (!ayForm.name) return;
+    const updated = editAy ? academicYears.map(ay => ay.id === editAy.id ? { ...ay, name: ayForm.name, startDate: ayForm.startDate, endDate: ayForm.endDate, isCurrent: ayForm.isCurrent } : ay) : [...academicYears, { id: genId(), name: ayForm.name, startDate: ayForm.startDate, endDate: ayForm.endDate, isCurrent: ayForm.isCurrent, createdAt: new Date().toISOString() }];
+    if (ayForm.isCurrent) { updated.forEach(ay => { ay.isCurrent = ay.name === ayForm.name || (editAy && ay.id === editAy.id) ? ayForm.isCurrent : false; }); }
+    setAcademicYears(updated); toast.success(editAy ? 'Updated' : 'Added'); setAyDialog(false);
+  };
+  const deleteAy = (id: string) => { setAcademicYears(academicYears.filter(ay => ay.id !== id)); toast.success('Deleted'); };
+
+  // Data management
+  const handleExportAll = () => { exportUtils.exportAllCSV({ students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees }); toast.success(language === 'fr' ? 'Exporté!' : 'Exported!'); };
+  const handleClearAll = () => {
+    if (!confirm(t('clear_confirm', language))) return;
+    setStudents([]); setClasses([]); setModules([]); setAttendance([]); setGrades([]); setBehavior([]); setTasks([]); setIncidents([]); setTeachers([]); setEmployees([]); setTemplates([]); setAcademicYears([]);
+    ['attendance_students', 'attendance_classes', 'attendance_modules', 'attendance_records', 'attendance_grades', 'attendance_behavior', 'attendance_tasks', 'attendance_incidents', 'attendance_teachers', 'attendance_employees', 'attendance_templates', 'attendance_academic_years'].forEach(k => localStorage.removeItem(k));
+    toast.success(language === 'fr' ? 'Données supprimées' : 'Data cleared');
+  };
+
+  // Password
+  const handleChangePw = () => { if (pwForm.newPw !== pwForm.confirm) { toast.error(language === 'fr' ? 'Mots de passe différents' : 'Passwords do not match'); return; } toast.success(language === 'fr' ? 'Mot de passe changé' : 'Password changed'); setPwForm({ current: '', newPw: '', confirm: '' }); };
+
+  // Save school info
+  const saveSchoolInfo = () => { setSchoolInfo({ name: sForm.name, address: sForm.address, phone: sForm.phone, email: sForm.email }); toast.success(language === 'fr' ? 'Info sauvegardée' : 'School info saved'); };
+
+  const dataStats = [
+    { label: t('students', language), count: students.length },
+    { label: t('classes', language), count: classes.length },
+    { label: t('modules', language), count: modules.length },
+    { label: t('attendance', language), count: attendance.length },
+    { label: t('grades', language), count: grades.length },
+    { label: t('behavior', language), count: behavior.length },
+    { label: t('tasks', language), count: tasks.length },
+    { label: t('incidents', language), count: incidents.length },
+    { label: t('teachers_management', language), count: teachers.length },
+    { label: t('employees_management', language), count: employees.length },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="flex flex-wrap h-auto gap-1">
+          <TabsTrigger value="general">{t('general_settings', language)}</TabsTrigger>
+          <TabsTrigger value="teachers">{t('teachers_management', language)}</TabsTrigger>
+          <TabsTrigger value="employees">{t('employees_management', language)}</TabsTrigger>
+          <TabsTrigger value="academic">{t('academic_year_management', language)}</TabsTrigger>
+          <TabsTrigger value="data">{t('data_management', language)}</TabsTrigger>
+          <TabsTrigger value="admins">{t('admin_users', language)}</TabsTrigger>
+          <TabsTrigger value="password">{t('change_password', language)}</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="general" className="space-y-4">
+          <Card><CardHeader><CardTitle className="text-base">{t('school_info', language)}</CardTitle></CardHeader><CardContent className="grid gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Nom de l\'école' : 'School Name'}</Label><Input value={sForm.name} onChange={e => setSForm({ ...sForm, name: e.target.value })} /></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Téléphone' : 'Phone'}</Label><Input value={sForm.phone} onChange={e => setSForm({ ...sForm, phone: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Email</Label><Input value={sForm.email} onChange={e => setSForm({ ...sForm, email: e.target.value })} /></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Adresse' : 'Address'}</Label><Input value={sForm.address} onChange={e => setSForm({ ...sForm, address: e.target.value })} /></div>
+            </div>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={saveSchoolInfo}><Save className="h-4 w-4 mr-1" />{t('save_settings', language)}</Button>
+          </CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-base">{t('general_settings', language)}</CardTitle></CardHeader><CardContent className="grid gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>{t('default_language', language)}</Label><Select value={lang} onValueChange={v => { setLang(v as 'en' | 'fr'); useAppStore.setState({ language: v as 'en' | 'fr' }); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="fr">Français</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>{t('timezone', language)}</Label><Select value={tz} onValueChange={setTz}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Africa/Casablanca">Africa/Casablanca</SelectItem><SelectItem value="Europe/Paris">Europe/Paris</SelectItem><SelectItem value="UTC">UTC</SelectItem></SelectContent></Select></div>
+            </div>
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="teachers" className="space-y-4">
+          <div className="flex justify-between"><h3 className="font-semibold">{t('teachers_management', language)} ({teachers.length})</h3><Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={openAddTeacher}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button></div>
+          {teachers.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+            <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{t('name', language)}</TableHead><TableHead>{language === 'fr' ? 'Matière' : 'Subject'}</TableHead><TableHead>Email</TableHead><TableHead>{t('phone', language)}</TableHead><TableHead className="w-24">{t('actions', language)}</TableHead></TableRow></TableHeader><TableBody>
+              {teachers.map(t => <TableRow key={t.id}><TableCell className="font-medium">{t.name}</TableCell><TableCell>{t.subject || '-'}</TableCell><TableCell className="text-sm">{t.email || '-'}</TableCell><TableCell className="text-sm">{t.phone || '-'}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditTeacher(t)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => deleteTeacher(t.id)}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell></TableRow>)}
+            </TableBody></Table></div></CardContent></Card>
+          )}
+          <Dialog open={teacherDialog} onOpenChange={setTeacherDialog}><DialogContent><DialogHeader><DialogTitle>{editTeacher ? t('edit', language) : t('add', language)} {language === 'fr' ? 'Enseignant' : 'Teacher'}</DialogTitle></DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2"><Label>{t('name', language)} *</Label><Input value={tForm.name} onChange={e => setTForm({ ...tForm, name: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Matière' : 'Subject'}</Label><Input value={tForm.subject} onChange={e => setTForm({ ...tForm, subject: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Qualification' : 'Qualification'}</Label><Input value={tForm.qualification} onChange={e => setTForm({ ...tForm, qualification: e.target.value })} /></div></div>
+              <div className="grid grid-cols-3 gap-4"><div className="space-y-2"><Label>Email</Label><Input value={tForm.email} onChange={e => setTForm({ ...tForm, email: e.target.value })} /></div><div className="space-y-2"><Label>{t('phone', language)}</Label><Input value={tForm.phone} onChange={e => setTForm({ ...tForm, phone: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Expérience' : 'Experience'} (yrs)</Label><Input type="number" value={tForm.experience} onChange={e => setTForm({ ...tForm, experience: e.target.value })} /></div></div>
+            </div>
+            <DialogFooter><Button variant="outline" onClick={() => setTeacherDialog(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={saveTeacher}>{t('save', language)}</Button></DialogFooter>
+          </DialogContent></Dialog>
+        </TabsContent>
+
+        <TabsContent value="employees" className="space-y-4">
+          <div className="flex justify-between"><h3 className="font-semibold">{t('employees_management', language)} ({employees.length})</h3><Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={openAddEmp}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button></div>
+          {employees.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+            <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{t('name', language)}</TableHead><TableHead>{language === 'fr' ? 'Département' : 'Department'}</TableHead><TableHead>{language === 'fr' ? 'Poste' : 'Position'}</TableHead><TableHead>Email</TableHead><TableHead className="w-24">{t('actions', language)}</TableHead></TableRow></TableHeader><TableBody>
+              {employees.map(emp => <TableRow key={emp.id}><TableCell className="font-medium">{emp.fullName}</TableCell><TableCell>{emp.department || '-'}</TableCell><TableCell>{emp.position || '-'}</TableCell><TableCell className="text-sm">{emp.email || '-'}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditEmp(emp)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => deleteEmp(emp.id)}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell></TableRow>)}
+            </TableBody></Table></div></CardContent></Card>
+          )}
+          <Dialog open={empDialog} onOpenChange={setEmpDialog}><DialogContent><DialogHeader><DialogTitle>{editEmp ? t('edit', language) : t('add', language)} {language === 'fr' ? 'Employé' : 'Employee'}</DialogTitle></DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2"><Label>{t('name', language)} *</Label><Input value={eForm.fullName} onChange={e => setEForm({ ...eForm, fullName: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Département' : 'Department'}</Label><Input value={eForm.department} onChange={e => setEForm({ ...eForm, department: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Poste' : 'Position'}</Label><Input value={eForm.position} onChange={e => setEForm({ ...eForm, position: e.target.value })} /></div></div>
+              <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>Email</Label><Input value={eForm.email} onChange={e => setEForm({ ...eForm, email: e.target.value })} /></div><div className="space-y-2"><Label>{t('phone', language)}</Label><Input value={eForm.phone} onChange={e => setEForm({ ...eForm, phone: e.target.value })} /></div></div>
+            </div>
+            <DialogFooter><Button variant="outline" onClick={() => setEmpDialog(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={saveEmp}>{t('save', language)}</Button></DialogFooter>
+          </DialogContent></Dialog>
+        </TabsContent>
+
+        <TabsContent value="academic" className="space-y-4">
+          <div className="flex justify-between"><h3 className="font-semibold">{t('academic_year_management', language)} ({academicYears.length})</h3><Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={openAddAy}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button></div>
+          {academicYears.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+            <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{t('name', language)}</TableHead><TableHead>{language === 'fr' ? 'Début' : 'Start'}</TableHead><TableHead>{language === 'fr' ? 'Fin' : 'End'}</TableHead><TableHead>{language === 'fr' ? 'Actuelle' : 'Current'}</TableHead><TableHead className="w-24">{t('actions', language)}</TableHead></TableRow></TableHeader><TableBody>
+              {academicYears.map(ay => <TableRow key={ay.id}><TableCell className="font-medium">{ay.name}</TableCell><TableCell className="text-sm">{ay.startDate || '-'}</TableCell><TableCell className="text-sm">{ay.endDate || '-'}</TableCell><TableCell>{ay.isCurrent ? <Badge className="bg-emerald-100 text-emerald-800">✓</Badge> : '-'}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditAy(ay)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => deleteAy(ay.id)}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell></TableRow>)}
+            </TableBody></Table></div></CardContent></Card>
+          )}
+          <Dialog open={ayDialog} onOpenChange={setAyDialog}><DialogContent><DialogHeader><DialogTitle>{editAy ? t('edit', language) : t('add', language)} {t('academic_year', language)}</DialogTitle></DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2"><Label>{t('name', language)} *</Label><Input value={ayForm.name} onChange={e => setAyForm({ ...ayForm, name: e.target.value })} placeholder="2024-2025" /></div>
+              <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Date début' : 'Start Date'}</Label><Input type="date" value={ayForm.startDate} onChange={e => setAyForm({ ...ayForm, startDate: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Date fin' : 'End Date'}</Label><Input type="date" value={ayForm.endDate} onChange={e => setAyForm({ ...ayForm, endDate: e.target.value })} /></div></div>
+              <div className="flex items-center gap-2"><Checkbox checked={ayForm.isCurrent} onCheckedChange={v => setAyForm({ ...ayForm, isCurrent: v as boolean })} /><Label>{language === 'fr' ? 'Année en cours' : 'Current Year'}</Label></div>
+            </div>
+            <DialogFooter><Button variant="outline" onClick={() => setAyDialog(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={saveAy}>{t('save', language)}</Button></DialogFooter>
+          </DialogContent></Dialog>
+        </TabsContent>
+
+        <TabsContent value="data" className="space-y-4">
+          <Card><CardHeader><CardTitle className="text-base">{t('data_statistics', language)}</CardTitle></CardHeader><CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">{dataStats.map(s => (<div key={s.label} className="rounded-lg border p-3 text-center"><p className="text-xl font-bold">{s.count}</p><p className="text-xs text-muted-foreground">{s.label}</p></div>))}</div>
+          </CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-base">{t('data_management', language)}</CardTitle></CardHeader><CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-3">
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleExportAll}><Download className="h-4 w-4 mr-1" />{t('export_all_data', language)}</Button>
+              <Button variant="outline"><Upload className="h-4 w-4 mr-1" />{t('import_from_backup', language)}</Button>
+              <Button variant="destructive" onClick={handleClearAll}><Trash2 className="h-4 w-4 mr-1" />{t('clear_all_data', language)}</Button>
+            </div>
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="admins" className="space-y-4">
+          <Card><CardHeader><CardTitle className="text-base">{t('admin_users', language)}</CardTitle></CardHeader><CardContent>
+            {admins.length === 0 ? <p className="text-sm text-muted-foreground">{t('no_data', language)}</p> : (
+              <Table><TableHeader><TableRow><TableHead>{t('username', language)}</TableHead><TableHead>{t('role', language)}</TableHead><TableHead>{t('last_sync', language)}</TableHead></TableRow></TableHeader><TableBody>
+                {admins.map((a, i) => <TableRow key={i}><TableCell className="font-medium">{String(a.username || a.name || '-')}</TableCell><TableCell><Badge variant="secondary">{String(a.role || '-')}</Badge></TableCell><TableCell className="text-sm text-muted-foreground">{String(a.lastSync || '-')}</TableCell></TableRow>)}
+              </TableBody></Table>
+            )}
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="password" className="space-y-4">
+          <Card className="max-w-md"><CardHeader><CardTitle className="text-base">{t('change_password', language)}</CardTitle></CardHeader><CardContent className="space-y-4">
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Mot de passe actuel' : 'Current Password'}</Label><Input type="password" value={pwForm.current} onChange={e => setPwForm({ ...pwForm, current: e.target.value })} /></div>
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Nouveau mot de passe' : 'New Password'}</Label><Input type="password" value={pwForm.newPw} onChange={e => setPwForm({ ...pwForm, newPw: e.target.value })} /></div>
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Confirmer' : 'Confirm Password'}</Label><Input type="password" value={pwForm.confirm} onChange={e => setPwForm({ ...pwForm, confirm: e.target.value })} /></div>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleChangePw}><Lock className="h-4 w-4 mr-1" />{t('change_password', language)}</Button>
+          </CardContent></Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ==================== SUPER ADMIN PAGE ====================
+function SuperAdminPage() {
+  const { language, admins } = useAppStore();
+  const [tab, setTab] = useState('tenants');
+
+  const mockTenants = [
+    { id: '1', name: 'INFOHAS Academy', slug: 'infohas-academy', students: 245, teachers: 18, status: 'active' },
+    { id: '2', name: 'Ecole Primaire Al Khawarizmi', slug: 'al-khawarizmi', students: 120, teachers: 10, status: 'active' },
+    { id: '3', name: 'Lycée Ibn Sina', slug: 'ibn-sina', students: 380, teachers: 25, status: 'active' },
+  ];
+
+  const mockAuditLogs = [
+    { id: '1', action: 'LOGIN', user: 'admin@infohas.ma', timestamp: new Date().toISOString(), ip: '192.168.1.1', details: 'Successful login' },
+    { id: '2', action: 'CREATE_STUDENT', user: 'teacher@infohas.ma', timestamp: new Date(Date.now() - 3600000).toISOString(), ip: '192.168.1.2', details: 'Created student: Ahmed B.' },
+    { id: '3', action: 'EXPORT_DATA', user: 'admin@infohas.ma', timestamp: new Date(Date.now() - 7200000).toISOString(), ip: '192.168.1.1', details: 'Exported all data' },
+    { id: '4', action: 'DELETE_INCIDENT', user: 'admin@al-khawarizmi.ma', timestamp: new Date(Date.now() - 86400000).toISOString(), ip: '10.0.0.5', details: 'Deleted incident #15' },
+  ];
+
+  const systemHealth = [
+    { label: 'API Status', value: 'Operational', color: 'text-emerald-600', icon: <CheckCircle2 className="h-4 w-4" /> },
+    { label: 'Database', value: 'Connected', color: 'text-emerald-600', icon: <Database className="h-4 w-4" /> },
+    { label: 'Uptime', value: '99.9%', color: 'text-emerald-600', icon: <Activity className="h-4 w-4" /> },
+    { label: 'Total Requests', value: '12,458', color: 'text-blue-600', icon: <Globe className="h-4 w-4" /> },
+    { label: 'Storage', value: '2.4 GB / 10 GB', color: 'text-amber-600', icon: <Database className="h-4 w-4" /> },
+    { label: 'Active Users', value: String(mockTenants.reduce((s, t) => s + t.students, 0)), color: 'text-purple-600', icon: <Users className="h-4 w-4" /> },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList><TabsTrigger value="tenants"><Building2 className="h-4 w-4 mr-1" />{language === 'fr' ? 'Écoles' : 'Tenants'}</TabsTrigger><TabsTrigger value="users"><Users className="h-4 w-4 mr-1" />{language === 'fr' ? 'Utilisateurs' : 'Users'}</TabsTrigger><TabsTrigger value="audit"><Activity className="h-4 w-4 mr-1" />{language === 'fr' ? 'Journal d\'audit' : 'Audit Log'}</TabsTrigger><TabsTrigger value="health"><Zap className="h-4 w-4 mr-1" />{language === 'fr' ? 'Santé système' : 'System Health'}</TabsTrigger></TabsList>
+
+        <TabsContent value="tenants" className="space-y-4">
+          <div className="flex justify-between items-center"><h3 className="font-semibold">{language === 'fr' ? 'Écoles gérées' : 'Managed Schools'} ({mockTenants.length})</h3><Button size="sm" className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter école' : 'Add School'}</Button></div>
+          <div className="grid gap-3">{mockTenants.map(t => (
+            <Card key={t.id}><CardContent className="p-4"><div className="flex items-start justify-between"><div><h4 className="font-semibold">{t.name}</h4><p className="text-sm text-muted-foreground">/{t.slug}</p><div className="flex gap-4 mt-2 text-sm"><span>👥 {t.students} {language === 'fr' ? 'étudiants' : 'students'}</span><span>👨‍🏫 {t.teachers} {language === 'fr' ? 'enseignants' : 'teachers'}</span></div></div><Badge className={t.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100'}>{t.status}</Badge></div></CardContent></Card>
+          ))}</div>
+        </TabsContent>
+
+        <TabsContent value="users" className="space-y-4">
+          <h3 className="font-semibold">{language === 'fr' ? 'Tous les utilisateurs' : 'All Users'}</h3>
+          <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{t('name', language)}</TableHead><TableHead>Email</TableHead><TableHead>{t('role', language)}</TableHead><TableHead>{language === 'fr' ? 'École' : 'School'}</TableHead></TableRow></TableHeader><TableBody>
+            {admins.map((a, i) => <TableRow key={i}><TableCell className="font-medium">{String(a.fullName || a.name || a.username || '-')}</TableCell><TableCell className="text-sm">{String(a.email || '-')}</TableCell><TableCell><Badge variant="secondary">{String(a.role || '-')}</Badge></TableCell><TableCell className="text-sm text-muted-foreground">{String(a.tenantId || '-')}</TableCell></TableRow>)}
+          </TableBody></Table></div></CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="audit" className="space-y-4">
+          <h3 className="font-semibold">{language === 'fr' ? 'Journal d\'audit' : 'Audit Log'}</h3>
+          <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{language === 'fr' ? 'Action' : 'Action'}</TableHead><TableHead>{language === 'fr' ? 'Utilisateur' : 'User'}</TableHead><TableHead>{language === 'fr' ? 'Détails' : 'Details'}</TableHead><TableHead>IP</TableHead><TableHead>{language === 'fr' ? 'Date' : 'Date'}</TableHead></TableRow></TableHeader><TableBody>
+            {mockAuditLogs.map(l => <TableRow key={l.id}><TableCell><Badge variant="outline">{l.action}</Badge></TableCell><TableCell className="font-medium">{l.user}</TableCell><TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{l.details}</TableCell><TableCell className="text-sm text-muted-foreground">{l.ip}</TableCell><TableCell className="text-sm text-muted-foreground">{new Date(l.timestamp).toLocaleString()}</TableCell></TableRow>)}
+          </TableBody></Table></div></CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="health" className="space-y-4">
+          <h3 className="font-semibold">{language === 'fr' ? 'Santé du système' : 'System Health'}</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{systemHealth.map(s => (
+            <Card key={s.label}><CardContent className="p-4 flex items-center gap-3"><div className={`${s.color}`}>{s.icon}</div><div><p className="text-sm text-muted-foreground">{s.label}</p><p className={`font-semibold ${s.color}`}>{s.value}</p></div></CardContent></Card>
+          ))}</div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ==================== MAIN APP COMPONENT ====================
+export default function App() {
+  const { isAuthenticated, currentUser, currentPage, loadAllData, language } = useAppStore();
+  const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [profileStudent, setProfileStudent] = useState<Student | null>(null);
+
+  // Load auth state and data on mount
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const saved = localStorage.getItem('attendance_auth');
+        if (saved) {
+          const data = JSON.parse(saved);
+          if (data.token) {
+            setApiToken(data.token);
+            // Set user from saved data
+            useAppStore.setState({
+              currentUser: {
+                id: data.userId || '',
+                username: '',
+                fullName: '',
+                role: data.userRole || 'admin',
+                tenantId: data.tenantId,
+                is_super_admin: data.isSuperAdmin || false,
+              },
+              isAuthenticated: true,
+            });
+          }
+        }
+        await loadAllData();
+      } catch (e) {
+        console.warn('Init error:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
+
+  // Listen for profile view events from store
+  useEffect(() => {
+    const unsub = useAppStore.subscribe((state, prev) => {
+      if ((state as Record<string, unknown>).profileViewStudent && !(prev as Record<string, unknown>).profileViewStudent) {
+        setProfileStudent((state as Record<string, unknown>).profileViewStudent as Student);
+      }
+    });
+    return unsub;
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-4">
+          <div className="mx-auto w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center animate-pulse"><GraduationCap className="h-7 w-7 text-white" /></div>
+          <p className="text-muted-foreground">{t('loading', language)}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginScreen />;
+  }
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'dashboard': return <DashboardPage />;
+      case 'students': return <StudentsPage />;
+      case 'classes': return <ClassesPage />;
+      case 'modules': return <ModulesPage />;
+      case 'attendance': return <AttendancePage />;
+      case 'calendar': return <CalendarPage />;
+      case 'grades': return <GradesPage />;
+      case 'behavior': return <BehaviorPage />;
+      case 'tasks': return <TasksPage />;
+      case 'incidents': return <IncidentsPage />;
+      case 'messaging': return <MessagingPage />;
+      case 'reports': return <ReportsPage />;
+      case 'settings': return <SettingsPage />;
+      case 'superadmin': return currentUser?.role === 'super_admin' ? <SuperAdminPage /> : <DashboardPage />;
+      default: return <DashboardPage />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex bg-background">
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="flex-1 flex flex-col min-h-screen lg:ml-0">
+        <Header onMenuClick={() => setSidebarOpen(true)} onExportClick={() => setExportOpen(true)} />
+        <main className="flex-1 p-4 md:p-6">
+          {renderPage()}
+        </main>
+      </div>
+      <ExportDataDialog open={exportOpen} onOpenChange={setExportOpen} />
+      <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+      {profileStudent && <Student360Profile student={profileStudent} onClose={() => { setProfileStudent(null); useAppStore.setState({ profileViewStudent: null }); }} />}
     </div>
   );
 }
