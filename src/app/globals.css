@@ -154,3 +154,99 @@
 .border-primary-custom {
   border-color: var(--app-primary-color) !important;
 }
+
+/* Dynamic primary color system - overrides emerald Tailwind classes */
+:root {
+  --app-primary-hover: color-mix(in srgb, var(--app-primary-color) 80%, black);
+  --app-primary-light: color-mix(in srgb, var(--app-primary-color) 15%, white);
+  --app-primary-lighter: color-mix(in srgb, var(--app-primary-color) 8%, white);
+  --app-primary-dark-light: color-mix(in srgb, var(--app-primary-color) 25%, white);
+  --app-primary-dark-text: color-mix(in srgb, var(--app-primary-color) 75%, black);
+}
+
+/* Main button backgrounds */
+.bg-emerald-600 {
+  background-color: var(--app-primary-color) !important;
+}
+.hover\:bg-emerald-700:hover {
+  background-color: var(--app-primary-hover) !important;
+}
+.hover\:bg-emerald-600:hover {
+  background-color: var(--app-primary-hover) !important;
+}
+.bg-emerald-500 {
+  background-color: var(--app-primary-color) !important;
+}
+
+/* Light backgrounds */
+.bg-emerald-50 {
+  background-color: var(--app-primary-lighter) !important;
+}
+.bg-emerald-100 {
+  background-color: var(--app-primary-light) !important;
+}
+.bg-emerald-200 {
+  background-color: var(--app-primary-dark-light) !important;
+}
+
+/* Text colors */
+.text-emerald-600,
+.text-emerald-700,
+.text-emerald-800 {
+  color: var(--app-primary-dark-text) !important;
+}
+.text-emerald-500 {
+  color: var(--app-primary-color) !important;
+}
+.text-emerald-300 {
+  color: color-mix(in srgb, var(--app-primary-color) 50%, white) !important;
+}
+
+/* Dark mode */
+.dark .bg-emerald-900\/30 {
+  background-color: color-mix(in srgb, var(--app-primary-color) 15%, transparent) !important;
+}
+.dark .bg-emerald-50 {
+  background-color: color-mix(in srgb, var(--app-primary-color) 8%, transparent) !important;
+}
+.dark .bg-emerald-100 {
+  background-color: color-mix(in srgb, var(--app-primary-color) 12%, transparent) !important;
+}
+.dark\:bg-emerald-900\/30 {
+  background-color: color-mix(in srgb, var(--app-primary-color) 15%, transparent) !important;
+}
+.dark\:text-emerald-400 {
+  color: var(--app-primary-color) !important;
+}
+.dark\:bg-emerald-50 {
+  background-color: color-mix(in srgb, var(--app-primary-color) 8%, transparent) !important;
+}
+
+/* Borders */
+.border-emerald-300 {
+  border-color: var(--app-primary-color) !important;
+}
+.border-emerald-200 {
+  border-color: color-mix(in srgb, var(--app-primary-color) 30%, white) !important;
+}
+
+/* Login page gradient override */
+.login-gradient {
+  background: linear-gradient(135deg, var(--app-primary-lighter) 0%, var(--app-primary-light) 100%);
+}
+.dark .login-gradient {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--app-primary-color) 5%, #111) 0%, color-mix(in srgb, var(--app-primary-color) 10%, #1a1a2e) 100%);
+}
+
+/* Logo container autofit */
+.logo-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.logo-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 4px;
+}

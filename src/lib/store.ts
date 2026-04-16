@@ -69,6 +69,92 @@ function loadLocalObj<T>(key: string, fallback: T): T {
   } catch { return fallback; }
 }
 
+// ========== API Sync System ==========
+let _loadingFromApi = false;
+let _syncTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleApiSync() {
+  if (_loadingFromApi) return;
+  const token = getApiToken();
+  if (!token) return;
+  if (_syncTimer) clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(syncAllToApi, 3000); // 3 second debounce
+}
+
+async function syncAllToApi() {
+  const state = useAppStore.getState();
+  const token = getApiToken();
+  if (!token || _loadingFromApi) return;
+
+  try {
+    // Try bulk sync endpoint first (most efficient)
+    await api.post('/sync', {
+      schoolInfo: state.schoolInfo,
+      primaryColor: state.primaryColor,
+      language: state.language,
+      data: {
+        students: state.students,
+        classes: state.classes,
+        modules: state.modules,
+        attendance: state.attendance,
+        grades: state.grades,
+        behavior: state.behavior,
+        tasks: state.tasks,
+        incidents: state.incidents,
+        teachers: state.teachers,
+        employees: state.employees,
+        schedules: state.schedules,
+        academicYears: state.academicYears,
+      }
+    });
+    console.log('[API] Data synced to cloud successfully');
+  } catch (bulkErr) {
+    // Fallback: try individual entity endpoints
+    console.warn('[API] Bulk sync failed, trying individual endpoints:', bulkErr);
+    const entities: Array<{ endpoint: string; data: unknown[] }> = [
+      { endpoint: 'students', data: state.students },
+      { endpoint: 'classes', data: state.classes },
+      { endpoint: 'modules', data: state.modules },
+      { endpoint: 'attendance', data: state.attendance },
+      { endpoint: 'grades', data: state.grades },
+      { endpoint: 'behavior', data: state.behavior },
+      { endpoint: 'tasks', data: state.tasks },
+      { endpoint: 'incidents', data: state.incidents },
+      { endpoint: 'teachers', data: state.teachers },
+      { endpoint: 'employees', data: state.employees },
+      { endpoint: 'schedules', data: state.schedules },
+      { endpoint: 'academic-years', data: state.academicYears },
+    ];
+
+    // Sync school settings separately
+    if (state.schoolInfo && Object.keys(state.schoolInfo).length > 0) {
+      api.put('/settings/school', state.schoolInfo).catch(() => {});
+    }
+
+    // Try individual entity sync
+    for (const entity of entities) {
+      if (entity.data.length === 0) continue;
+      try {
+        await api.post(`/${entity.endpoint}`, entity.data);
+      } catch {
+        // Try upsert-style endpoint
+        try {
+          await api.put(`/${entity.endpoint}`, entity.data);
+        } catch {
+          // Last resort: sync individual items
+          for (const item of entity.data.slice(0, 5)) { // Limit to 5 to avoid flooding
+            const record = item as Record<string, unknown>;
+            if (record.id) {
+              api.put(`/${entity.endpoint}/${record.id}`, record).catch(() => {});
+            }
+          }
+        }
+      }
+    }
+    console.log('[API] Individual entity sync attempted');
+  }
+}
+
 export const useAppStore = create<AppState>((set) => ({
   currentUser: null,
   isAuthenticated: false,
@@ -131,24 +217,25 @@ export const useAppStore = create<AppState>((set) => ({
     localStorage.removeItem('attendance_auth');
   },
 
-  setStudents: (s) => { set({ students: s }); localStorage.setItem('attendance_students', JSON.stringify(s)); },
-  setClasses: (c) => { set({ classes: c }); localStorage.setItem('attendance_classes', JSON.stringify(c)); },
-  setModules: (m) => { set({ modules: m }); localStorage.setItem('attendance_modules', JSON.stringify(m)); },
-  setAttendance: (a) => { set({ attendance: a }); localStorage.setItem('attendance_records', JSON.stringify(a)); },
-  setGrades: (g) => { set({ grades: g }); localStorage.setItem('attendance_grades', JSON.stringify(g)); },
-  setBehavior: (b) => { set({ behavior: b }); localStorage.setItem('attendance_behavior', JSON.stringify(b)); },
-  setTasks: (t) => { set({ tasks: t }); localStorage.setItem('attendance_tasks', JSON.stringify(t)); },
-  setIncidents: (i) => { set({ incidents: i }); localStorage.setItem('attendance_incidents', JSON.stringify(i)); },
-  setTeachers: (t) => { set({ teachers: t }); localStorage.setItem('attendance_teachers', JSON.stringify(t)); },
-  setEmployees: (e) => { set({ employees: e }); localStorage.setItem('attendance_employees', JSON.stringify(e)); },
-  setTemplates: (t) => { set({ templates: t }); localStorage.setItem('attendance_templates', JSON.stringify(t)); },
-  setAcademicYears: (y) => { set({ academicYears: y }); localStorage.setItem('attendance_academic_years', JSON.stringify(y)); },
-  setSchoolInfo: (i) => { set({ schoolInfo: i }); localStorage.setItem('attendance_school_info', JSON.stringify(i)); },
+  setStudents: (s) => { set({ students: s }); localStorage.setItem('attendance_students', JSON.stringify(s)); scheduleApiSync(); },
+  setClasses: (c) => { set({ classes: c }); localStorage.setItem('attendance_classes', JSON.stringify(c)); scheduleApiSync(); },
+  setModules: (m) => { set({ modules: m }); localStorage.setItem('attendance_modules', JSON.stringify(m)); scheduleApiSync(); },
+  setAttendance: (a) => { set({ attendance: a }); localStorage.setItem('attendance_records', JSON.stringify(a)); scheduleApiSync(); },
+  setGrades: (g) => { set({ grades: g }); localStorage.setItem('attendance_grades', JSON.stringify(g)); scheduleApiSync(); },
+  setBehavior: (b) => { set({ behavior: b }); localStorage.setItem('attendance_behavior', JSON.stringify(b)); scheduleApiSync(); },
+  setTasks: (t) => { set({ tasks: t }); localStorage.setItem('attendance_tasks', JSON.stringify(t)); scheduleApiSync(); },
+  setIncidents: (i) => { set({ incidents: i }); localStorage.setItem('attendance_incidents', JSON.stringify(i)); scheduleApiSync(); },
+  setTeachers: (t) => { set({ teachers: t }); localStorage.setItem('attendance_teachers', JSON.stringify(t)); scheduleApiSync(); },
+  setEmployees: (e) => { set({ employees: e }); localStorage.setItem('attendance_employees', JSON.stringify(e)); scheduleApiSync(); },
+  setTemplates: (t) => { set({ templates: t }); localStorage.setItem('attendance_templates', JSON.stringify(t)); scheduleApiSync(); },
+  setAcademicYears: (y) => { set({ academicYears: y }); localStorage.setItem('attendance_academic_years', JSON.stringify(y)); scheduleApiSync(); },
+  setSchoolInfo: (i) => { set({ schoolInfo: i }); localStorage.setItem('attendance_school_info', JSON.stringify(i)); scheduleApiSync(); },
   setNotifications: (n) => { set({ notifications: n }); },
-  setSchedules: (s) => { set({ schedules: s }); localStorage.setItem('attendance_schedules', JSON.stringify(s)); },
-  setPrimaryColor: (color) => { set({ primaryColor: color }); localStorage.setItem('attendance_primary_color', color); },
+  setSchedules: (s) => { set({ schedules: s }); localStorage.setItem('attendance_schedules', JSON.stringify(s)); scheduleApiSync(); },
+  setPrimaryColor: (color) => { set({ primaryColor: color }); localStorage.setItem('attendance_primary_color', color); document.documentElement.style.setProperty('--app-primary-color', color); scheduleApiSync(); },
 
   loadAllData: async () => {
+    // Load local cache first for instant UI
     set({
       students: loadLocal('attendance_students'),
       classes: loadLocal('attendance_classes'),
@@ -168,10 +255,39 @@ export const useAppStore = create<AppState>((set) => ({
       schedules: loadLocal('attendance_schedules'),
     });
 
+    // Apply primary color from cache
+    const cachedColor = localStorage.getItem('attendance_primary_color') || '#10b981';
+    document.documentElement.style.setProperty('--app-primary-color', cachedColor);
+
     const token = getApiToken();
     if (!token) return;
 
+    // Mark as loading from API to prevent sync-back
+    _loadingFromApi = true;
+
     try {
+      // Load school settings
+      try {
+        const settingsRes = await api.get('/settings/school');
+        if (settingsRes && !settingsRes.error) {
+          const si = settingsRes.data || settingsRes;
+          if (si && Object.keys(si).length > 0) {
+            set({ schoolInfo: si });
+            localStorage.setItem('attendance_school_info', JSON.stringify(si));
+          }
+        }
+      } catch {}
+
+      // Load theme settings
+      try {
+        const themeRes = await api.get('/settings/theme');
+        if (themeRes && themeRes.primaryColor) {
+          set({ primaryColor: themeRes.primaryColor });
+          localStorage.setItem('attendance_primary_color', themeRes.primaryColor);
+          document.documentElement.style.setProperty('--app-primary-color', themeRes.primaryColor);
+        }
+      } catch {}
+
       const studentsRes = await api.get('/students');
       if (studentsRes?.success && Array.isArray(studentsRes.data)) {
         const normalized = studentsRes.data.map((s: Record<string, unknown>) => ({
@@ -232,6 +348,18 @@ export const useAppStore = create<AppState>((set) => ({
         localStorage.setItem('attendance_modules', JSON.stringify(modulesRes.data));
       }
 
+      const gradesRes = await api.get('/grades');
+      if (gradesRes?.success && Array.isArray(gradesRes.data)) {
+        set({ grades: gradesRes.data });
+        localStorage.setItem('attendance_grades', JSON.stringify(gradesRes.data));
+      }
+
+      const behaviorRes = await api.get('/behavior');
+      if (behaviorRes?.success && Array.isArray(behaviorRes.data)) {
+        set({ behavior: behaviorRes.data });
+        localStorage.setItem('attendance_behavior', JSON.stringify(behaviorRes.data));
+      }
+
       const tasksRes = await api.get('/tasks');
       if (tasksRes?.success && Array.isArray(tasksRes.data)) {
         const normalized = tasksRes.data.map((t: Record<string, unknown>) => ({
@@ -276,12 +404,53 @@ export const useAppStore = create<AppState>((set) => ({
         localStorage.setItem('attendance_incidents', JSON.stringify(normalized));
       }
 
+      // Load teachers
+      try {
+        const teachersRes = await api.get('/teachers');
+        if (teachersRes?.success && Array.isArray(teachersRes.data)) {
+          set({ teachers: teachersRes.data });
+          localStorage.setItem('attendance_teachers', JSON.stringify(teachersRes.data));
+        }
+      } catch {}
+
+      // Load employees
+      try {
+        const employeesRes = await api.get('/employees');
+        if (employeesRes?.success && Array.isArray(employeesRes.data)) {
+          set({ employees: employeesRes.data });
+          localStorage.setItem('attendance_employees', JSON.stringify(employeesRes.data));
+        }
+      } catch {}
+
+      // Load schedules
+      try {
+        const schedulesRes = await api.get('/schedules');
+        if (schedulesRes?.success && Array.isArray(schedulesRes.data)) {
+          set({ schedules: schedulesRes.data });
+          localStorage.setItem('attendance_schedules', JSON.stringify(schedulesRes.data));
+        }
+      } catch {}
+
+      // Load academic years
+      try {
+        const ayRes = await api.get('/academic-years');
+        if (ayRes?.success && Array.isArray(ayRes.data)) {
+          set({ academicYears: ayRes.data });
+          localStorage.setItem('attendance_academic_years', JSON.stringify(ayRes.data));
+        }
+      } catch {}
+
       const usersRes = await api.get('/users');
       if (usersRes?.success && Array.isArray(usersRes.data)) {
         localStorage.setItem('attendance_users', JSON.stringify(usersRes.data));
       }
+
+      console.log('[API] All data loaded from cloud successfully');
     } catch (e) {
-      console.warn('Failed to load from API, using local data:', e);
+      console.warn('[API] Failed to load from API, using local data:', e);
+    } finally {
+      // Re-enable API sync after loading is complete
+      _loadingFromApi = false;
     }
   },
 }));

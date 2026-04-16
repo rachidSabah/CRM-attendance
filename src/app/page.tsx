@@ -430,11 +430,11 @@ function LoginScreen() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-gray-900 dark:to-gray-800 p-4">
+    <div className="min-h-screen flex items-center justify-center login-gradient dark:from-gray-900 dark:to-gray-800 p-4">
       <Card className="w-full max-w-md shadow-2xl border-0">
         <CardHeader className="text-center space-y-3 pb-2">
-          <div className="mx-auto w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center overflow-hidden">
-            {schoolInfo?.logo ? <img src={schoolInfo.logo} alt="Logo" className="w-full h-full object-cover" /> : <GraduationCap className="h-9 w-9 text-white" />}
+          <div className="mx-auto w-16 h-16 bg-emerald-600 rounded-2xl logo-container overflow-hidden">
+            {schoolInfo?.logo ? <img src={schoolInfo.logo} alt="Logo" /> : <GraduationCap className="h-9 w-9 text-white" />}
           </div>
           <div>
             <CardTitle className="text-2xl font-bold">{schoolInfo?.name || 'INFOHAS'}</CardTitle>
@@ -469,8 +469,8 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       <aside className={`fixed top-0 left-0 z-50 h-full w-64 bg-card border-r border-border transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:z-auto ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex flex-col h-full">
           <div className="p-4 border-b border-border flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
-              {schoolInfo?.logo ? <img src={schoolInfo.logo} alt="" className="w-full h-full object-cover" /> : <GraduationCap className="h-6 w-6 text-white" />}
+            <div className="w-10 h-10 bg-emerald-600 rounded-xl logo-container shrink-0 overflow-hidden">
+              {schoolInfo?.logo ? <img src={schoolInfo.logo} alt="" /> : <GraduationCap className="h-6 w-6 text-white" />}
             </div>
             <div className="flex-1 min-w-0"><h2 className="font-bold text-sm truncate">{schoolInfo?.name || 'INFOHAS'}</h2><p className="text-xs text-muted-foreground truncate">{schoolInfo?.field || (language === 'fr' ? 'Système de Gestion Scolaire' : 'School Management System')}</p></div>
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={onClose}><X className="h-5 w-5" /></Button>
@@ -2297,12 +2297,34 @@ function SettingsPage() {
   const [cloudConfig, setCloudConfig] = useState(() => {
     try { return JSON.parse(localStorage.getItem('attendance_cloud_config') || '{}'); } catch { return {}; }
   });
-  const handleCloudSave = (service: string) => {
+  const [cloudUploading, setCloudUploading] = useState(false);
+
+  const handleCloudSave = async (service: string) => {
     localStorage.setItem('attendance_cloud_config', JSON.stringify(cloudConfig));
     const serviceNames: Record<string, string> = { google: 'Google Drive', onedrive: 'OneDrive', ftp: 'FTP' };
-    toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'configuration sauvegardée' : 'configuration saved'}`);
-    // Trigger a backup upload if auto-backup is enabled
-    if (autoBackupEnabled && service === 'google' && cloudConfig.googleDriveKey) {
+
+    // Upload backup to server via API
+    setCloudUploading(true);
+    try {
+      const backupData = {
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        service,
+        config: cloudConfig,
+        data: { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, templates: [], academicYears, schoolInfo }
+      };
+      await api.post('/backup/upload', backupData);
+      toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'connecté et sauvegardé!' : 'connected & backup saved!'}`);
+    } catch (err) {
+      console.warn('Cloud backup upload failed:', err);
+      // Still save config locally even if API upload fails
+      toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'configuration sauvegardée' : 'configuration saved'}`);
+      toast.error(language === 'fr' ? 'Échec de l\'envoi au serveur - config sauvegardée localement' : 'Server upload failed - config saved locally');
+    }
+    setCloudUploading(false);
+
+    // Also trigger a local manual backup download
+    if (autoBackupEnabled) {
       handleManualBackup(true);
     }
   };
@@ -2426,6 +2448,11 @@ function SettingsPage() {
     localStorage.setItem('attendance_last_backup', timestamp);
 
     if (!silent) toast.success(language === 'fr' ? 'Sauvegarde créée!' : 'Backup created!');
+
+    // Also upload to server in background
+    api.post('/backup/upload', backupData).then(() => {
+      console.log('[Backup] Uploaded to server');
+    }).catch(() => {});
   };
 
   // Restore backup
@@ -2530,8 +2557,8 @@ function SettingsPage() {
             <div className="space-y-2">
               <Label>{language === 'fr' ? 'Logo de l\'école' : 'School Logo'}</Label>
               <div className="flex items-center gap-4">
-                <div className="w-20 h-20 rounded-xl border-2 border-dashed border-muted-foreground/30 flex items-center justify-center overflow-hidden cursor-pointer bg-muted/50 hover:bg-muted transition-colors" onClick={() => document.getElementById('logo-upload-input')?.click()}>
-                  {sForm.logo ? <img src={sForm.logo} alt="Logo" className="w-full h-full object-cover" /> : <Upload className="h-6 w-6 text-muted-foreground" />}
+                <div className="w-20 h-20 rounded-xl border-2 border-dashed border-muted-foreground/30 logo-container overflow-hidden cursor-pointer bg-muted/50 hover:bg-muted transition-colors" onClick={() => document.getElementById('logo-upload-input')?.click()}>
+                  {sForm.logo ? <img src={sForm.logo} alt="Logo" /> : <Upload className="h-6 w-6 text-muted-foreground" />}
                 </div>
                 <div className="flex flex-col gap-2">
                   <Button variant="outline" size="sm" onClick={() => document.getElementById('logo-upload-input')?.click()}><Upload className="h-4 w-4 mr-1" />{language === 'fr' ? 'Télécharger' : 'Upload'}</Button>
@@ -2727,20 +2754,20 @@ function SettingsPage() {
                 <div className="rounded-lg border p-3 space-y-2">
                   <p className="text-xs font-medium flex items-center gap-1"><Cloud className="h-3.5 w-3.5" />Google Drive</p>
                   <Input placeholder="API Key" className="h-8 text-xs" value={cloudConfig.googleDriveKey || ''} onChange={e => setCloudConfig({ ...cloudConfig, googleDriveKey: e.target.value })} />
-                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => handleCloudSave('google')}>{cloudConfig.googleDriveKey ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConfig.googleDriveKey ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter' : 'Connect')}</Button>
+                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => handleCloudSave('google')} disabled={cloudUploading}>{cloudUploading ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : cloudConfig.googleDriveKey ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConfig.googleDriveKey ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter & Sauvegarder' : 'Connect & Backup')}</Button>
                 </div>
                 <div className="rounded-lg border p-3 space-y-2">
                   <p className="text-xs font-medium flex items-center gap-1"><Cloud className="h-3.5 w-3.5" />OneDrive</p>
                   <Input placeholder="Client ID" className="h-8 text-xs" value={cloudConfig.oneDriveClientId || ''} onChange={e => setCloudConfig({ ...cloudConfig, oneDriveClientId: e.target.value })} />
                   <Input placeholder="Client Secret" className="h-8 text-xs mt-1" type="password" value={cloudConfig.oneDriveClientSecret || ''} onChange={e => setCloudConfig({ ...cloudConfig, oneDriveClientSecret: e.target.value })} />
-                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => handleCloudSave('onedrive')}>{cloudConfig.oneDriveClientId ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConfig.oneDriveClientId ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter' : 'Connect')}</Button>
+                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => handleCloudSave('onedrive')} disabled={cloudUploading}>{cloudUploading ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : cloudConfig.oneDriveClientId ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConfig.oneDriveClientId ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter & Sauvegarder' : 'Connect & Backup')}</Button>
                 </div>
                 <div className="rounded-lg border p-3 space-y-2">
                   <p className="text-xs font-medium flex items-center gap-1"><HardDrive className="h-3.5 w-3.5" />FTP</p>
                   <Input placeholder={language === 'fr' ? 'Hôte (ex: ftp.example.com)' : 'Host (e.g. ftp.example.com)'} className="h-8 text-xs" value={cloudConfig.ftpHost || ''} onChange={e => setCloudConfig({ ...cloudConfig, ftpHost: e.target.value })} />
                   <Input placeholder={language === 'fr' ? 'Utilisateur' : 'Username'} className="h-8 text-xs" value={cloudConfig.ftpUser || ''} onChange={e => setCloudConfig({ ...cloudConfig, ftpUser: e.target.value })} />
                   <Input placeholder={language === 'fr' ? 'Mot de passe' : 'Password'} className="h-8 text-xs" type="password" value={cloudConfig.ftpPass || ''} onChange={e => setCloudConfig({ ...cloudConfig, ftpPass: e.target.value })} />
-                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => handleCloudSave('ftp')}>{cloudConfig.ftpHost ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConfig.ftpHost ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter' : 'Connect')}</Button>
+                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => handleCloudSave('ftp')} disabled={cloudUploading}>{cloudUploading ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : cloudConfig.ftpHost ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConfig.ftpHost ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter & Sauvegarder' : 'Connect & Backup')}</Button>
                 </div>
               </div>
             </div>
