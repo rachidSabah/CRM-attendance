@@ -69,4 +69,4 @@ worklog.md
 .zscripts/
 mini-services/
 download/
-prisma/
+prisma/.cf_token
