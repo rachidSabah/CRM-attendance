@@ -6,16 +6,15 @@ import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { setApiToken } from '@/lib/api';
 import { t } from '@/lib/i18n';
-import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, PageName } from '@/lib/types';
+import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, PageName, CalendarEvent } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
 
-// shadcn/ui imports
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -27,7 +26,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 
-// Lucide icons
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardCheck, Calendar,
   FileText, SmilePlus, ListTodo, AlertTriangle, MessageSquare, BarChart3,
@@ -36,24 +34,15 @@ import {
   UserPlus, CheckCircle2, XCircle, Clock, ShieldCheck, Upload,
   Save, Key, Languages, Building2, Phone, Mail, MapPin, Star,
   TrendingUp, TrendingDown, Minus, CircleDot, Send, FileDown,
-  Copy, Printer, Lock, ArrowLeft, Filter, MoreHorizontal, MessageCircle
+  Copy, Printer, Lock, ArrowLeft, Filter, MoreHorizontal, MessageCircle,
+  Flame, Award, Zap, Globe, Database, Activity, ToggleLeft, CreditCard, IdCard
 } from 'lucide-react';
 
-// Recharts
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
-
-// ============================================================
-// CONSTANTS
-// ============================================================
 
 const CHART_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899'];
 
-type NavItem = {
-  id: PageName;
-  labelKey: string;
-  icon: React.ReactNode;
-  superAdminOnly?: boolean;
-};
+type NavItem = { id: PageName; labelKey: string; icon: React.ReactNode; superAdminOnly?: boolean; };
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', labelKey: 'dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
@@ -98,35 +87,327 @@ const STATUS_COLORS: Record<string, string> = {
   negative: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
 };
 
-// ============================================================
-// HELPER COMPONENTS
-// ============================================================
-
 function StatusBadge({ status }: { status: string }) {
-  return (
-    <Badge variant="secondary" className={STATUS_COLORS[status] || 'bg-gray-100 text-gray-800'}>
-      {t(status)}
-    </Badge>
-  );
+  return <Badge variant="secondary" className={STATUS_COLORS[status] || 'bg-gray-100 text-gray-800'}>{t(status)}</Badge>;
 }
 
 function EmptyState({ message }: { message: string }) {
+  return <div className="flex flex-col items-center justify-center py-16 text-muted-foreground"><CircleDot className="h-12 w-12 mb-4 opacity-50" /><p>{message}</p></div>;
+}
+
+function genId() { return Date.now().toString(36) + Math.random().toString(36).substring(2, 9); }
+
+function formatWhatsAppPhone(phone: string | undefined): string {
+  if (!phone) return '';
+  let c = phone.replace(/\D/g, '');
+  if (c.length === 10) c = '1' + c;
+  else if (c.length === 10 && c.startsWith('0')) c = '212' + c.substring(1);
+  else if (c.length === 9 && c.startsWith('0')) c = '44' + c.substring(1);
+  return c;
+}
+
+// ==================== GLOBAL SEARCH DIALOG ====================
+function GlobalSearchDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { students, classes, tasks, teachers, language, setCurrentPage } = useAppStore();
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (open) { setQuery(''); setTimeout(() => inputRef.current?.focus(), 100); } }, [open]);
+
+  const q = query.toLowerCase();
+  const results = useMemo(() => {
+    if (!q || q.length < 2) return { students: [], classes: [], tasks: [], teachers: [] };
+    return {
+      students: students.filter(s => s.fullName?.toLowerCase().includes(q) || s.studentId?.toLowerCase().includes(q)).slice(0, 5),
+      classes: classes.filter(c => c.name?.toLowerCase().includes(q) || c.teacher?.toLowerCase().includes(q)).slice(0, 5),
+      tasks: tasks.filter(t => t.title?.toLowerCase().includes(q)).slice(0, 5),
+      teachers: teachers.filter(t => t.name?.toLowerCase().includes(q)).slice(0, 5),
+    };
+  }, [q, students, classes, tasks, teachers]);
+
+  const totalResults = results.students.length + results.classes.length + results.tasks.length + results.teachers.length;
+
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-      <CircleDot className="h-12 w-12 mb-4 opacity-50" />
-      <p>{message}</p>
-    </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg p-0 gap-0">
+        <div className="flex items-center border-b px-4 py-3 gap-3">
+          <Search className="h-5 w-5 text-muted-foreground shrink-0" />
+          <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)} placeholder={language === 'fr' ? 'Rechercher étudiants, classes, tâches...' : 'Search students, classes, tasks...'} className="flex-1 bg-transparent outline-none text-sm" />
+          <kbd className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded border">ESC</kbd>
+        </div>
+        <div className="max-h-80 overflow-y-auto p-2">
+          {q.length < 2 ? (
+            <p className="text-center text-sm text-muted-foreground py-8">{t('type_to_search', language) || (language === 'fr' ? 'Tapez pour rechercher...' : 'Type to search...')}</p>
+          ) : totalResults === 0 ? (
+            <p className="text-center text-sm text-muted-foreground py-8">{t('no_results_found', language) || 'No results found'}</p>
+          ) : (
+            <>
+              {results.students.length > 0 && <><p className="text-xs font-semibold text-muted-foreground px-2 py-1">{t('students', language)}</p>
+                {results.students.map(s => (
+                  <button key={s.id} onClick={() => { onOpenChange(false); useAppStore.setState({ profileViewStudent: s }); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted text-left">
+                    <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center text-emerald-600 text-sm">👤</div>
+                    <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{s.fullName}</p><p className="text-xs text-muted-foreground">{s.studentId} • {classes.find(c => c.id === s.classId)?.name || '-'}</p></div>
+                  </button>
+                ))}</>}
+              {results.classes.length > 0 && <><p className="text-xs font-semibold text-muted-foreground px-2 py-1 mt-1">{t('classes', language)}</p>
+                {results.classes.map(c => (
+                  <button key={c.id} onClick={() => { onOpenChange(false); setCurrentPage('classes'); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted text-left">
+                    <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600 text-sm">🏫</div>
+                    <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{c.name}</p><p className="text-xs text-muted-foreground">{students.filter(s => s.classId === c.id).length} {t('students', language)}</p></div>
+                  </button>
+                ))}</>}
+              {results.tasks.length > 0 && <><p className="text-xs font-semibold text-muted-foreground px-2 py-1 mt-1">{t('tasks', language)}</p>
+                {results.tasks.map(t => (
+                  <button key={t.id} onClick={() => { onOpenChange(false); setCurrentPage('tasks'); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted text-left">
+                    <StatusBadge status={t.status} />
+                    <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{t.title}</p><p className="text-xs text-muted-foreground">{t.dueDate || '-'}</p></div>
+                  </button>
+                ))}</>}
+              {results.teachers.length > 0 && <><p className="text-xs font-semibold text-muted-foreground px-2 py-1 mt-1">{t('teachers_management', language)}</p>
+                {results.teachers.map(t => (
+                  <button key={t.id} onClick={() => { onOpenChange(false); setCurrentPage('settings'); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted text-left">
+                    <div className="w-8 h-8 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center text-amber-600 text-sm">👨‍🏫</div>
+                    <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{t.name}</p><p className="text-xs text-muted-foreground">{t.subject || '-'}</p></div>
+                  </button>
+                ))}</>}
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function genId() {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+// ==================== SMART NOTIFICATIONS ====================
+function generateSmartNotifications(students: Student[], attendance: AttendanceRecord[], tasks: Task[], classes: Class[], language: string) {
+  const notifs: Array<{ id: string; title: string; message: string; urgent: boolean; timestamp: string; action?: string }> = [];
+  const today = new Date().toISOString().split('T')[0];
+  const todayRecs = attendance.filter(r => r.date === today);
+
+  // Low attendance alerts (< 75%)
+  students.forEach(s => {
+    if (s.status !== 'active') return;
+    const sa = attendance.filter(a => a.studentId === s.id);
+    if (sa.length >= 5) {
+      const rate = Math.round((sa.filter(a => a.status === 'present').length / sa.length) * 100);
+      if (rate < 75) {
+        notifs.push({ id: `low-att-${s.id}`, title: '⚠️ Low Attendance', message: `${s.fullName} — ${rate}% attendance rate`, urgent: true, timestamp: new Date().toISOString(), action: 'student' });
+      }
+    }
+  });
+
+  // Unmarked attendance today
+  const markedIds = new Set(todayRecs.map(r => r.studentId));
+  const activeStudents = students.filter(s => s.status === 'active' && !markedIds.has(s.id));
+  if (activeStudents.length > 0) {
+    notifs.push({ id: 'unmarked-today', title: '📋 Unmarked Attendance', message: `${activeStudents.length} student(s) have no attendance record for today`, urgent: true, timestamp: new Date().toISOString(), action: 'attendance' });
+  }
+
+  // Overdue tasks
+  const overdueTasks = tasks.filter(t => (t.status === 'pending' || t.status === 'in_progress') && t.dueDate && t.dueDate < today);
+  if (overdueTasks.length > 0) {
+    notifs.push({ id: 'overdue-tasks', title: '⏰ Overdue Tasks', message: `${overdueTasks.length} task(s) are past their due date`, urgent: false, timestamp: new Date().toISOString(), action: 'tasks' });
+  }
+
+  // High absence today
+  const absentToday = todayRecs.filter(r => r.status === 'absent').length;
+  if (absentToday > 3) {
+    notifs.push({ id: 'high-absence', title: '🔴 High Absences Today', message: `${absentToday} student(s) marked absent today`, urgent: true, timestamp: new Date().toISOString(), action: 'attendance' });
+  }
+
+  return notifs;
 }
 
-// ============================================================
-// LOGIN SCREEN
-// ============================================================
+// ==================== STUDENT 360° PROFILE ====================
+function Student360Profile({ student, onClose }: { student: Student; onClose: () => void }) {
+  const { classes, attendance, grades, behavior, incidents, modules, language, setCurrentPage } = useAppStore();
 
+  const studentClass = classes.find(c => c.id === student.classId);
+  const sa = attendance.filter(a => a.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const sg = grades.filter(g => g.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const sb = behavior.filter(b => b.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const si = incidents.filter(i => i.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  const total = sa.length, present = sa.filter(a => a.status === 'present').length, absent = sa.filter(a => a.status === 'absent').length, late = sa.filter(a => a.status === 'late').length, excused = sa.filter(a => a.status === 'excused').length;
+  const rate = total > 0 ? Math.round((present / total) * 100) : 0;
+
+  let curStreak = 0;
+  for (const r of [...sa].sort((a, b) => (b.date || '').localeCompare(a.date || ''))) { if (r.status === 'present') curStreak++; else break; }
+  let bestStreak = 0, tmp = 0;
+  for (const r of [...sa].sort((a, b) => (a.date || '').localeCompare(b.date || ''))) { if (r.status === 'present') { tmp++; bestStreak = Math.max(bestStreak, tmp); } else tmp = 0; }
+
+  const weeklyTrend = useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: 4 }, (_, i) => {
+      const w = 3 - i;
+      const we = new Date(now); we.setDate(now.getDate() - w * 7);
+      const ws = new Date(we); ws.setDate(we.getDate() - 6);
+      const wsStr = ws.toISOString().split('T')[0];
+      const weStr = we.toISOString().split('T')[0];
+      const wr = sa.filter(a => a.date >= wsStr && a.date <= weStr);
+      const wp = wr.filter(a => a.status === 'present').length;
+      return { label: `W${4 - w}`, rate: wr.length > 0 ? Math.round((wp / wr.length) * 100) : 0 };
+    });
+  }, [sa]);
+
+  const monthlyData = useMemo(() => {
+    const m = new Map<string, { present: number; total: number }>();
+    sa.forEach(a => { const k = a.date?.substring(0, 7); if (k) { const d = m.get(k) || { present: 0, total: 0 }; d.total++; if (a.status === 'present') d.present++; m.set(k, d); } });
+    return Array.from(m.entries()).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 6).map(([month, d]) => ({ month, rate: d.total > 0 ? Math.round((d.present / d.total) * 100) : 0, present: d.present, total: d.total }));
+  }, [sa]);
+
+  const avgGrade = sg.filter(g => g.percentage != null).reduce((s, g) => s + (g.percentage as number), 0) / (sg.filter(g => g.percentage != null).length || 1);
+  const totalBp = sb.reduce((s, b) => s + (b.points || 0), 0);
+
+  const [tab, setTab] = useState('attendance');
+  const statusColor = { active: 'text-emerald-600', abandoned: 'text-amber-600', terminated: 'text-red-600', graduated: 'text-blue-600' }[student.status] || 'text-gray-600';
+
+  const handleGenerateCard = () => {
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head><title>Student Card - ${student.fullName}</title><style>
+      *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f0f0}
+      .card{width:320px;height:200px;background:white;border-radius:16px;padding:20px;box-shadow:0 4px 20px rgba(0,0,0,0.1);display:flex;flex-direction:column;justify-content:space-between;border:2px solid #10b981}
+      .header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #e5e7eb;padding-bottom:10px}
+      .header h2{font-size:14px;color:#10b981}
+      .body{display:flex;gap:16px;flex:1;align-items:center}
+      .photo{width:64px;height:64px;background:#e5e7eb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px}
+      .info h3{font-size:16px;margin-bottom:4px}.info p{font-size:11px;color:#6b7280;margin:2px 0}
+      .footer{display:flex;justify-content:space-between;font-size:10px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:8px}
+    </style></head><body><div class="card">
+      <div class="header"><h2>INFOHAS</h2><span style="font-size:12px;color:#6b7280">${student.academicYear || ''}</span></div>
+      <div class="body"><div class="photo">${student.photo ? `<img src="${student.photo}" style="width:64px;height:64px;border-radius:50%;object-fit:cover">` : '👤'}</div>
+      <div class="info"><h3>${student.fullName}</h3><p>ID: ${student.studentId}</p><p>${studentClass?.name || '-'}</p><p>Year: ${student.academicYear || '-'}</p></div></div>
+      <div class="footer"><span>Attendance: ${rate}%</span><span>Generated: ${new Date().toLocaleDateString()}</span></div>
+    </div></body></html>`);
+    win.document.close();
+    setTimeout(() => win.print(), 500);
+  };
+
+  const handleReport = () => {
+    const csvContent = `Student Report - ${student.fullName}\n\nBasic Info\nName,${student.fullName}\nID,${student.studentId}\nClass,${studentClass?.name || '-'}\nAcademic Year,${student.academicYear || '-'}\nStatus,${student.status}\nGuardian,${student.guardianName || '-'}\nPhone,${student.guardianPhone || '-'}\nEmail,${student.email || '-'}\n\nAttendance Summary\nTotal Days,${total}\nPresent,${present}\nAbsent,${absent}\nLate,${late}\nExcused,${excused}\nRate,${rate}%\nCurrent Streak,${curStreak}\nBest Streak,${bestStreak}\n\nRecent Grades\n${sg.slice(0, 10).map(g => `${modules.find(m => m.id === g.moduleId)?.name || '-'},${g.grade || '-'},${g.percentage || '-'}%`).join('\n')}`;
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `report_${student.studentId}.csv`; a.click();
+    toast.success(language === 'fr' ? 'Rapport généré' : 'Report generated');
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden p-0">
+        <div className="flex items-center gap-4 p-4 border-b bg-muted/30">
+          <div className="w-14 h-14 rounded-full flex items-center justify-center text-2xl shrink-0 overflow-hidden bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600">
+            {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" /> : student.fullName.charAt(0)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-lg truncate">{student.fullName}</h3>
+            <p className="text-sm text-muted-foreground">{student.studentId} • {studentClass?.name || '-'}</p>
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              <Badge variant="secondary" className={statusColor}>{student.status}</Badge>
+              <Badge variant="secondary">{student.academicYear || '-'}</Badge>
+              {curStreak > 0 && <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">🔥 {curStreak}</Badge>}
+              {bestStreak > 2 && <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">⭐ {bestStreak}</Badge>}
+              {avgGrade > 0 && <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">Avg: {Math.round(avgGrade)}%</Badge>}
+              {totalBp !== 0 && <Badge className={totalBp > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}>{totalBp > 0 ? '+' : ''}{totalBp} pts</Badge>}
+            </div>
+          </div>
+          <div className="flex gap-1.5 shrink-0">
+            <Button variant="outline" size="sm" onClick={handleReport}><FileText className="h-4 w-4 mr-1" />{t('report', language) || 'Report'}</Button>
+            <Button variant="outline" size="sm" onClick={handleGenerateCard}><IdCard className="h-4 w-4 mr-1" />{t('generate_card', language) || 'Card'}</Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 px-4 py-3 text-sm border-b">
+          <div><span className="text-muted-foreground">{t('guardian', language)}:</span> <span className="font-medium ml-1">{student.guardianName || '-'}</span></div>
+          <div><span className="text-muted-foreground">{t('phone', language)}:</span> <span className="font-medium ml-1">{student.guardianPhone || '-'}</span></div>
+          <div><span className="text-muted-foreground">Email:</span> <span className="font-medium ml-1 break-all">{student.email || '-'}</span></div>
+          <div><span className="text-muted-foreground">{language === 'fr' ? 'Adresse' : 'Address'}:</span> <span className="font-medium ml-1">{student.address || '-'}</span></div>
+        </div>
+
+        <Tabs value={tab} onValueChange={setTab} className="px-4">
+          <TabsList className="w-full grid grid-cols-5">
+            <TabsTrigger value="attendance">{t('attendance', language)}</TabsTrigger>
+            <TabsTrigger value="trends">{t('trends', language) || 'Trends'}</TabsTrigger>
+            <TabsTrigger value="grades">{t('grades', language)}</TabsTrigger>
+            <TabsTrigger value="behavior">{t('behavior', language)}</TabsTrigger>
+            <TabsTrigger value="incidents">{t('incidents', language)}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <ScrollArea className="h-[350px] px-4 pb-4">
+          {tab === 'attendance' && <>
+            <div className="grid grid-cols-5 gap-2 mb-4">
+              {[{ label: t('present', language), val: present, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30' }, { label: t('absent', language), val: absent, color: 'bg-red-100 text-red-700 dark:bg-red-900/30' }, { label: t('late', language), val: late, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30' }, { label: t('excused', language), val: excused, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30' }, { label: 'Rate', val: `${rate}%`, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30' }].map((s, i) => (
+                <div key={i} className={`rounded-lg p-3 text-center ${s.color}`}><p className="text-xl font-bold">{s.val}</p><p className="text-xs opacity-70">{s.label}</p></div>
+              ))}
+            </div>
+            {sa.length > 0 ? sa.slice(0, 30).map(a => (
+              <div key={a.id} className="flex items-center justify-between py-1.5 border-b border-border/50 text-sm">
+                <span className="text-muted-foreground text-xs">{a.date}</span>
+                <div className="flex items-center gap-1"><StatusBadge status={a.status} /><span className="text-xs">{a.notes && `• ${a.notes}`}</span></div>
+              </div>
+            )) : <EmptyState message={t('no_data', language)} />}
+          </>}
+
+          {tab === 'trends' && <>
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="rounded-lg p-3 text-center bg-amber-100 dark:bg-amber-900/20"><p className="text-2xl font-bold text-amber-700">🔥 {curStreak}</p><p className="text-xs text-amber-600">Current Streak</p></div>
+              <div className="rounded-lg p-3 text-center bg-emerald-100 dark:bg-emerald-900/20"><p className="text-2xl font-bold text-emerald-700">⭐ {bestStreak}</p><p className="text-xs text-emerald-600">Best Streak</p></div>
+              <div className="rounded-lg p-3 text-center bg-purple-100 dark:bg-purple-900/20"><p className="text-2xl font-bold text-purple-700">{rate}%</p><p className="text-xs text-purple-600">Attendance Rate</p></div>
+            </div>
+            <p className="text-sm font-semibold mb-3">{language === 'fr' ? '4 dernières semaines' : 'Last 4 Weeks'}</p>
+            <div className="flex gap-3 items-end h-28 mb-6">
+              {weeklyTrend.map(w => (
+                <div key={w.label} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-xs font-bold">{w.rate}%</span>
+                  <div className="w-full rounded-t-md transition-all" style={{ height: `${Math.max(w.rate, 5)}%`, minHeight: '8px', backgroundColor: w.rate >= 80 ? '#10b981' : w.rate >= 50 ? '#f59e0b' : '#ef4444' }} />
+                  <span className="text-[10px] text-muted-foreground">{w.label}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-sm font-semibold mb-3">{language === 'fr' ? 'Résumé mensuel' : 'Monthly Summary'}</p>
+            <div className="grid grid-cols-3 gap-2">
+              {monthlyData.length > 0 ? monthlyData.map(m => (
+                <div key={m.month} className="rounded-lg border p-2.5 text-center">
+                  <p className="text-xs text-muted-foreground">{m.month}</p>
+                  <p className="text-lg font-bold" style={{ color: m.rate >= 80 ? '#10b981' : m.rate >= 50 ? '#f59e0b' : '#ef4444' }}>{m.rate}%</p>
+                  <p className="text-[10px] text-muted-foreground">{m.present}/{m.total}</p>
+                </div>
+              )) : <p className="text-sm text-muted-foreground col-span-3">{t('no_data', language)}</p>}
+            </div>
+          </>}
+
+          {tab === 'grades' && (sg.length > 0 ? sg.map(g => {
+            const mod = modules.find(m => m.id === g.moduleId);
+            const pct = g.percentage ? parseFloat(String(g.percentage)) : 0;
+            return <div key={g.id} className="flex items-center justify-between py-1.5 border-b border-border/50 text-sm">
+              <span className="text-xs text-muted-foreground">{g.date || '-'}</span>
+              <span>{mod?.name || '-'} — <strong>{g.grade || '-'}</strong> <span style={{ color: pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444' }} className="font-semibold">({g.percentage || '-'}%)</span></span>
+            </div>;
+          }) : <EmptyState message={t('no_data', language)} />)}
+
+          {tab === 'behavior' && (sb.length > 0 ? sb.map(b => {
+            const icon = b.type === 'positive' ? '👍' : '👎';
+            const col = b.type === 'positive' ? 'text-emerald-600' : 'text-red-600';
+            return <div key={b.id} className="flex items-center justify-between py-1.5 border-b border-border/50 text-sm">
+              <span className="text-xs text-muted-foreground">{b.date || '-'}</span>
+              <span>{icon} <span className={`font-semibold ${col}`}>{b.type}</span> — {b.description || '-'} <span className="font-semibold">{b.points && b.points > 0 ? '+' : ''}{b.points || 0} pts</span></span>
+            </div>;
+          }) : <EmptyState message={t('no_data', language)} />)}
+
+          {tab === 'incidents' && (si.length > 0 ? si.map(inc => {
+            const sevCol = { low: 'text-amber-600', medium: 'text-orange-600', high: 'text-red-600', critical: 'text-red-700' }[inc.severity] || 'text-gray-600';
+            return <div key={inc.id} className="flex items-center justify-between py-1.5 border-b border-border/50 text-sm">
+              <span className="text-xs text-muted-foreground">{inc.date || '-'}</span>
+              <span><span className={`font-semibold ${sevCol}`}>{inc.severity}</span> — {inc.description || '-'} <StatusBadge status={inc.status} /></span>
+            </div>;
+          }) : <EmptyState message={t('no_data', language)} />)}
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ==================== LOGIN SCREEN ====================
 function LoginScreen() {
   const { login, language } = useAppStore();
   const [username, setUsername] = useState('');
@@ -138,14 +419,10 @@ function LoginScreen() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) { setError('Please fill in all fields'); return; }
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
     const success = await login(username, password, slug || undefined);
-    if (success) {
-      toast.success(language === 'fr' ? 'Connexion réussie!' : 'Login successful!');
-    } else {
-      setError(language === 'fr' ? 'Identifiants incorrects' : 'Invalid credentials');
-    }
+    if (success) toast.success(language === 'fr' ? 'Connexion réussie!' : 'Login successful!');
+    else setError(language === 'fr' ? 'Identifiants incorrects' : 'Invalid credentials');
     setLoading(false);
   };
 
@@ -153,39 +430,16 @@ function LoginScreen() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-gray-900 dark:to-gray-800 p-4">
       <Card className="w-full max-w-md shadow-2xl border-0">
         <CardHeader className="text-center space-y-3 pb-2">
-          <div className="mx-auto w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center">
-            <GraduationCap className="h-9 w-9 text-white" />
-          </div>
-          <div>
-            <CardTitle className="text-2xl font-bold">INFOHAS</CardTitle>
-            <CardDescription className="text-sm mt-1">
-              {language === 'fr' ? "Système de Gestion de Présence" : "Attendance Management System"}
-            </CardDescription>
-          </div>
+          <div className="mx-auto w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center"><GraduationCap className="h-9 w-9 text-white" /></div>
+          <div><CardTitle className="text-2xl font-bold">INFOHAS</CardTitle><CardDescription className="text-sm mt-1">{language === 'fr' ? "Système de Gestion de Présence" : "Attendance Management System"}</CardDescription></div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm p-3 rounded-lg text-center">
-                {error}
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="username">{t('username', language)}</Label>
-              <Input id="username" value={username} onChange={e => setUsername(e.target.value)} placeholder={t('username', language)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">{t('password', language)}</Label>
-              <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={t('password', language)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="slug">{t('school_slug', language)}</Label>
-              <Input id="slug" value={slug} onChange={e => setSlug(e.target.value)} placeholder="school-name" />
-            </div>
-            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
-              {loading ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : null}
-              {t('signing_in', language)}
-            </Button>
+            {error && <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm p-3 rounded-lg text-center">{error}</div>}
+            <div className="space-y-2"><Label htmlFor="username">{t('username', language)}</Label><Input id="username" value={username} onChange={e => setUsername(e.target.value)} placeholder={t('username', language)} /></div>
+            <div className="space-y-2"><Label htmlFor="password">{t('password', language)}</Label><Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={t('password', language)} /></div>
+            <div className="space-y-2"><Label htmlFor="slug">{t('school_slug', language)}</Label><Input id="slug" value={slug} onChange={e => setSlug(e.target.value)} placeholder="school-name" /></div>
+            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>{loading && <RefreshCw className="h-4 w-4 animate-spin mr-2" />}{t('signing_in', language)}</Button>
           </form>
         </CardContent>
       </Card>
@@ -193,19 +447,11 @@ function LoginScreen() {
   );
 }
 
-// ============================================================
-// SIDEBAR
-// ============================================================
-
+// ==================== SIDEBAR ====================
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { currentUser, currentPage, setCurrentPage, logout, language, setSchoolInfo } = useAppStore();
+  const { currentUser, currentPage, setCurrentPage, logout, language } = useAppStore();
   const schoolInfo = useAppStore(s => s.schoolInfo);
-
-  const filteredNav = NAV_ITEMS.filter(item => {
-    if (item.superAdminOnly && currentUser?.role !== 'super_admin') return false;
-    return true;
-  });
-
+  const filteredNav = NAV_ITEMS.filter(item => !item.superAdminOnly || currentUser?.role === 'super_admin');
   const roleLabel = currentUser?.role === 'super_admin' ? 'SUPER_ADMIN' : currentUser?.role === 'admin' ? 'ADMIN' : currentUser?.role === 'teacher' ? 'TEACHER' : 'EMPLOYEE';
 
   return (
@@ -213,69 +459,27 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       {open && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={onClose} />}
       <aside className={`fixed top-0 left-0 z-50 h-full w-64 bg-card border-r border-border transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:z-auto ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex flex-col h-full">
-          {/* Logo */}
           <div className="p-4 border-b border-border flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shrink-0">
-              <GraduationCap className="h-6 w-6 text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="font-bold text-sm truncate">{schoolInfo?.name || 'INFOHAS'}</h2>
-              <p className="text-xs text-muted-foreground truncate">{language === 'fr' ? 'Système de Gestion Scolaire' : 'School Management System'}</p>
-            </div>
-            <Button variant="ghost" size="icon" className="lg:hidden" onClick={onClose}>
-              <X className="h-5 w-5" />
-            </Button>
+            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shrink-0"><GraduationCap className="h-6 w-6 text-white" /></div>
+            <div className="flex-1 min-w-0"><h2 className="font-bold text-sm truncate">{schoolInfo?.name || 'INFOHAS'}</h2><p className="text-xs text-muted-foreground truncate">{language === 'fr' ? 'Système de Gestion Scolaire' : 'School Management System'}</p></div>
+            <Button variant="ghost" size="icon" className="lg:hidden" onClick={onClose}><X className="h-5 w-5" /></Button>
           </div>
-
-          {/* User Profile Card */}
           <div className="p-4 border-b border-border">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0">
-                {(currentUser?.username || currentUser?.fullName || 'A').charAt(0).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm truncate">{currentUser?.username || currentUser?.fullName || 'admin'}</p>
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">{roleLabel}</Badge>
-              </div>
+              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0">{(currentUser?.username || currentUser?.fullName || 'A').charAt(0).toUpperCase()}</div>
+              <div className="flex-1 min-w-0"><p className="font-semibold text-sm truncate">{currentUser?.username || currentUser?.fullName || 'admin'}</p><Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">{roleLabel}</Badge></div>
             </div>
           </div>
-
-          {/* Navigation */}
           <ScrollArea className="flex-1 custom-scrollbar">
             <nav className="p-2 space-y-1">
               {filteredNav.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => { setCurrentPage(item.id); onClose(); }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    currentPage === item.id
-                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                  }`}
-                >
-                  {item.icon}
-                  {t(item.labelKey, language)}
-                </button>
+                <button key={item.id} onClick={() => { setCurrentPage(item.id); onClose(); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${currentPage === item.id ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{item.icon}{t(item.labelKey, language)}</button>
               ))}
             </nav>
           </ScrollArea>
-
-          {/* Bottom */}
           <div className="p-3 border-t border-border space-y-1">
-            <button
-              onClick={() => { setCurrentPage('settings'); onClose(); }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            >
-              <Key className="h-4 w-4" />
-              {t('change_password', language)}
-            </button>
-            <button
-              onClick={logout}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-            >
-              <LogOut className="h-4 w-4" />
-              {t('logout', language)}
-            </button>
+            <button onClick={() => { setCurrentPage('settings'); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"><Key className="h-4 w-4" />{t('change_password', language)}</button>
+            <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"><LogOut className="h-4 w-4" />{t('logout', language)}</button>
           </div>
         </div>
       </aside>
@@ -283,126 +487,62 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   );
 }
 
-// ============================================================
-// HEADER
-// ============================================================
-
+// ==================== HEADER ====================
 function Header({ onMenuClick, onExportClick }: { onMenuClick: () => void; onExportClick: () => void }) {
-  const { currentPage, language, schoolInfo } = useAppStore();
+  const { currentPage, language, students, attendance, tasks, classes } = useAppStore();
   const { theme, setTheme } = useTheme();
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [syncTime, setSyncTime] = useState(new Date());
 
-  const pageTitle = t(currentPage, language);
+  const smartNotifs = useMemo(() => generateSmartNotifications(students, attendance, tasks, classes, language), [students, attendance, tasks, classes, language]);
+  const unreadCount = smartNotifs.length;
 
-  // Update sync time periodically
+  useEffect(() => { const timer = setInterval(() => setSyncTime(new Date()), 60000); return () => clearInterval(timer); }, []);
   useEffect(() => {
-    const timer = setInterval(() => setSyncTime(new Date()), 60000);
-    return () => clearInterval(timer);
+    const h = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setSearchOpen(true); } };
+    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
   }, []);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        setSearchOpen(!searchOpen);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [searchOpen]);
 
   return (
     <header className="sticky top-0 z-30 bg-card border-b border-border px-4 py-3">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenuClick}>
-          <Menu className="h-5 w-5" />
-        </Button>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-lg font-semibold truncate">{pageTitle}</h1>
-        </div>
-
-        {/* Search */}
-        <div className="hidden sm:flex items-center">
-          <Button variant="outline" size="sm" className="gap-2 text-muted-foreground" onClick={() => setSearchOpen(!searchOpen)}>
-            <Search className="h-4 w-4" />
-            <span className="text-xs">{t('search', language)}</span>
-            <kbd className="hidden md:inline-flex items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-              Ctrl+K
-            </kbd>
-          </Button>
-        </div>
-
-        {/* Language toggle */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1 text-xs"
-          onClick={() => {
-            useAppStore.setState({ language: language === 'en' ? 'fr' : 'en' });
-            toast.success(language === 'en' ? 'Langue: Français' : 'Language: English');
-          }}
-        >
-          <Languages className="h-4 w-4" />
-          <span className="hidden sm:inline">{language.toUpperCase()}</span>
-        </Button>
-
-        {/* Theme toggle */}
-        <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
-          {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-        </Button>
-
-        {/* Export */}
-        <Button variant="outline" size="icon" onClick={onExportClick}>
-          <Download className="h-4 w-4" />
-        </Button>
-
-        {/* Sync Status */}
-        <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>{language === 'fr' ? 'Dernière sync' : 'Last sync'}: {syncTime.toLocaleTimeString(language === 'fr' ? 'fr-FR' : 'en-US', { hour: '2-digit', minute: '2-digit' })}</span>
-        </div>
-
-        {/* Notifications */}
+        <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenuClick}><Menu className="h-5 w-5" /></Button>
+        <div className="flex-1 min-w-0"><h1 className="text-lg font-semibold truncate">{t(currentPage, language)}</h1></div>
+        <Button variant="outline" size="sm" className="hidden sm:flex gap-2 text-muted-foreground" onClick={() => setSearchOpen(true)}><Search className="h-4 w-4" /><span className="text-xs">{t('search', language)}</span><kbd className="hidden md:inline-flex items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">Ctrl+K</kbd></Button>
+        <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => { useAppStore.setState({ language: language === 'en' ? 'fr' : 'en' }); toast.success(language === 'en' ? 'Langue: Français' : 'Language: English'); }}><Languages className="h-4 w-4" /><span className="hidden sm:inline">{language.toUpperCase()}</span></Button>
+        <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}</Button>
+        <Button variant="outline" size="icon" onClick={onExportClick}><Download className="h-4 w-4" /></Button>
+        <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground"><div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /><span>{language === 'fr' ? 'Dernière sync' : 'Last sync'}: {syncTime.toLocaleTimeString(language === 'fr' ? 'fr-FR' : 'en-US', { hour: '2-digit', minute: '2-digit' })}</span></div>
         <div className="relative">
-          <Button variant="ghost" size="icon" onClick={() => setNotifOpen(!notifOpen)}>
-            <Bell className="h-5 w-5" />
+          <Button variant="ghost" size="icon" onClick={() => setNotifOpen(!notifOpen)} className="relative"><Bell className="h-5 w-5" />
+            {unreadCount > 0 && <span className="absolute -top-0.5 -right-0.5 w-4.5 h-4.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{unreadCount}</span>}
           </Button>
           {notifOpen && (
-            <div className="absolute right-0 top-full mt-2 w-72 bg-card border border-border rounded-lg shadow-lg p-3 z-50">
-              <p className="text-sm font-medium mb-2">{language === 'fr' ? 'Notifications' : 'Notifications'}</p>
-              <p className="text-xs text-muted-foreground">{t('no_data', language)}</p>
+            <div className="absolute right-0 top-full mt-2 w-80 bg-card border border-border rounded-lg shadow-lg z-50">
+              <div className="p-3 border-b flex items-center justify-between"><p className="text-sm font-semibold">{t('notifications', language)}</p><Button variant="ghost" size="sm" onClick={() => setNotifOpen(false)}><X className="h-4 w-4" /></Button></div>
+              <div className="max-h-72 overflow-y-auto">
+                {smartNotifs.length === 0 ? <p className="text-sm text-muted-foreground text-center py-6">{t('no_data', language)}</p> : smartNotifs.map(n => (
+                  <button key={n.id} className="w-full text-left px-3 py-2.5 hover:bg-muted border-b border-border/50 transition-colors" onClick={() => { setNotifOpen(false); if (n.action === 'attendance') useAppStore.getState().setCurrentPage('attendance'); else if (n.action === 'tasks') useAppStore.getState().setCurrentPage('tasks'); else if (n.action === 'student') useAppStore.getState().setCurrentPage('students'); }}>
+                    <p className="text-sm font-medium">{n.title}</p>
+                    <p className="text-xs text-muted-foreground">{n.message}</p>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
-
-        {/* Settings shortcut */}
-        <Button variant="ghost" size="icon" onClick={() => useAppStore.getState().setCurrentPage('settings')}>
-          <Settings className="h-5 w-5" />
-        </Button>
-
-        {/* User profile */}
-        <Button variant="ghost" size="icon" onClick={() => useAppStore.getState().setCurrentPage('settings')}>
-          <Users className="h-5 w-5" />
-        </Button>
+        <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       </div>
     </header>
   );
 }
 
-// ============================================================
-// DASHBOARD PAGE
-// ============================================================
-
+// ==================== DASHBOARD PAGE ====================
 function DashboardPage() {
   const { students, classes, attendance, language, setCurrentPage } = useAppStore();
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 500);
-    return () => clearTimeout(timer);
-  }, []);
+  useEffect(() => { const t = setTimeout(() => setLoading(false), 500); return () => clearTimeout(t); }, []);
 
   const today = new Date().toISOString().split('T')[0];
   const todayRecords = attendance.filter(r => r.date === today);
@@ -410,31 +550,13 @@ function DashboardPage() {
   const absentCount = todayRecords.filter(r => r.status === 'absent').length;
   const lateCount = todayRecords.filter(r => r.status === 'late').length;
 
-  // Last 7 days attendance chart data
   const last7Days = useMemo(() => {
     const days = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
-      const dayRecords = attendance.filter(r => r.date === dateStr);
-      days.push({
-        date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'short' }),
-        present: dayRecords.filter(r => r.status === 'present').length,
-        absent: dayRecords.filter(r => r.status === 'absent').length,
-        late: dayRecords.filter(r => r.status === 'late').length,
-      });
-    }
+    for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const ds = d.toISOString().split('T')[0]; const dr = attendance.filter(r => r.date === ds); days.push({ date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'short' }), present: dr.filter(r => r.status === 'present').length, absent: dr.filter(r => r.status === 'absent').length, late: dr.filter(r => r.status === 'late').length }); }
     return days;
   }, [attendance, language]);
 
-  // Attendance distribution for pie chart
-  const pieData = [
-    { name: t('present', language), value: presentCount, color: '#10b981' },
-    { name: t('absent', language), value: absentCount, color: '#ef4444' },
-    { name: t('late', language), value: lateCount, color: '#f59e0b' },
-  ].filter(d => d.value > 0);
-
+  const pieData = [{ name: t('present', language), value: presentCount, color: '#10b981' }, { name: t('absent', language), value: absentCount, color: '#ef4444' }, { name: t('late', language), value: lateCount, color: '#f59e0b' }].filter(d => d.value > 0);
   const recentRecords = attendance.slice(-10).reverse();
 
   const stats = [
@@ -444,542 +566,170 @@ function DashboardPage() {
     { label: t('present_today', language), value: presentCount, icon: <CheckCircle2 className="h-6 w-6" />, color: 'text-purple-600 bg-purple-100 dark:bg-purple-900/30' },
   ];
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
-        </div>
-        <Skeleton className="h-64 rounded-xl" />
-      </div>
-    );
-  }
+  if (loading) return <div className="space-y-6"><div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}</div><Skeleton className="h-64 rounded-xl" /></div>;
 
   return (
     <div className="space-y-6">
-      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, i) => (
-          <Card key={i} className="border-0 shadow-sm">
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className={`p-3 rounded-xl ${stat.color}`}>
-                {stat.icon}
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stat.value}</p>
-                <p className="text-xs text-muted-foreground">{stat.label}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        {stats.map((s, i) => <Card key={i} className="border-0 shadow-sm"><CardContent className="p-4 flex items-center gap-4"><div className={`p-3 rounded-xl ${s.color}`}>{s.icon}</div><div><p className="text-2xl font-bold">{s.value}</p><p className="text-xs text-muted-foreground">{s.label}</p></div></CardContent></Card>)}
       </div>
-
-      {/* Quick Actions */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">{t('quick_actions', language)}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { label: t('add_student', language), icon: <UserPlus className="h-5 w-5" />, page: 'students' as PageName },
-              { label: t('mark_attendance', language), icon: <ClipboardCheck className="h-5 w-5" />, page: 'attendance' as PageName },
-              { label: t('today_report', language), icon: <FileText className="h-5 w-5" />, page: 'reports' as PageName },
-              { label: t('view_calendar', language), icon: <Calendar className="h-5 w-5" />, page: 'calendar' as PageName },
-            ].map((action, i) => (
-              <Button key={i} variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setCurrentPage(action.page)}>
-                {action.icon}
-                <span className="text-xs">{action.label}</span>
-              </Button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Charts Row */}
+      <Card className="border-0 shadow-sm"><CardHeader className="pb-3"><CardTitle className="text-base">{t('quick_actions', language)}</CardTitle></CardHeader><CardContent>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[{ label: t('add_student', language), icon: <UserPlus className="h-5 w-5" />, page: 'students' as PageName }, { label: t('mark_attendance', language), icon: <ClipboardCheck className="h-5 w-5" />, page: 'attendance' as PageName }, { label: t('today_report', language), icon: <FileText className="h-5 w-5" />, page: 'reports' as PageName }, { label: t('view_calendar', language), icon: <Calendar className="h-5 w-5" />, page: 'calendar' as PageName }].map((a, i) => <Button key={i} variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setCurrentPage(a.page)}>{a.icon}<span className="text-xs">{a.label}</span></Button>)}
+        </div>
+      </CardContent></Card>
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Bar Chart */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{language === 'fr' ? 'Présence (7 jours)' : 'Attendance (7 days)'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={last7Days}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <ReTooltip />
-                  <Legend />
-                  <Bar dataKey="present" fill="#10b981" name={t('present', language)} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="absent" fill="#ef4444" name={t('absent', language)} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="late" fill="#f59e0b" name={t('late', language)} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Pie Chart */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{language === 'fr' ? "Distribution d'Aujourd'hui" : "Today's Distribution"}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              {pieData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                      {pieData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <ReTooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                  {t('no_data', language)}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-base">{language === 'fr' ? 'Présence (7 jours)' : 'Attendance (7 days)'}</CardTitle></CardHeader><CardContent><div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={last7Days}><CartesianGrid strokeDasharray="3 3" className="opacity-30" /><XAxis dataKey="date" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} /><ReTooltip /><Legend /><Bar dataKey="present" fill="#10b981" name={t('present', language)} radius={[4, 4, 0, 0]} /><Bar dataKey="absent" fill="#ef4444" name={t('absent', language)} radius={[4, 4, 0, 0]} /><Bar dataKey="late" fill="#f59e0b" name={t('late', language)} radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></CardContent></Card>
+        <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-base">{language === 'fr' ? "Distribution d'Aujourd'hui" : "Today's Distribution"}</CardTitle></CardHeader><CardContent><div className="h-64">{pieData.length > 0 ? <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>{pieData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}</Pie><ReTooltip /></PieChart></ResponsiveContainer> : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>}</div></CardContent></Card>
       </div>
-
-      {/* Recent Activity */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">{t('recent_activity', language)}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {recentRecords.length === 0 ? (
-            <EmptyState message={t('no_data', language)} />
-          ) : (
-            <div className="max-h-96 overflow-y-auto custom-scrollbar">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('students', language)}</TableHead>
-                    <TableHead>{t('calendar', language)}</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentRecords.map(r => {
-                    const student = students.find(s => s.id === r.studentId);
-                    return (
-                      <TableRow key={r.id}>
-                        <TableCell className="font-medium">{student?.fullName || 'Unknown'}</TableCell>
-                        <TableCell>{r.date}</TableCell>
-                        <TableCell><StatusBadge status={r.status} /></TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <Card className="border-0 shadow-sm"><CardHeader className="pb-3"><CardTitle className="text-base">{t('recent_activity', language)}</CardTitle></CardHeader><CardContent>
+        {recentRecords.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+          <div className="max-h-96 overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow><TableHead>{t('students', language)}</TableHead><TableHead>{t('calendar', language)}</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+            {recentRecords.map(r => { const s = students.find(st => st.id === r.studentId); return <TableRow key={r.id}><TableCell className="font-medium">{s?.fullName || 'Unknown'}</TableCell><TableCell>{r.date}</TableCell><TableCell><StatusBadge status={r.status} /></TableCell></TableRow>; })}
+          </TableBody></Table></div>
+        )}
+      </CardContent></Card>
     </div>
   );
 }
 
-// ============================================================
-// STUDENTS PAGE
-// ============================================================
-
+// ==================== STUDENTS PAGE ====================
 function StudentsPage() {
-  const { students, classes, language, setStudents } = useAppStore();
+  const { students, classes, language, setStudents, setCurrentPage, academicYears } = useAppStore();
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [profileStudent, setProfileStudent] = useState<Student | null>(null);
-  const [form, setForm] = useState({
-    fullName: '', studentId: '', classId: '', status: 'active' as Student['status'],
-    guardianName: '', guardianPhone: '', phone: '', email: '', address: '', notes: '', group: '',
-  });
-
+  const [form, setForm] = useState({ fullName: '', studentId: '', classId: '', status: 'active' as Student['status'], guardianName: '', guardianPhone: '', phone: '', email: '', address: '', notes: '', group: '', photo: '' as string });
   const [sortBy, setSortBy] = useState('name_asc');
   const [multiSelect, setMultiSelect] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [academicYearFilter, setAcademicYearFilter] = useState('all');
-  const { academicYears } = useAppStore();
+  const [batchClassId, setBatchClassId] = useState('');
 
   const filtered = students.filter(s => {
-    const matchSearch = s.fullName.toLowerCase().includes(search.toLowerCase()) || s.studentId.toLowerCase().includes(search.toLowerCase());
-    const matchClass = classFilter === 'all' || s.classId === classFilter;
-    const matchStatus = statusFilter === 'all' || s.status === statusFilter;
-    return matchSearch && matchClass && matchStatus;
-  }).sort((a, b) => {
-    if (sortBy === 'name_asc') return a.fullName.localeCompare(b.fullName);
-    if (sortBy === 'name_desc') return b.fullName.localeCompare(a.fullName);
-    if (sortBy === 'id') return a.studentId.localeCompare(b.studentId);
-    if (sortBy === 'date') return (b.createdAt || '').localeCompare(a.createdAt || '');
-    return 0;
-  });
+    const ms = s.fullName.toLowerCase().includes(search.toLowerCase()) || s.studentId.toLowerCase().includes(search.toLowerCase()) || (s.guardianName || '').toLowerCase().includes(search.toLowerCase());
+    return ms && (classFilter === 'all' || s.classId === classFilter) && (statusFilter === 'all' || s.status === statusFilter);
+  }).sort((a, b) => { if (sortBy === 'name_asc') return a.fullName.localeCompare(b.fullName); if (sortBy === 'name_desc') return b.fullName.localeCompare(a.fullName); if (sortBy === 'id') return a.studentId.localeCompare(b.studentId); if (sortBy === 'date') return (b.createdAt || '').localeCompare(a.createdAt || ''); return 0; });
 
-  const openAdd = () => {
-    setEditing(null);
-    setForm({ fullName: '', studentId: '', classId: '', status: 'active', guardianName: '', guardianPhone: '', phone: '', email: '', address: '', notes: '', group: '' });
-    setDialogOpen(true);
-  };
-
-  const openEdit = (s: Student) => {
-    setEditing(s);
-    setForm({ fullName: s.fullName, studentId: s.studentId, classId: s.classId, status: s.status, guardianName: s.guardianName || '', guardianPhone: s.guardianPhone || '', phone: s.phone || '', email: s.email || '', address: s.address || '', notes: s.notes || '', group: s.group || '' });
-    setDialogOpen(true);
-  };
-
+  const openAdd = () => { setEditing(null); setForm({ fullName: '', studentId: '', classId: '', status: 'active', guardianName: '', guardianPhone: '', phone: '', email: '', address: '', notes: '', group: '', photo: '' }); setDialogOpen(true); };
+  const openEdit = (s: Student) => { setEditing(s); setForm({ fullName: s.fullName, studentId: s.studentId, classId: s.classId, status: s.status, guardianName: s.guardianName || '', guardianPhone: s.guardianPhone || '', phone: s.phone || '', email: s.email || '', address: s.address || '', notes: s.notes || '', group: s.group || '', photo: s.photo || '' }); setDialogOpen(true); };
   const handleSave = () => {
     if (!form.fullName || !form.studentId) { toast.error('Name and Student ID are required'); return; }
-    if (editing) {
-      const updated = students.map(s => s.id === editing.id ? { ...s, ...form, className: classes.find(c => c.id === form.classId)?.name } : s);
-      setStudents(updated);
-      toast.success(language === 'fr' ? 'Étudiant modifié' : 'Student updated');
-    } else {
-      const newStudent: Student = { ...form, id: genId(), className: classes.find(c => c.id === form.classId)?.name, createdAt: new Date().toISOString() };
-      setStudents([...students, newStudent]);
-      toast.success(language === 'fr' ? 'Étudiant ajouté' : 'Student added');
-    }
+    if (editing) { setStudents(students.map(s => s.id === editing.id ? { ...s, ...form, className: classes.find(c => c.id === form.classId)?.name } : s)); toast.success(language === 'fr' ? 'Étudiant modifié' : 'Student updated'); }
+    else { setStudents([...students, { ...form, id: genId(), className: classes.find(c => c.id === form.classId)?.name, createdAt: new Date().toISOString() }]); toast.success(language === 'fr' ? 'Étudiant ajouté' : 'Student added'); }
     setDialogOpen(false);
   };
+  const handleDelete = (id: string) => { setStudents(students.filter(s => s.id !== id)); toast.success(language === 'fr' ? 'Étudiant supprimé' : 'Student deleted'); };
 
-  const handleDelete = (id: string) => {
-    setStudents(students.filter(s => s.id !== id));
-    toast.success(language === 'fr' ? 'Étudiant supprimé' : 'Student deleted');
-  };
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => setForm({ ...form, photo: ev.target?.result as string }); r.readAsDataURL(f); } };
 
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      const lines = text.split('\n').filter(l => l.trim());
-      if (lines.length < 2) return;
-      const header = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const imported: Student[] = [];
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-        if (cols.length < 2) continue;
-        imported.push({
-          id: genId(),
-          fullName: cols[header.indexOf('fullname') >= 0 ? header.indexOf('fullname') : 0] || cols[0],
-          studentId: cols[header.indexOf('studentid') >= 0 ? header.indexOf('studentid') : 1] || cols[1],
-          classId: '', status: 'active',
-          guardianName: cols[header.indexOf('guardianname') >= 0 ? header.indexOf('guardianname') : -1] || '',
-          phone: cols[header.indexOf('phone') >= 0 ? header.indexOf('phone') : -1] || '',
-          email: cols[header.indexOf('email') >= 0 ? header.indexOf('email') : -1] || '',
-          address: cols[header.indexOf('address') >= 0 ? header.indexOf('address') : -1] || '',
-          createdAt: new Date().toISOString(),
-        });
-      }
-      setStudents([...students, ...imported]);
-      toast.success(`${imported.length} ${language === 'fr' ? 'étudiants importés' : 'students imported'}`);
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader(); reader.onload = (ev) => {
+      const text = ev.target?.result as string; const lines = text.split('\n').filter(l => l.trim()); if (lines.length < 2) return;
+      const h = lines[0].split(',').map(x => x.trim().toLowerCase()); const imported: Student[] = [];
+      for (let i = 1; i < lines.length; i++) { const c = lines[i].split(',').map(x => x.trim().replace(/^"|"$/g, '')); if (c.length < 2) continue; imported.push({ id: genId(), fullName: c[h.indexOf('fullname') >= 0 ? h.indexOf('fullname') : 0] || c[0], studentId: c[h.indexOf('studentid') >= 0 ? h.indexOf('studentid') : 1] || c[1], classId: '', status: 'active', guardianName: c[h.indexOf('guardianname') >= 0 ? h.indexOf('guardianname') : -1] || '', phone: '', email: c[h.indexOf('email') >= 0 ? h.indexOf('email') : -1] || '', address: '', createdAt: new Date().toISOString() }); }
+      setStudents([...students, ...imported]); toast.success(`${imported.length} ${language === 'fr' ? 'étudiants importés' : 'students imported'}`);
+    }; reader.readAsText(file); e.target.value = '';
   };
+
+  const handleBatchAssign = () => { if (!batchClassId || selectedIds.size === 0) return; const updated = students.map(s => selectedIds.has(s.id) ? { ...s, classId: batchClassId, className: classes.find(c => c.id === batchClassId)?.name } : s); setStudents(updated); toast.success(`${selectedIds.size} ${language === 'fr' ? 'étudiants assignés' : 'students assigned'}`); setSelectedIds(new Set()); setBatchClassId(''); };
 
   return (
     <div className="space-y-4">
-      {/* Batch action bar (visible when multi-select && items selected) */}
       {multiSelect && selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+        <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex-wrap">
           <span className="text-sm font-medium text-blue-800 dark:text-blue-300">{selectedIds.size} {language === 'fr' ? 'sélectionné(s)' : 'selected'}</span>
-          <div className="flex gap-2 ml-auto">
-            <Button variant="outline" size="sm" onClick={() => {
-              const toExport = students.filter(s => selectedIds.has(s.id));
-              exportUtils.exportStudentsCSV(toExport, classes);
-              toast.success(language === 'fr' ? 'Exporté!' : 'Exported!');
-            }}><FileDown className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Exporter sélection' : 'Export Selected'}</Button>
-            <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => {
-              if (confirm(`${language === 'fr' ? 'Supprimer' : 'Delete'} ${selectedIds.size} ${language === 'fr' ? 'étudiants?' : 'students?'}`)) {
-                setStudents(students.filter(s => !selectedIds.has(s.id)));
-                setSelectedIds(new Set());
-                toast.success(language === 'fr' ? 'Supprimés' : 'Deleted');
-              }
-            }}><Trash2 className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Supprimer' : 'Delete'}</Button>
+          <div className="flex gap-2 ml-auto flex-wrap">
+            <Select value={batchClassId} onValueChange={setBatchClassId}><SelectTrigger className="w-40 h-8 text-xs"><SelectValue placeholder={language === 'fr' ? 'Assigner classe...' : 'Assign class...'} /></SelectTrigger><SelectContent>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+            <Button variant="outline" size="sm" onClick={handleBatchAssign} disabled={!batchClassId}><GraduationCap className="h-4 w-4 mr-1" />{language === 'fr' ? 'Assigner' : 'Assign'}</Button>
+            <Button variant="outline" size="sm" onClick={() => { const ex = students.filter(s => selectedIds.has(s.id)); exportUtils.exportStudentsCSV(ex, classes); toast.success('Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
+            <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => { if (confirm(`Delete ${selectedIds.size} students?`)) { setStudents(students.filter(s => !selectedIds.has(s.id))); setSelectedIds(new Set()); toast.success('Deleted'); } }}><Trash2 className="h-4 w-4 mr-1" />{t('delete', language)}</Button>
             <Button variant="ghost" size="sm" onClick={() => { setSelectedIds(new Set()); setMultiSelect(false); }}><X className="h-4 w-4" /></Button>
           </div>
         </div>
       )}
-
-      {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1 flex flex-wrap gap-2">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder={language === 'fr' ? 'Rechercher étudiants...' : 'Search students...'} value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
-          </div>
-          <Select value={classFilter} onValueChange={setClassFilter}>
-            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{language === 'fr' ? 'Toutes les Classes' : 'All Classes'}</SelectItem>
-              {classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{language === 'fr' ? 'Filtrer par Statut' : 'Filter by Status'}</SelectItem>
-              <SelectItem value="active">{t('active', language)}</SelectItem>
-              <SelectItem value="abandoned">{t('abandoned', language)}</SelectItem>
-              <SelectItem value="graduated">{t('graduated', language)}</SelectItem>
-              <SelectItem value="terminated">{t('terminated', language)}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="name_asc">{language === 'fr' ? 'Trier par Nom A-Z' : 'Sort Name A-Z'}</SelectItem>
-              <SelectItem value="name_desc">{language === 'fr' ? 'Trier par Nom Z-A' : 'Sort Name Z-A'}</SelectItem>
-              <SelectItem value="id">{language === 'fr' ? 'Trier par ID' : 'Sort by ID'}</SelectItem>
-              <SelectItem value="date">{language === 'fr' ? 'Trier par Date' : 'Sort by Date'}</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder={language === 'fr' ? 'Rechercher étudiants...' : 'Search students...'} value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+          <Select value={classFilter} onValueChange={setClassFilter}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Toutes les Classes' : 'All Classes'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Statut' : 'Status'}</SelectItem><SelectItem value="active">{t('active', language)}</SelectItem><SelectItem value="abandoned">{t('abandoned', language)}</SelectItem><SelectItem value="graduated">{t('graduated', language)}</SelectItem><SelectItem value="terminated">{t('terminated', language)}</SelectItem></SelectContent></Select>
+          <Select value={sortBy} onValueChange={setSortBy}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="name_asc">{language === 'fr' ? 'Nom A-Z' : 'Name A-Z'}</SelectItem><SelectItem value="name_desc">{language === 'fr' ? 'Nom Z-A' : 'Name Z-A'}</SelectItem><SelectItem value="id">{language === 'fr' ? 'ID Étudiant' : 'Student ID'}</SelectItem><SelectItem value="date">{language === 'fr' ? 'Date' : 'Date'}</SelectItem></SelectContent></Select>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" className={multiSelect ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-400' : ''} onClick={() => { setMultiSelect(!multiSelect); setSelectedIds(new Set()); }}>
-            <CheckCircle2 className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Sélection multiple' : 'Multi-select'}
-          </Button>
-          <label className="cursor-pointer">
-            <input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} />
-            <Button variant="outline" size="sm" className="border-orange-400 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20" asChild>
-              <span><Upload className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Importer' : 'Import'} CSV</span>
-            </Button>
-          </label>
-          <Button variant="outline" size="sm" onClick={() => { exportUtils.exportStudentsCSV(students, classes); toast.success(language === 'fr' ? 'Exporté!' : 'Exported!'); }}>
-            <FileDown className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Exporter CSV' : 'Export CSV'}
-          </Button>
-          <Button variant="outline" size="sm" className="border-emerald-400 text-emerald-600 hover:bg-emerald-50" onClick={() => window.print()}>
-            <Printer className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Exporter PDF' : 'Export PDF'}
-          </Button>
-          <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={openAdd}>
-            <Plus className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Ajouter Étudiant' : 'Add Student'}
-          </Button>
+          <Button variant="outline" size="sm" className={multiSelect ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-400' : ''} onClick={() => { setMultiSelect(!multiSelect); setSelectedIds(new Set()); }}><CheckCircle2 className="h-4 w-4 mr-1" />{language === 'fr' ? 'Sélection multiple' : 'Multi-select'}</Button>
+          <label className="cursor-pointer"><input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} /><Button variant="outline" size="sm" className="border-orange-400 text-orange-600" asChild><span><Upload className="h-4 w-4 mr-1" />CSV</span></Button></label>
+          <Button variant="outline" size="sm" onClick={() => { exportUtils.exportStudentsCSV(students, classes); toast.success('Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
+          <Button variant="outline" size="sm" onClick={() => window.print()}><Printer className="h-4 w-4 mr-1" />PDF</Button>
+          <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={openAdd}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter' : 'Add'}</Button>
         </div>
       </div>
+      <Card className="border-0 shadow-sm"><CardContent className="p-0">
+        {filtered.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+          <div className="max-h-[calc(100vh-320px)] overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow className="bg-purple-600 dark:bg-purple-800">
+            {multiSelect && <TableHead className="w-10"><Checkbox onCheckedChange={c => setSelectedIds(c ? new Set(filtered.map(s => s.id)) : new Set())} /></TableHead>}
+            <TableHead className="text-white">Photo</TableHead><TableHead className="text-white">{t('name', language)}</TableHead><TableHead className="text-white">ID</TableHead><TableHead className="text-white hidden md:table-cell">{t('classes', language)}</TableHead><TableHead className="text-white hidden lg:table-cell">{t('status', language)}</TableHead><TableHead className="text-white hidden lg:table-cell">{t('guardian', language)}</TableHead><TableHead className="text-white hidden xl:table-cell">{t('phone', language)}</TableHead><TableHead className="text-white w-32">{t('actions', language)}</TableHead>
+          </TableRow></TableHeader><TableBody>
+            {filtered.map(s => (
+              <TableRow key={s.id} className={selectedIds.has(s.id) ? 'bg-blue-50 dark:bg-blue-900/10' : ''}>
+                {multiSelect && <TableCell><Checkbox checked={selectedIds.has(s.id)} onCheckedChange={c => { const n = new Set(selectedIds); if (c) n.add(s.id); else n.delete(s.id); setSelectedIds(n); }} /></TableCell>}
+                <TableCell><div className="w-9 h-9 rounded-full overflow-hidden bg-emerald-600 flex items-center justify-center text-white text-sm font-bold shrink-0">{s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" /> : s.fullName.charAt(0)}</div></TableCell>
+                <TableCell className="font-medium">{s.fullName}</TableCell><TableCell>{s.studentId}</TableCell>
+                <TableCell className="hidden md:table-cell">{s.className || classes.find(c => c.id === s.classId)?.name || '-'}</TableCell>
+                <TableCell className="hidden lg:table-cell"><StatusBadge status={s.status} /></TableCell>
+                <TableCell className="hidden lg:table-cell">{s.guardianName || '-'}</TableCell>
+                <TableCell className="hidden xl:table-cell">{s.guardianPhone ? <><span className="text-xs">{s.guardianPhone}</span><Button variant="ghost" size="icon" className="h-6 w-6 text-emerald-600" onClick={() => window.open(`https://wa.me/${formatWhatsAppPhone(s.guardianPhone)}?text=${encodeURIComponent('Hello from school!')}`, '_blank')}><MessageCircle className="h-3.5 w-3.5" /></Button></> : '-'}</TableCell>
+                <TableCell><div className="flex gap-1">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setProfileStudent(s)}><Eye className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4" /></Button>
+                </div></TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table></div>
+        )}
+      </CardContent></Card>
 
-      {/* Table */}
-      <Card className="border-0 shadow-sm">
-        <CardContent className="p-0">
-          {filtered.length === 0 ? (
-            <EmptyState message={t('no_data', language)} />
-          ) : (
-            <div className="max-h-[calc(100vh-320px)] overflow-y-auto custom-scrollbar">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-purple-600 dark:bg-purple-800">
-                    {multiSelect && <TableHead className="w-10"><Checkbox onCheckedChange={(checked) => {
-                      setSelectedIds(checked ? new Set(filtered.map(s => s.id)) : new Set());
-                    }} /></TableHead>}
-                    <TableHead className="text-white">{language === 'fr' ? 'Photo' : 'Photo'}</TableHead>
-                    <TableHead className="text-white">{language === 'fr' ? 'Nom' : 'Name'}</TableHead>
-                    <TableHead className="text-white">{language === 'fr' ? 'ID Étudiant' : 'Student ID'}</TableHead>
-                    <TableHead className="text-white hidden md:table-cell">{t('classes', language)}</TableHead>
-                    <TableHead className="text-white hidden lg:table-cell">{language === 'fr' ? 'Année Académique' : 'Academic Year'}</TableHead>
-                    <TableHead className="text-white hidden lg:table-cell">{language === 'fr' ? 'Statut Étudiant' : 'Student Status'}</TableHead>
-                    <TableHead className="text-white hidden lg:table-cell">{language === 'fr' ? 'Tuteur' : 'Guardian'}</TableHead>
-                    <TableHead className="text-white hidden xl:table-cell">{language === 'fr' ? 'Téléphone' : 'Phone'}</TableHead>
-                    <TableHead className="text-white w-32">{language === 'fr' ? 'Actions' : 'Actions'}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map(s => (
-                    <TableRow key={s.id} className={selectedIds.has(s.id) ? 'bg-blue-50 dark:bg-blue-900/10' : ''}>
-                      {multiSelect && <TableCell><Checkbox checked={selectedIds.has(s.id)} onCheckedChange={(checked) => {
-                        const next = new Set(selectedIds);
-                        if (checked) next.add(s.id); else next.delete(s.id);
-                        setSelectedIds(next);
-                      }} /></TableCell>}
-                      <TableCell>
-                        <div className="w-9 h-9 bg-emerald-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                          {s.fullName.charAt(0).toUpperCase()}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-medium">{s.fullName}</TableCell>
-                      <TableCell>{s.studentId}</TableCell>
-                      <TableCell className="hidden md:table-cell">{s.className || classes.find(c => c.id === s.classId)?.name || '-'}</TableCell>
-                      <TableCell className="hidden lg:table-cell">
-                        {academicYears.find(y => y.isCurrent)?.name || '-'}
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell"><StatusBadge status={s.status} /></TableCell>
-                      <TableCell className="hidden lg:table-cell">{s.guardianName || '-'}</TableCell>
-                      <TableCell className="hidden xl:table-cell">
-                        <div className="flex items-center gap-1">
-                          {s.guardianPhone ? (
-                            <>
-                              <span className="text-xs">{s.guardianPhone}</span>
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30" onClick={() => {
-                                const phone = s.guardianPhone.replace(/\\D/g, '');
-                                window.open(`https://wa.me/${phone}?text=${encodeURIComponent('Hello from school!')}`, '_blank');
-                              }}>
-                                <MessageCircle className="h-3.5 w-3.5" />
-                              </Button>
-                            </>
-                          ) : '-'}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setProfileStudent(s); setProfileOpen(true); }}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(s)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleDelete(s.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Add/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editing ? t('edit', language) : t('add_student', language)}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{language === 'fr' ? 'Nom Complet' : 'Full Name'} *</Label>
-                <Input value={form.fullName} onChange={e => setForm({ ...form, fullName: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>{language === 'fr' ? 'ID Étudiant' : 'Student ID'} *</Label>
-                <Input value={form.studentId} onChange={e => setForm({ ...form, studentId: e.target.value })} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t('classes', language)}</Label>
-                <Select value={form.classId} onValueChange={v => setForm({ ...form, classId: v })}>
-                  <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger>
-                  <SelectContent>
-                    {classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Student['status'] })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">{t('active', language)}</SelectItem>
-                    <SelectItem value="abandoned">{t('abandoned', language)}</SelectItem>
-                    <SelectItem value="graduated">{t('graduated', language)}</SelectItem>
-                    <SelectItem value="terminated">{t('terminated', language)}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{language === 'fr' ? 'Nom du Tuteur' : 'Guardian Name'}</Label>
-                <Input value={form.guardianName} onChange={e => setForm({ ...form, guardianName: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>{language === 'fr' ? 'Tél Tuteur' : 'Guardian Phone'}</Label>
-                <Input value={form.guardianPhone} onChange={e => setForm({ ...form, guardianPhone: e.target.value })} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{language === 'fr' ? 'Téléphone' : 'Phone'}</Label>
-                <Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Adresse' : 'Address'}</Label>
-              <Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>Group</Label>
-              <Input value={form.group} onChange={e => setForm({ ...form, group: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>Notes</Label>
-              <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} />
-            </div>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>{editing ? t('edit', language) : t('add_student', language)}</DialogTitle></DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="flex justify-center"><div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center overflow-hidden cursor-pointer border-2 border-dashed" onClick={() => document.getElementById('photo-upload')?.click()}>
+            {form.photo ? <img src={form.photo} alt="" className="w-full h-full object-cover" /> : <span className="text-2xl text-muted-foreground">📷</span>}
+            <input id="photo-upload" type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+          </div></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2"><Label>{t('name', language)} *</Label><Input value={form.fullName} onChange={e => setForm({ ...form, fullName: e.target.value })} /></div>
+            <div className="space-y-2"><Label>{t('student_id', language)} *</Label><Input value={form.studentId} onChange={e => setForm({ ...form, studentId: e.target.value })} /></div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button>
-            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2"><Label>{t('classes', language)}</Label><Select value={form.classId} onValueChange={v => setForm({ ...form, classId: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Status</Label><Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Student['status'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">{t('active', language)}</SelectItem><SelectItem value="abandoned">{t('abandoned', language)}</SelectItem><SelectItem value="graduated">{t('graduated', language)}</SelectItem><SelectItem value="terminated">{t('terminated', language)}</SelectItem></SelectContent></Select></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2"><Label>{t('guardian', language)}</Label><Input value={form.guardianName} onChange={e => setForm({ ...form, guardianName: e.target.value })} /></div>
+            <div className="space-y-2"><Label>{t('phone', language)}</Label><Input value={form.guardianPhone} onChange={e => setForm({ ...form, guardianPhone: e.target.value })} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2"><Label>Email</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+            <div className="space-y-2"><Label>{t('phone', language)}</Label><Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
+          </div>
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Adresse' : 'Address'}</Label><Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></div>
+          <div className="space-y-2"><Label>Group</Label><Input value={form.group} onChange={e => setForm({ ...form, group: e.target.value })} /></div>
+          <div className="space-y-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter>
+      </DialogContent></Dialog>
 
-      {/* Profile Dialog */}
-      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{language === 'fr' ? 'Profil Étudiant' : 'Student Profile'}</DialogTitle>
-          </DialogHeader>
-          {profileStudent && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-4 p-4 bg-muted rounded-lg">
-                <div className="w-14 h-14 bg-emerald-600 rounded-full flex items-center justify-center text-white text-xl font-bold">
-                  {profileStudent.fullName.charAt(0).toUpperCase()}
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg">{profileStudent.fullName}</h3>
-                  <p className="text-sm text-muted-foreground">{profileStudent.studentId}</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><span className="text-muted-foreground">{t('classes', language)}:</span> <span className="font-medium">{profileStudent.className || '-'}</span></div>
-                <div><span className="text-muted-foreground">Status:</span> <StatusBadge status={profileStudent.status} /></div>
-                <div><span className="text-muted-foreground">{language === 'fr' ? 'Tuteur' : 'Guardian'}:</span> <span className="font-medium">{profileStudent.guardianName || '-'}</span></div>
-                <div><span className="text-muted-foreground">{language === 'fr' ? 'Tél Tuteur' : 'Guardian Phone'}:</span> <span className="font-medium">{profileStudent.guardianPhone || '-'}</span></div>
-                <div><span className="text-muted-foreground">{language === 'fr' ? 'Téléphone' : 'Phone'}:</span> <span className="font-medium">{profileStudent.phone || '-'}</span></div>
-                <div><span className="text-muted-foreground">Email:</span> <span className="font-medium">{profileStudent.email || '-'}</span></div>
-                <div className="col-span-2"><span className="text-muted-foreground">{language === 'fr' ? 'Adresse' : 'Address'}:</span> <span className="font-medium">{profileStudent.address || '-'}</span></div>
-                {profileStudent.notes && <div className="col-span-2"><span className="text-muted-foreground">Notes:</span> <span className="font-medium">{profileStudent.notes}</span></div>}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {profileStudent && <Student360Profile student={profileStudent} onClose={() => setProfileStudent(null)} />}
     </div>
   );
 }
 
-// ============================================================
-// GENERIC CRUD PAGE (Classes, Modules, Teachers, Employees, Templates, Academic Years)
-// ============================================================
-
-function CrudPage<T extends { id: string; createdAt: string }>({
-  title,
-  items,
-  setItems,
-  columns,
-  renderForm,
-  filterItems,
-}: {
-  title: string;
-  items: T[];
-  setItems: (items: T[]) => void;
+// ==================== GENERIC CRUD PAGE ====================
+function CrudPage<T extends { id: string; createdAt: string }>({ title, items, setItems, columns, renderForm, filterItems }: {
+  title: string; items: T[]; setItems: (items: T[]) => void;
   columns: { key: string; label: string; render?: (item: T) => React.ReactNode }[];
   renderForm: (item: Partial<T>, onChange: (item: Partial<T>) => void) => React.ReactNode;
   filterItems?: (items: T[], search: string) => T[];
@@ -989,2010 +739,278 @@ function CrudPage<T extends { id: string; createdAt: string }>({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Partial<T> | null>(null);
   const [form, setForm] = useState<Partial<T>>({});
-
-  const filtered = filterItems ? filterItems(items, search) : items.filter(item => {
-    return columns.some(col => {
-      const val = (item as Record<string, unknown>)[col.key];
-      return String(val).toLowerCase().includes(search.toLowerCase());
-    });
-  });
-
-  const openAdd = () => {
-    setEditing(null);
-    setForm({});
-    setDialogOpen(true);
-  };
-
-  const openEdit = (item: T) => {
-    setEditing(item);
-    setForm({ ...item });
-    setDialogOpen(true);
-  };
+  const filtered = filterItems ? filterItems(items, search) : items.filter(item => columns.some(col => String((item as Record<string, unknown>)[col.key] ?? '').toLowerCase().includes(search.toLowerCase()));
 
   const handleSave = () => {
-    if (editing?.id) {
-      setItems(items.map(i => i.id === editing.id ? { ...i, ...form } as T : i));
-      toast.success(language === 'fr' ? 'Modifié avec succès' : 'Updated successfully');
-    } else {
-      const newItem = { ...form, id: genId(), createdAt: new Date().toISOString() } as T;
-      setItems([...items, newItem]);
-      toast.success(language === 'fr' ? 'Ajouté avec succès' : 'Added successfully');
-    }
+    if (editing?.id) { setItems(items.map(i => i.id === editing.id ? { ...i, ...form } as T : i)); toast.success(language === 'fr' ? 'Modifié' : 'Updated'); }
+    else { setItems([...items, { ...form, id: genId(), createdAt: new Date().toISOString() } as T]); toast.success(language === 'fr' ? 'Ajouté' : 'Added'); }
     setDialogOpen(false);
-  };
-
-  const handleDelete = (id: string) => {
-    setItems(items.filter(i => i.id !== id));
-    toast.success(language === 'fr' ? 'Supprimé avec succès' : 'Deleted successfully');
   };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder={t('search', language)} value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
-        </div>
-        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={openAdd}>
-          <Plus className="h-4 w-4 mr-1" /> {t('add', language)} {title}
-        </Button>
+        <div className="relative flex-1 max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder={t('search', language)} value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { setEditing(null); setForm({}); setDialogOpen(true); }}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
       </div>
-
-      <Card className="border-0 shadow-sm">
-        <CardContent className="p-0">
-          {filtered.length === 0 ? (
-            <EmptyState message={t('no_data', language)} />
-          ) : (
-            <div className="max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {columns.map(col => <TableHead key={col.key}>{col.label}</TableHead>)}
-                    <TableHead className="w-24">{language === 'fr' ? 'Actions' : 'Actions'}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map(item => (
-                    <TableRow key={item.id}>
-                      {columns.map(col => (
-                        <TableCell key={col.key}>
-                          {col.render ? col.render(item) : String((item as Record<string, unknown>)[col.key] ?? '-')}
-                        </TableCell>
-                      ))}
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(item)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleDelete(item.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editing ? t('edit', language) : t('add', language)} {title}</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">{renderForm(form, setForm)}</div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button>
-            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Card className="border-0 shadow-sm"><CardContent className="p-0">{filtered.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+        <div className="max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow>{columns.map(col => <TableHead key={col.key}>{col.label}</TableHead>)<TableHead className="w-24">{t('actions', language)}</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(item => <TableRow key={item.id}>{columns.map(col => <TableCell key={col.key}>{col.render ? col.render(item) : String((item as Record<string, unknown>)[col.key] ?? '-')}</TableCell>)}
+            <TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditing(item); setForm({ ...item }); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => { setItems(items.filter(i => i.id !== item.id)); toast.success('Deleted'); }}><Trash2 className="h-4 w-4" /></Button></div></TableCell></TableRow>)}
+        </TableBody></Table></div>
+      )}</CardContent></Card>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{editing ? t('edit', language) : t('add', language)} {title}</DialogTitle></DialogHeader><div className="py-4">{renderForm(form, setForm)}</div><DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter></DialogContent></Dialog>
     </div>
   );
 }
 
-// ============================================================
-// CLASSES PAGE
-// ============================================================
-
+// ==================== CLASSES PAGE ====================
 function ClassesPage() {
   const { classes, setClasses, students, language } = useAppStore();
-
-  return (
-    <CrudPage<Class>
-      title={t('classes', language)}
-      items={classes}
-      setItems={setClasses}
-      columns={[
-        { key: 'name', label: t('classes', language) },
-        { key: 'description', label: language === 'fr' ? 'Description' : 'Description' },
-        { key: 'teacher', label: language === 'fr' ? 'Enseignant' : 'Teacher' },
-        { key: 'room', label: language === 'fr' ? 'Salle' : 'Room' },
-        { key: 'capacity', label: language === 'fr' ? 'Capacité' : 'Capacity' },
-        {
-          key: '_students', label: language === 'fr' ? 'Étudiants' : 'Students',
-          render: (item) => (
-            <Badge variant="secondary">{students.filter(s => s.classId === item.id).length}</Badge>
-          ),
-        },
-      ]}
-      renderForm={(item, onChange) => (
-        <div className="grid gap-4">
-          <div className="space-y-2">
-            <Label>{t('classes', language)} *</Label>
-            <Input value={String(item.name || '')} onChange={e => onChange({ ...item, name: e.target.value })} />
-          </div>
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Description' : 'Description'}</Label>
-            <Textarea value={String(item.description || '')} onChange={e => onChange({ ...item, description: e.target.value })} rows={2} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Enseignant' : 'Teacher'}</Label>
-              <Input value={String(item.teacher || '')} onChange={e => onChange({ ...item, teacher: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Salle' : 'Room'}</Label>
-              <Input value={String(item.room || '')} onChange={e => onChange({ ...item, room: e.target.value })} />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Capacité' : 'Capacity'}</Label>
-            <Input type="number" value={String(item.capacity || 30)} onChange={e => onChange({ ...item, capacity: parseInt(e.target.value) || 30 })} />
-          </div>
-        </div>
-      )}
-    />
-  );
+  return <CrudPage<Class> title={t('classes', language)} items={classes} setItems={setClasses} columns={[
+    { key: 'name', label: t('classes', language) }, { key: 'description', label: language === 'fr' ? 'Description' : 'Description' },
+    { key: 'teacher', label: language === 'fr' ? 'Enseignant' : 'Teacher' }, { key: 'room', label: language === 'fr' ? 'Salle' : 'Room' }, { key: 'capacity', label: language === 'fr' ? 'Capacité' : 'Capacity' },
+    { key: '_students', label: t('students', language), render: (item) => <Badge variant="secondary">{students.filter(s => s.classId === item.id).length}</Badge> },
+  ]} renderForm={(item, onChange) => (
+    <div className="grid gap-4">
+      <div className="space-y-2"><Label>{t('classes', language)} *</Label><Input value={String(item.name || '')} onChange={e => onChange({ ...item, name: e.target.value })} /></div>
+      <div className="space-y-2"><Label>Description</Label><Textarea value={String(item.description || '')} onChange={e => onChange({ ...item, description: e.target.value })} rows={2} /></div>
+      <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Enseignant' : 'Teacher'}</Label><Input value={String(item.teacher || '')} onChange={e => onChange({ ...item, teacher: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Salle' : 'Room'}</Label><Input value={String(item.room || '')} onChange={e => onChange({ ...item, room: e.target.value })} /></div></div>
+      <div className="space-y-2"><Label>{language === 'fr' ? 'Capacité' : 'Capacity'}</Label><Input type="number" value={String(item.capacity || 30)} onChange={e => onChange({ ...item, capacity: parseInt(e.target.value) || 30 })} /></div>
+    </div>
+  />} />;
 }
 
-// ============================================================
-// MODULES PAGE
-// ============================================================
-
+// ==================== MODULES PAGE ====================
 function ModulesPage() {
   const { modules, setModules, language } = useAppStore();
-
-  return (
-    <CrudPage<Module>
-      title={t('modules', language)}
-      items={modules}
-      setItems={setModules}
-      columns={[
-        { key: 'name', label: language === 'fr' ? 'Nom' : 'Name' },
-        { key: 'code', label: 'Code' },
-        { key: 'year', label: language === 'fr' ? 'Année' : 'Year' },
-        { key: 'semester', label: language === 'fr' ? 'Semestre' : 'Semester' },
-        { key: 'credits', label: language === 'fr' ? 'Crédits' : 'Credits' },
-      ]}
-      renderForm={(item, onChange) => (
-        <div className="grid gap-4">
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Nom du Module' : 'Module Name'} *</Label>
-            <Input value={String(item.name || '')} onChange={e => onChange({ ...item, name: e.target.value })} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Code</Label>
-              <Input value={String(item.code || '')} onChange={e => onChange({ ...item, code: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Crédits' : 'Credits'}</Label>
-              <Input type="number" value={String(item.credits || '')} onChange={e => onChange({ ...item, credits: parseInt(e.target.value) || 0 })} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Année' : 'Year'}</Label>
-              <Input value={String(item.year || '')} onChange={e => onChange({ ...item, year: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Semestre' : 'Semester'}</Label>
-              <Input value={String(item.semester || '')} onChange={e => onChange({ ...item, semester: e.target.value })} />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Description' : 'Description'}</Label>
-            <Textarea value={String(item.description || '')} onChange={e => onChange({ ...item, description: e.target.value })} rows={2} />
-          </div>
-        </div>
-      )}
-    />
-  );
+  return <CrudPage<Module> title={t('modules', language)} items={modules} setItems={setModules} columns={[
+    { key: 'name', label: language === 'fr' ? 'Nom' : 'Name' }, { key: 'code', label: 'Code' }, { key: 'year', label: language === 'fr' ? 'Année' : 'Year' }, { key: 'semester', label: language === 'fr' ? 'Semestre' : 'Semester' }, { key: 'credits', label: language === 'fr' ? 'Crédits' : 'Credits' },
+  ]} renderForm={(item, onChange) => (
+    <div className="grid gap-4">
+      <div className="space-y-2"><Label>{language === 'fr' ? 'Nom du Module' : 'Module Name'} *</Label><Input value={String(item.name || '')} onChange={e => onChange({ ...item, name: e.target.value })} /></div>
+      <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>Code</Label><Input value={String(item.code || '')} onChange={e => onChange({ ...item, code: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Crédits' : 'Credits'}</Label><Input type="number" value={String(item.credits || '')} onChange={e => onChange({ ...item, credits: parseInt(e.target.value) || 0 })} /></div></div>
+      <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Année' : 'Year'}</Label><Input value={String(item.year || '')} onChange={e => onChange({ ...item, year: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Semestre' : 'Semester'}</Label><Input value={String(item.semester || '')} onChange={e => onChange({ ...item, semester: e.target.value })} /></div></div>
+      <div className="space-y-2"><Label>Description</Label><Textarea value={String(item.description || '')} onChange={e => onChange({ ...item, description: e.target.value })} rows={2} /></div>
+    </div>
+  />} />;
 }
 
-// ============================================================
-// ATTENDANCE PAGE
-// ============================================================
-
+// ==================== ATTENDANCE PAGE (with Quick Mode) ====================
 function AttendancePage() {
   const { students, classes, attendance, setAttendance, templates, schoolInfo, language } = useAppStore();
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedClass, setSelectedClass] = useState('all');
   const [overrides, setOverrides] = useState<Record<string, AttendanceRecord['status']>>({});
   const [saving, setSaving] = useState(false);
+  const [quickMode, setQuickMode] = useState(false);
+  const [quickBulk, setQuickBulk] = useState<Record<string, boolean>>({});
 
-  const filteredStudents = students.filter(s => {
-    if (s.status !== 'active') return false;
-    if (selectedClass !== 'all' && s.classId !== selectedClass) return false;
-    return true;
-  });
-
-  // Derive base records from attendance data
-  const baseRecords = useMemo(() => {
-    const dayRecords = attendance.filter(r => r.date === selectedDate);
-    const map: Record<string, AttendanceRecord['status']> = {};
-    dayRecords.forEach(r => { map[r.studentId] = r.status; });
-    return map;
-  }, [selectedDate, attendance]);
-
-  // Effective records = base + user overrides
+  const filteredStudents = students.filter(s => s.status === 'active' && (!selectedClass || selectedClass === 'all' || s.classId === selectedClass));
+  const baseRecords = useMemo(() => { const m: Record<string, AttendanceRecord['status']> = {}; attendance.filter(r => r.date === selectedDate).forEach(r => { m[r.studentId] = r.status; }); return m; }, [selectedDate, attendance]);
   const localRecords = useMemo(() => ({ ...baseRecords, ...overrides }), [baseRecords, overrides]);
 
-  const handleStatusChange = (studentId: string, status: AttendanceRecord['status']) => {
-    setOverrides(prev => ({ ...prev, [studentId]: status }));
-    // Auto-open WhatsApp Web when marking absent or late (matches original HTML behavior)
+  const handleStatusChange = (sid: string, status: AttendanceRecord['status']) => {
+    setOverrides(p => ({ ...p, [sid]: status }));
     if (status === 'absent' || status === 'late') {
-      const student = students.find(s => s.id === studentId);
-      if (student?.guardianPhone) {
-        setTimeout(() => {
-          sendAbsenceWhatsApp(studentId);
-          toast.success(language === 'fr' ? `Message WhatsApp ouvert pour ${student.guardianName || 'tuteur'}` : `WhatsApp opened for ${student.guardianName || 'guardian'}`);
-        }, 500);
-      }
+      const s = students.find(st => st.id === sid);
+      if (s?.guardianPhone) setTimeout(() => { sendAbsenceWhatsApp(sid); toast.success(`WhatsApp opened for ${s.guardianName || 'guardian'}`); }, 500);
     }
   };
-
   const handleMarkAll = (status: AttendanceRecord['status']) => {
-    const map: Record<string, AttendanceRecord['status']> = {};
-    filteredStudents.forEach(s => { map[s.id] = status; });
-    setOverrides(map);
-    // Auto-open WhatsApp for all absent/late students (staggered to avoid popup blockers)
-    if (status === 'absent' || status === 'late') {
-      const studentsWithPhone = filteredStudents.filter(s => s.guardianPhone);
-      if (studentsWithPhone.length > 0) {
-        studentsWithPhone.forEach((student, index) => {
-          setTimeout(() => {
-            sendAbsenceWhatsApp(student.id);
-          }, (index + 1) * 1000);
-        });
-        toast.info(language === 'fr'
-          ? `Ouverture WhatsApp pour ${studentsWithPhone.length} tuteurs...`
-          : `Opening WhatsApp for ${studentsWithPhone.length} guardians...`);
-      }
-    }
+    const m: Record<string, AttendanceRecord['status']> = {}; filteredStudents.forEach(s => { m[s.id] = status; }); setOverrides(m);
+    if (status === 'absent' || status === 'late') { filteredStudents.filter(s => s.guardianPhone).forEach((s, i) => setTimeout(() => sendAbsenceWhatsApp(s.id), (i + 1) * 1000)); }
   };
-
   const handleSave = () => {
     setSaving(true);
-    const existingIds = new Set(attendance.filter(r => r.date === selectedDate).map(r => r.studentId));
-    const newRecords: AttendanceRecord[] = [];
-    const updatedAttendance = attendance.filter(r => r.date !== selectedDate);
+    const updated = attendance.filter(r => r.date !== selectedDate);
+    const newR: AttendanceRecord[] = [];
+    filteredStudents.forEach(s => { const st = localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) updated.push({ ...ex, status: st }); else newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); });
+    setAttendance([...updated, ...newR]); toast.success('Attendance saved!'); setTimeout(() => setSaving(false), 500);
+  };
+  const counts = { present: Object.values(localRecords).filter(s => s === 'present').length, absent: Object.values(localRecords).filter(s => s === 'absent').length, late: Object.values(localRecords).filter(s => s === 'late').length, excused: Object.values(localRecords).filter(s => s === 'excused').length, unmarked: filteredStudents.length - Object.keys(localRecords).filter(id => filteredStudents.some(s => s.id === id)).length };
 
-    filteredStudents.forEach(s => {
-      const status = localRecords[s.id] || 'present';
-      const existing = attendance.find(r => r.date === selectedDate && r.studentId === s.id);
-      if (existing) {
-        updatedAttendance.push({ ...existing, status });
-      } else {
-        newRecords.push({
-          id: genId(), studentId: s.id, date: selectedDate, status,
-          createdAt: new Date().toISOString(),
-        });
-      }
-    });
-
-    setAttendance([...updatedAttendance, ...newRecords]);
-    toast.success(language === 'fr' ? 'Présence enregistrée!' : 'Attendance saved!');
-    // Auto-send WhatsApp for newly marked absent/late students on save
-    const newlyAbsentLate = filteredStudents.filter(s => {
-      const newStatus = localRecords[s.id] || 'present';
-      const oldRecord = attendance.find(r => r.date === selectedDate && r.studentId === s.id);
-      const oldStatus = oldRecord?.status || 'present';
-      return (newStatus === 'absent' || newStatus === 'late') && newStatus !== oldStatus && s.guardianPhone;
-    });
-    if (newlyAbsentLate.length > 0) {
-      newlyAbsentLate.forEach((student, index) => {
-        setTimeout(() => {
-          sendAbsenceWhatsApp(student.id);
-        }, (index + 1) * 1000);
-      });
-      toast.info(language === 'fr'
-        ? `Ouverture WhatsApp pour ${newlyAbsentLate.length} tuteur(s)...`
-        : `Opening WhatsApp for ${newlyAbsentLate.length} guardian(s)...`);
-    }
-    setTimeout(() => setSaving(false), 500);
+  const sendAbsenceWhatsApp = (sid: string) => {
+    const s = students.find(st => st.id === sid); if (!s?.guardianPhone) return;
+    const st = localRecords[sid]; let tmpl = templates.find(t => { const n = t.name.toLowerCase(); if (st === 'late') return n.includes('late'); return n.includes('absence'); });
+    if (!tmpl) tmpl = st === 'late' ? { id: '', name: 'Late', category: 'late', content: 'Hello {guardian_name}, {student_name} arrived late today ({date}).', createdAt: '' } : { id: '', name: 'Absence', category: 'absence', content: 'Dear {guardian_name}, {student_name} was marked absent today ({date}). Please contact us.', createdAt: '' };
+    const msg = tmpl.content.replace(/{student_name}/g, s.fullName).replace(/{guardian_name}/g, s.guardianName || 'Guardian').replace(/{date}/g, new Date().toLocaleDateString()).replace(/{school_name}/g, schoolInfo?.name || 'School').replace(/{class}/g, classes.find(c => c.id === s.classId)?.name || 'class');
+    window.open(`https://wa.me/${formatWhatsAppPhone(s.guardianPhone)}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+  const handleQuickBulk = (status: AttendanceRecord['status']) => {
+    const m: Record<string, AttendanceRecord['status']> = {}; filteredStudents.forEach(s => { m[s.id] = status; }); setQuickBulk({ ...m });
+    Object.keys(m).length > 0 && toast.success(`${Object.keys(m).length} marked as ${status}`);
+  };
+  const handleQuickSave = () => {
+    setSaving(true);
+    const updated = attendance.filter(r => r.date !== selectedDate);
+    const newR: AttendanceRecord[] = [];
+    filteredStudents.forEach(s => { const st = quickBulk[s.id] || localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) updated.push({ ...ex, status: st }); else newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); });
+    setAttendance([...updated, ...newR]); toast.success('Attendance saved!'); setQuickBulk({}); setTimeout(() => setSaving(false), 500);
   };
 
-  const counts = {
-    present: Object.values(localRecords).filter(s => s === 'present').length,
-    absent: Object.values(localRecords).filter(s => s === 'absent').length,
-    late: Object.values(localRecords).filter(s => s === 'late').length,
-    excused: Object.values(localRecords).filter(s => s === 'excused').length,
-  };
-
-  // WhatsApp: Send absence/late notification via wa.me
-  const formatWhatsAppPhone = (phone: string | undefined): string => {
-    if (!phone) return '';
-    let cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length === 10) cleaned = '1' + cleaned;
-    else if (cleaned.length === 11 && cleaned.startsWith('1')) { /* ok */ }
-    else if (cleaned.length === 9 && cleaned.startsWith('0')) cleaned = '44' + cleaned.substring(1);
-    else if (cleaned.length === 10 && cleaned.startsWith('0')) cleaned = '212' + cleaned.substring(1);
-    return cleaned;
-  };
-
-  const sendAbsenceWhatsApp = (studentId: string) => {
-    const student = students.find(s => s.id === studentId);
-    if (!student || !student.guardianPhone) { toast.error(language === 'fr' ? 'Aucun numéro' : 'No phone number'); return; }
-    const status = localRecords[studentId];
-    let tmpl = templates.find(t => {
-      const n = t.name.toLowerCase();
-      if (status === 'late') return n.includes('late') || n.includes('retard');
-      return n.includes('absence') || n.includes('absent');
-    });
-    if (!tmpl) {
-      tmpl = status === 'late'
-        ? { id: '', name: 'Late', category: 'late', content: 'Hello {guardian_name}, {student_name} arrived late to {class} today ({date}).', createdAt: '' }
-        : { id: '', name: 'Absence', category: 'absence', content: 'Dear {guardian_name}, {student_name} was marked absent from {class} today ({date}). Please contact {school_name} if needed. Thank you.', createdAt: '' };
-    }
-    const studentClass = classes.find(c => c.id === student.classId);
-    const message = tmpl.content
-      .replace(/{student_name}/g, student.fullName)
-      .replace(/{guardian_name}/g, student.guardianName || 'Guardian')
-      .replace(/{class}/g, studentClass?.name || 'class')
-      .replace(/{date}/g, new Date().toLocaleDateString())
-      .replace(/{school_name}/g, schoolInfo?.name || 'School');
-    const formatted = formatWhatsAppPhone(student.guardianPhone);
-    window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(message)}`, '_blank');
-  };
+  const quickCounts = useMemo(() => {
+    const src = quickBulk; if (Object.keys(src).length > 0) return { present: Object.values(src).filter(s => s === 'present').length, absent: Object.values(src).filter(s => s === 'absent').length, late: Object.values(src).filter(s => s === 'late').length, excused: Object.values(src).filter(s => s === 'excused').length, unmarked: filteredStudents.length - Object.keys(src).length };
+    return counts;
+  }, [quickBulk, filteredStudents]);
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex gap-2 flex-1">
           <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="w-44" />
-          <Select value={selectedClass} onValueChange={setSelectedClass}>
-            <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{language === 'fr' ? 'Toutes les classes' : 'All Classes'}</SelectItem>
-              {classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <Select value={selectedClass} onValueChange={setSelectedClass}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Toutes' : 'All'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+          <Button variant={quickMode ? 'default' : 'outline'} size="sm" onClick={() => setQuickMode(!quickMode)} className={quickMode ? 'bg-emerald-600 text-white' : ''}><Zap className="h-4 w-4 mr-1" />{quickMode ? (language === 'fr' ? 'Mode Rapide' : 'Quick Mode') : (language === 'fr' ? 'Mode Normal' : 'Normal')}</Button>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => handleMarkAll('present')}>
-            <CheckCircle2 className="h-4 w-4 mr-1 text-emerald-600" /> {t('present', language)}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => handleMarkAll('absent')}>
-            <XCircle className="h-4 w-4 mr-1 text-red-600" /> {t('absent', language)}
-          </Button>
-          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave} disabled={saving}>
-            <Save className="h-4 w-4 mr-1" /> {t('save', language)}
-          </Button>
+          {!quickMode && <><Button variant="outline" size="sm" onClick={() => handleMarkAll('present')}><CheckCircle2 className="h-4 w-4 mr-1 text-emerald-600" />{t('present', language)}</Button>
+          <Button variant="outline" size="sm" onClick={() => handleMarkAll('absent')}><XCircle className="h-4 w-4 mr-1 text-red-600" />{t('absent', language)}</Button></>}
+          {quickMode && <Button variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleQuickBulk('present')}>✅ {t('present', language)} All</Button>}
+          {quickMode && <Button variant="outline" size="sm" className="border-red-400 text-red-600" onClick={() => handleQuickBulk('absent')}>❌ {t('absent', language)} All</Button>}
+          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={quickMode ? handleQuickSave : handleSave} disabled={saving}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
         </div>
       </div>
 
-      {/* Summary */}
-      <div className="grid grid-cols-4 gap-3">
-        <Card className="border-0 shadow-sm"><CardContent className="p-3 text-center"><p className="text-2xl font-bold text-emerald-600">{counts.present}</p><p className="text-xs text-muted-foreground">{t('present', language)}</p></CardContent></Card>
-        <Card className="border-0 shadow-sm"><CardContent className="p-3 text-center"><p className="text-2xl font-bold text-red-600">{counts.absent}</p><p className="text-xs text-muted-foreground">{t('absent', language)}</p></CardContent></Card>
-        <Card className="border-0 shadow-sm"><CardContent className="p-3 text-center"><p className="text-2xl font-bold text-amber-600">{counts.late}</p><p className="text-xs text-muted-foreground">{t('late', language)}</p></CardContent></Card>
-        <Card className="border-0 shadow-sm"><CardContent className="p-3 text-center"><p className="text-2xl font-bold text-sky-600">{counts.excused}</p><p className="text-xs text-muted-foreground">{t('excused', language)}</p></CardContent></Card>
+      {/* Stats bar */}
+      <div className="grid grid-cols-5 gap-2">
+        {[{ l: t('present', language), v: (quickMode ? quickCounts : counts).present, c: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' }, { l: t('absent', language), v: (quickMode ? quickCounts : counts).absent, c: 'text-red-600 bg-red-50 dark:bg-red-900/20' }, { l: t('late', language), v: (quickMode ? quickCounts : counts).late, c: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' }, { l: t('excused', language), v: (quickMode ? quickCounts : counts).excused, c: 'text-sky-600 bg-sky-50 dark:bg-sky-900/20' }, { l: 'Unmarked', v: (quickMode ? quickCounts : counts).unmarked, c: 'text-gray-600 bg-gray-50 dark:bg-gray-900/20' }].map((s, i) => (
+          <Card key={i} className="border-0 shadow-sm"><CardContent className="p-2.5 text-center"><p className="text-xl font-bold">{s.v}</p><p className="text-[10px] text-muted-foreground">{s.l}</p></CardContent></Card>
+        ))}
       </div>
 
-      {/* Student List */}
-      <Card className="border-0 shadow-sm">
-        <CardContent className="p-0">
-          {filteredStudents.length === 0 ? (
-            <EmptyState message={t('no_data', language)} />
-          ) : (
-            <div className="max-h-[calc(100vh-380px)] overflow-y-auto custom-scrollbar">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{language === 'fr' ? 'Nom' : 'Name'}</TableHead>
-                    <TableHead>ID</TableHead>
-                    <TableHead className="hidden md:table-cell">{t('classes', language)}</TableHead>
-                    <TableHead className="text-center">{language === 'fr' ? 'Statut' : 'Status'}</TableHead>
-                    <TableHead className="text-center">WhatsApp</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredStudents.map(s => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.fullName}</TableCell>
-                      <TableCell>{s.studentId}</TableCell>
-                      <TableCell className="hidden md:table-cell">{s.className || classes.find(c => c.id === s.classId)?.name || '-'}</TableCell>
-                      <TableCell>
-                        <div className="flex justify-center">
-                          <Select value={localRecords[s.id] || 'present'} onValueChange={v => handleStatusChange(s.id, v as AttendanceRecord['status'])}>
-                            <SelectTrigger className="w-32">
-                              <StatusBadge status={localRecords[s.id] || 'present'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="present">{t('present', language)}</SelectItem>
-                              <SelectItem value="absent">{t('absent', language)}</SelectItem>
-                              <SelectItem value="late">{t('late', language)}</SelectItem>
-                              <SelectItem value="excused">{t('excused', language)}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex justify-center">
-                          {s.guardianPhone ? (
-                            <Button variant="ghost" size="sm" className="h-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30" onClick={() => sendAbsenceWhatsApp(s.id)} title="Send WhatsApp">
-                              <MessageCircle className="h-4 w-4" />
-                            </Button>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">—</span>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+      {!quickMode ? (
+        <Card className="border-0 shadow-sm"><CardContent className="p-0">
+          {filteredStudents.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+            <div className="max-h-[calc(100vh-380px)] overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow><TableHead>{t('name', language)}</TableHead><TableHead>ID</TableHead><TableHead className="hidden md:table-cell">{t('classes', language)}</TableHead><TableHead className="text-center">{t('status', language)}</TableHead><TableHead className="text-center">WhatsApp</TableHead></TableRow></TableHeader><TableBody>
+              {filteredStudents.map(s => <TableRow key={s.id}><TableCell className="font-medium">{s.fullName}</TableCell><TableCell>{s.studentId}</TableCell><TableCell className="hidden md:table-cell">{s.className || classes.find(c => c.id === s.classId)?.name || '-'}</TableCell>
+                <TableCell><div className="flex justify-center"><Select value={localRecords[s.id] || 'present'} onValueChange={v => handleStatusChange(s.id, v as AttendanceRecord['status'])}><SelectTrigger className="w-32"><StatusBadge status={localRecords[s.id] || 'present'} /></SelectTrigger><SelectContent><SelectItem value="present">{t('present', language)}</SelectItem><SelectItem value="absent">{t('absent', language)}</SelectItem><SelectItem value="late">{t('late', language)}</SelectItem><SelectItem value="excused">{t('excused', language)}</SelectItem></SelectContent></Select></div></TableCell>
+                <TableCell><div className="flex justify-center">{s.guardianPhone ? <Button variant="ghost" size="sm" className="h-7 text-emerald-600" onClick={() => sendAbsenceWhatsApp(s.id)}><MessageCircle className="h-4 w-4" /></Button> : <span className="text-muted-foreground text-xs">—</span>}</div></TableCell>
+              </TableRow>)}
+            </TableBody></Table></div>
           )}
-        </CardContent>
-      </Card>
+        </CardContent></Card>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[calc(100vh-340px)] overflow-y-auto custom-scrollbar">
+          {filteredStudents.map(s => {
+            const st = quickBulk[s.id] || localRecords[s.id] || null;
+            const stColor = st === 'present' ? 'ring-2 ring-emerald-400' : st === 'absent' ? 'ring-2 ring-red-400' : st === 'late' ? 'ring-2 ring-amber-400' : st === 'excused' ? 'ring-2 ring-sky-400' : '';
+            return (
+              <Card key={s.id} className={`border-2 transition-all ${stColor} hover:shadow-md`}>
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 font-bold shrink-0 overflow-hidden">{s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" /> : s.fullName.charAt(0)}</div>
+                    <div className="flex-1 min-w-0"><p className="font-semibold text-sm truncate">{s.fullName}</p><p className="text-xs text-muted-foreground">{s.studentId} • {classes.find(c => c.id === s.classId)?.name || '-'}</p></div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant={st === 'present' ? 'default' : 'outline'} className={st === 'present' ? 'bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-600' : 'hover:border-emerald-300 hover:text-emerald-600'} onClick={() => { const nb = { ...quickBulk }; nb[s.id] = 'present'; setQuickBulk(nb); }} >✅</Button>
+                    <Button size="sm" variant={st === 'absent' ? 'default' : 'outline'} className={st === 'absent' ? 'bg-red-600 text-white hover:bg-red-700 border-red-600' : 'hover:border-red-300 hover:text-red-600'} onClick={() => { const nb = { ...quickBulk }; nb[s.id] = 'absent'; setQuickBulk(nb); }}>❌</Button>
+                    <Button size="sm" variant={st === 'late' ? 'default' : 'outline'} className={st === 'late' ? 'bg-amber-600 text-white hover:bg-amber-700 border-amber-600' : 'hover:border-amber-300 hover:text-amber-600'} onClick={() => { const nb = { ...quickBulk }; nb[s.id] = 'late'; setQuickBulk(nb); }}>⏰</Button>
+                    <Button size="sm" variant={st === 'excused' ? 'default' : 'outline'} className={st === 'excused' ? 'bg-sky-600 text-white hover:bg-sky-700 border-sky-600' : 'hover:border-sky-300 hover:text-sky-600'} onClick={() => { const nb = { ...quickBulk }; nb[s.id] = 'excused'; setQuickBulk(nb); }}>🛡️</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-// ============================================================
-// CALENDAR PAGE
-// ============================================================
-
+// ==================== CALENDAR PAGE (with Events) ====================
 function CalendarPage() {
-  const { attendance, students, classes, language } = useAppStore();
+  const { attendance, students, classes, language, setCurrentPage } = useAppStore();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [events, setEvents] = useState<CalendarEvent[]>(() => { try { return JSON.parse(localStorage.getItem('calendar_events') || '[]'); } catch { return []; } });
+  const [eventOpen, setEventOpen] = useState(false);
+  const [eventForm, setEventForm] = useState({ title: '', date: new Date().toISOString().split('T')[0], type: 'other' as CalendarEvent['type'], description: '', color: '#10b981' });
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+
+  useEffect(() => { try { localStorage.setItem('calendar_events', JSON.stringify(events)); } catch {} }, [events]);
 
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const monthName = currentMonth.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { month: 'long', year: 'numeric' });
-
-  const dayNames = language === 'fr'
-    ? ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
-    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-  // Adjust firstDay: Sunday = 0 for en, but Monday = 0 for fr
   const startOffset = language === 'fr' ? (firstDay === 0 ? 6 : firstDay - 1) : firstDay;
+  const monthName = currentMonth.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { month: 'long', year: 'numeric' });
+  const dayNames = language === 'fr' ? ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  const getRecordsForDay = (day: number) => {
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return attendance.filter(r => r.date === dateStr);
+  const getRecordsForDay = (day: number) => { const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; return attendance.filter(r => r.date === ds); };
+  const getEventsForDay = (day: number) => { const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; return events.filter(e => e.date === ds); };
+  const selectedRecords = selectedDay ? attendance.filter(r => r.date === selectedDay) : [];
+  const selectedEvents = selectedDay ? getEventsForDay(parseInt(selectedDay.split('-')[2])) : [];
+
+  const handleAddEvent = () => {
+    if (!eventForm.title || !eventForm.date) { toast.error('Title and date required'); return; }
+    if (editingEvent) { setEvents(events.map(e => e.id === editingEvent.id ? { ...eventForm } : e)); }
+    else setEvents([...events, { ...eventForm, id: genId(), createdAt: new Date().toISOString() }]);
+    toast.success(language === 'fr' ? 'Événement sauvegardé' : 'Event saved');
+    setEventOpen(false); setEditingEvent(null); setEventForm({ title: '', date: new Date().toISOString().split('T')[0], type: 'other', description: '', color: '#10b981' });
   };
+  const openEditEvent = (e: CalendarEvent) => { setEditingEvent(e); setEventForm({ title: e.title, date: e.date, type: e.type, description: e.description || '', color: e.color || '#10b981' }); setEventOpen(true); };
+  const handleDeleteEvent = (id: string) => { setEvents(events.filter(e => e.id !== id)); toast.success('Event deleted'); };
 
-  const selectedRecords = selectedDay
-    ? attendance.filter(r => r.date === selectedDay)
-    : [];
-
-  const prevMonth = () => setCurrentMonth(new Date(year, month - 1, 1));
-  const nextMonth = () => setCurrentMonth(new Date(year, month + 1, 1));
+  const typeColors: Record<string, string> = { exam: '#ef4444', holiday: '#10b981', meeting: '#3b82f6', other: '#6b7280' };
 
   return (
     <div className="space-y-4">
-      <Card className="border-0 shadow-sm">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <Button variant="ghost" size="icon" onClick={prevMonth}><ChevronLeft className="h-5 w-5" /></Button>
-            <h3 className="text-lg font-semibold capitalize">{monthName}</h3>
-            <Button variant="ghost" size="icon" onClick={nextMonth}><ChevronRight className="h-5 w-5" /></Button>
-          </div>
+      <div className="flex items-center gap-3">
+        <h3 className="text-lg font-semibold capitalize">{monthName}</h3>
+        <div className="flex gap-1">
+          <Button variant="outline" size="icon" onClick={() => setCurrentMonth(new Date(year, month - 1, 1))}><ChevronLeft className="h-4 w-4" /></Button>
+          <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date())}>{language === 'fr' ? "Aujourd'hui" : 'Today'}</Button>
+          <Button variant="outline" size="icon" onClick={() => setCurrentMonth(new Date(year, month + 1, 1))}><ChevronRight className="h-4 w-4" /></Button>
+        </div>
+        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 ml-auto" onClick={() => { setEditingEvent(null); setEventForm({ title: '', date: new Date().toISOString().split('T')[0], type: 'other', description: '', color: '#10b981' }); setEventOpen(true); }}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter Événement' : 'Add Event'}</Button>
+      </div>
 
-          {/* Day headers */}
-          <div className="grid grid-cols-7 gap-1 mb-1">
-            {dayNames.map(d => (
-              <div key={d} className="text-center text-xs font-medium text-muted-foreground py-2">{d}</div>
-            ))}
-          </div>
+      <Card className="border-0 shadow-sm"><CardContent className="p-4">
+        <div className="grid grid-cols-7 gap-1 mb-1">{dayNames.map(d => <div key={d} className="text-center text-xs font-medium text-muted-foreground py-2">{d}</div>)}</div>
+        <div className="grid grid-cols-7 gap-1">
+          {[...Array(startOffset)].map((_, i) => <div key={`e-${i}`} />)}
+          {[...Array(daysInMonth)].map((_, i) => {
+            const day = i + 1; const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const recs = getRecordsForDay(day); const evts = getEventsForDay(day);
+            const isToday = ds === new Date().toISOString().split('T')[0]; const isSel = selectedDay === ds;
+            return (
+              <button key={day} onClick={() => setSelectedDay(ds === selectedDay ? null : ds)} className={`relative p-2 rounded-lg text-sm min-h-16 flex flex-col items-center justify-center transition-colors ${isSel ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700' : 'hover:bg-muted'} ${isToday ? 'font-bold ring-2 ring-emerald-500' : ''}`}>
+                <span>{day}</span>
+                <div className="flex gap-0.5 mt-1 flex-wrap justify-center">
+                  {recs.length > 0 && <><div className={`w-1.5 h-1.5 rounded-full ${recs.some(r => r.status === 'present') ? 'bg-emerald-500' : 'hidden'}`} /><div className={`w-1.5 h-1.5 rounded-full ${recs.some(r => r.status === 'absent') ? 'bg-red-500' : 'hidden'}`} /><div className={`w-1.5 h-1.5 rounded-full ${recs.some(r => r.status === 'late') ? 'bg-amber-500' : 'hidden'}`} /></>}
+                  {evts.map(e => <div key={e.id} className="w-3 h-1.5 rounded-full" style={{ backgroundColor: e.color || typeColors[e.type] || '#6b7280' }} />)}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </CardContent></Card>
 
-          {/* Calendar grid */}
-          <div className="grid grid-cols-7 gap-1">
-            {[...Array(startOffset)].map((_, i) => <div key={`e-${i}`} />)}
-            {[...Array(daysInMonth)].map((_, i) => {
-              const day = i + 1;
-              const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              const records = getRecordsForDay(day);
-              const hasRecords = records.length > 0;
-              const isToday = dateStr === new Date().toISOString().split('T')[0];
-              const isSelected = selectedDay === dateStr;
-
-              return (
-                <button
-                  key={day}
-                  onClick={() => setSelectedDay(dateStr === selectedDay ? null : dateStr)}
-                  className={`relative p-2 rounded-lg text-sm min-h-12 flex flex-col items-center justify-center transition-colors
-                    ${isSelected ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : 'hover:bg-muted'}
-                    ${isToday ? 'font-bold ring-2 ring-emerald-500' : ''}
-                  `}
-                >
-                  <span>{day}</span>
-                  {hasRecords && (
-                    <div className="flex gap-0.5 mt-1">
-                      <div className={`w-1.5 h-1.5 rounded-full ${records.some(r => r.status === 'present') ? 'bg-emerald-500' : 'hidden'}`} />
-                      <div className={`w-1.5 h-1.5 rounded-full ${records.some(r => r.status === 'absent') ? 'bg-red-500' : 'hidden'}`} />
-                      <div className={`w-1.5 h-1.5 rounded-full ${records.some(r => r.status === 'late') ? 'bg-amber-500' : 'hidden'}`} />
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Selected day records */}
       {selectedDay && (
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">
-              {language === 'fr' ? 'Présence pour le' : 'Attendance for'} {selectedDay}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {selectedRecords.length === 0 ? (
-              <EmptyState message={t('no_data', language)} />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{language === 'fr' ? 'Étudiant' : 'Student'}</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {selectedRecords.map(r => {
-                    const student = students.find(s => s.id === r.studentId);
-                    return (
-                      <TableRow key={r.id}>
-                        <TableCell className="font-medium">{student?.fullName || 'Unknown'}</TableCell>
-                        <TableCell><StatusBadge status={r.status} /></TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        <Card className="border-0 shadow-sm"><CardHeader className="pb-3"><CardTitle className="text-base">{selectedDay}</CardTitle></CardHeader><CardContent>
+          {selectedRecords.length > 0 && <div className="mb-4"><p className="text-sm font-medium mb-2">{t('attendance', language)}</p><Table><TableHeader><TableRow><TableHead>{t('students', language)}</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+            {selectedRecords.slice(0, 10).map(r => { const s = students.find(st => st.id === r.studentId); return <TableRow key={r.id}><TableCell className="font-medium">{s?.fullName || 'Unknown'}</TableCell><TableCell><StatusBadge status={r.status} /></TableCell></TableRow>; })}
+          </TableBody></Table></div>}
+          {selectedEvents.length > 0 && <div className="mb-4"><p className="text-sm font-medium mb-2">{language === 'fr' ? 'Événements' : 'Events'}</p>{selectedEvents.map(e => (
+            <div key={e.id} className="flex items-center justify-between py-2 border-b border-border/50"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: e.color || typeColors[e.type] || '#6b7280' }} /><div><p className="text-sm font-medium">{e.title}</p><p className="text-xs text-muted-foreground">{e.type}</p></div></div>
+              <div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditEvent(e)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDeleteEvent(e.id)}><Trash2 className="h-3.5 w-3.5" /></Button></div>
+            </div>
+          ))}</div>
+          {selectedRecords.length === 0 && selectedEvents.length === 0 && <EmptyState message={t('no_data', language)} />}
+        </CardContent></Card>
       )}
-    </div>
-  );
-}
 
-// ============================================================
-// GRADES PAGE
-// ============================================================
-
-function GradesPage() {
-  const { grades, setGrades, students, modules, language } = useAppStore();
-
-  return (
-    <CrudPage<Grade>
-      title={t('grades', language)}
-      items={grades}
-      setItems={setGrades}
-      columns={[
-        {
-          key: 'studentId', label: language === 'fr' ? 'Étudiant' : 'Student',
-          render: (item) => students.find(s => s.id === item.studentId)?.fullName || 'Unknown',
-        },
-        {
-          key: 'moduleId', label: t('modules', language),
-          render: (item) => modules.find(m => m.id === item.moduleId)?.name || 'Unknown',
-        },
-        { key: 'grade', label: language === 'fr' ? 'Note' : 'Grade' },
-        {
-          key: 'percentage', label: '%',
-          render: (item) => item.percentage != null ? `${item.percentage}%` : '-',
-        },
-        {
-          key: 'date', label: t('calendar', language),
-          render: (item) => item.date || '-',
-        },
-      ]}
-      renderForm={(item, onChange) => (
-        <div className="grid gap-4">
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Étudiant' : 'Student'}</Label>
-            <Select value={String(item.studentId || '')} onValueChange={v => onChange({ ...item, studentId: v })}>
-              <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger>
-              <SelectContent>
-                {students.map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>{t('modules', language)}</Label>
-            <Select value={String(item.moduleId || '')} onValueChange={v => onChange({ ...item, moduleId: v })}>
-              <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger>
-              <SelectContent>
-                {modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Note' : 'Grade'}</Label>
-              <Input value={String(item.grade || '')} onChange={e => onChange({ ...item, grade: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>Percentage</Label>
-              <Input type="number" min="0" max="100" value={String(item.percentage ?? '')} onChange={e => onChange({ ...item, percentage: parseFloat(e.target.value) || undefined })} />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>{t('calendar', language)}</Label>
-            <Input type="date" value={String(item.date || '')} onChange={e => onChange({ ...item, date: e.target.value })} />
-          </div>
+      {/* Event Dialog */}
+      <Dialog open={eventOpen} onOpenChange={setEventOpen}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>{editingEvent ? (language === 'fr' ? 'Modifier' : 'Edit') : (language === 'fr' ? 'Ajouter Événement' : 'Add Event')}</DialogTitle></DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Titre' : 'Title'} *</Label><Input value={eventForm.title} onChange={e => setEventForm({ ...eventForm, title: e.target.value })} /></div>
+          <div className="space-y-2"><Label>{t('calendar', language)}</Label><Input type="date" value={eventForm.date} onChange={e => setEventForm({ ...eventForm, date: e.target.value })} /></div>
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Type' : 'Type'}</Label><Select value={eventForm.type} onValueChange={v => setEventForm({ ...eventForm, type: v as CalendarEvent['type'], color: typeColors[v] || '#6b7280' })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="exam">📝 {language === 'fr' ? 'Examen' : 'Exam'}</SelectItem><SelectItem value="holiday">🎉 {language === 'fr' ? 'Vacance' : 'Holiday'}</SelectItem><SelectItem value="meeting">📅 {language === 'fr' ? 'Réunion' : 'Meeting'}</SelectItem><SelectItem value="other">📌 {language === 'fr' ? 'Autre' : 'Other'}</SelectItem></SelectContent></Select></div>
+          <div className="space-y-2"><Label>{language === 'fr' ? 'Description' : 'Description'}</Label><Textarea value={eventForm.description} onChange={e => setEventForm({ ...eventForm, description: e.target.value })} rows={2} /></div>
         </div>
-      )}
-    />
-  );
-}
-
-// ============================================================
-// BEHAVIOR PAGE
-// ============================================================
-
-function BehaviorPage() {
-  const { behavior, setBehavior, students, language } = useAppStore();
-
-  return (
-    <CrudPage<BehaviorRecord>
-      title={t('behavior', language)}
-      items={behavior}
-      setItems={setBehavior}
-      columns={[
-        {
-          key: 'studentId', label: language === 'fr' ? 'Étudiant' : 'Student',
-          render: (item) => students.find(s => s.id === item.studentId)?.fullName || 'Unknown',
-        },
-        { key: 'type', label: 'Type', render: (item) => <StatusBadge status={item.type} /> },
-        { key: 'description', label: language === 'fr' ? 'Description' : 'Description' },
-        { key: 'points', label: language === 'fr' ? 'Points' : 'Points' },
-        { key: 'date', label: t('calendar', language) },
-      ]}
-      renderForm={(item, onChange) => (
-        <div className="grid gap-4">
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Étudiant' : 'Student'}</Label>
-            <Select value={String(item.studentId || '')} onValueChange={v => onChange({ ...item, studentId: v })}>
-              <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger>
-              <SelectContent>
-                {students.map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Type</Label>
-              <Select value={String(item.type || 'positive')} onValueChange={v => onChange({ ...item, type: v as BehaviorRecord['type'] })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="positive">{t('positive', language)}</SelectItem>
-                  <SelectItem value="negative">{t('negative', language)}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Points' : 'Points'}</Label>
-              <Input type="number" value={String(item.points || '')} onChange={e => onChange({ ...item, points: parseInt(e.target.value) || 0 })} />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Description' : 'Description'}</Label>
-            <Textarea value={String(item.description || '')} onChange={e => onChange({ ...item, description: e.target.value })} rows={3} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{t('calendar', language)}</Label>
-              <Input type="date" value={String(item.date || '')} onChange={e => onChange({ ...item, date: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Enseignant' : 'Teacher'}</Label>
-              <Input value={String(item.teacher || '')} onChange={e => onChange({ ...item, teacher: e.target.value })} />
-            </div>
-          </div>
-        </div>
-      )}
-    />
-  );
-}
-
-// ============================================================
-// TASKS PAGE
-// ============================================================
-
-function TasksPage() {
-  const { tasks, setTasks, language } = useAppStore();
-
-  const statusGroups = [
-    { key: 'pending', label: t('pending', language), color: 'border-t-gray-400' },
-    { key: 'in_progress', label: t('in_progress', language), color: 'border-t-blue-500' },
-    { key: 'completed', label: t('completed', language), color: 'border-t-emerald-500' },
-    { key: 'overdue', label: t('overdue', language), color: 'border-t-red-500' },
-  ];
-
-  return (
-    <CrudPage<Task>
-      title={t('tasks', language)}
-      items={tasks}
-      setItems={setTasks}
-      columns={[
-        { key: 'ticketNumber', label: 'Ticket' },
-        { key: 'title', label: language === 'fr' ? 'Titre' : 'Title' },
-        { key: 'priority', label: language === 'fr' ? 'Priorité' : 'Priority', render: (item) => <StatusBadge status={item.priority} /> },
-        { key: 'status', label: 'Status', render: (item) => <StatusBadge status={item.status} /> },
-        { key: 'assignedTo', label: language === 'fr' ? 'Assigné à' : 'Assigned To' },
-        { key: 'dueDate', label: language === 'fr' ? 'Échéance' : 'Due Date' },
-        {
-          key: 'progress', label: language === 'fr' ? 'Progression' : 'Progress',
-          render: (item) => (
-            <div className="flex items-center gap-2 min-w-24">
-              <Progress value={item.progress || 0} className="h-2 flex-1" />
-              <span className="text-xs text-muted-foreground w-8">{item.progress || 0}%</span>
-            </div>
-          ),
-        },
-      ]}
-      renderForm={(item, onChange) => (
-        <div className="grid gap-4">
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Titre' : 'Title'} *</Label>
-            <Input value={String(item.title || '')} onChange={e => onChange({ ...item, title: e.target.value })} />
-          </div>
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Description' : 'Description'}</Label>
-            <Textarea value={String(item.description || '')} onChange={e => onChange({ ...item, description: e.target.value })} rows={3} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Priorité' : 'Priority'}</Label>
-              <Select value={String(item.priority || 'medium')} onValueChange={v => onChange({ ...item, priority: v as Task['priority'] })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="urgent">{t('urgent', language)}</SelectItem>
-                  <SelectItem value="high">{t('high', language)}</SelectItem>
-                  <SelectItem value="medium">{t('medium', language)}</SelectItem>
-                  <SelectItem value="low">{t('low', language)}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={String(item.status || 'pending')} onValueChange={v => onChange({ ...item, status: v as Task['status'] })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pending">{t('pending', language)}</SelectItem>
-                  <SelectItem value="in_progress">{t('in_progress', language)}</SelectItem>
-                  <SelectItem value="completed">{t('completed', language)}</SelectItem>
-                  <SelectItem value="overdue">{t('overdue', language)}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Assigné à' : 'Assigned To'}</Label>
-              <Input value={String(item.assignedTo || '')} onChange={e => onChange({ ...item, assignedTo: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Échéance' : 'Due Date'}</Label>
-              <Input type="date" value={String(item.dueDate || '')} onChange={e => onChange({ ...item, dueDate: e.target.value })} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Catégorie' : 'Category'}</Label>
-              <Input value={String(item.category || '')} onChange={e => onChange({ ...item, category: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Progression' : 'Progress'} (%)</Label>
-              <Input type="number" min="0" max="100" value={String(item.progress || 0)} onChange={e => onChange({ ...item, progress: parseInt(e.target.value) || 0 })} />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Rapport de complétion' : 'Completion Report'}</Label>
-            <Textarea value={String(item.completionReport || '')} onChange={e => onChange({ ...item, completionReport: e.target.value })} rows={2} />
-          </div>
-        </div>
-      )}
-    />
-  );
-}
-
-// ============================================================
-// INCIDENTS PAGE
-// ============================================================
-
-function IncidentsPage() {
-  const { incidents, setIncidents, students, language } = useAppStore();
-
-  return (
-    <CrudPage<Incident>
-      title={t('incidents', language)}
-      items={incidents}
-      setItems={setIncidents}
-      columns={[
-        {
-          key: 'studentId', label: language === 'fr' ? 'Étudiant' : 'Student',
-          render: (item) => students.find(s => s.id === item.studentId)?.fullName || 'Unknown',
-        },
-        { key: 'incidentType', label: 'Type' },
-        { key: 'severity', label: language === 'fr' ? 'Sévérité' : 'Severity', render: (item) => <StatusBadge status={item.severity} /> },
-        { key: 'status', label: 'Status', render: (item) => <StatusBadge status={item.status} /> },
-        { key: 'date', label: t('calendar', language) },
-      ]}
-      renderForm={(item, onChange) => (
-        <div className="grid gap-4">
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Étudiant' : 'Student'}</Label>
-            <Select value={String(item.studentId || '')} onValueChange={v => onChange({ ...item, studentId: v })}>
-              <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger>
-              <SelectContent>
-                {students.map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Type</Label>
-              <Select value={String(item.incidentType || 'other')} onValueChange={v => onChange({ ...item, incidentType: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="disciplinary">{t('disciplinary', language)}</SelectItem>
-                  <SelectItem value="academic">{t('academic', language)}</SelectItem>
-                  <SelectItem value="behavioral">{t('behavioral', language)}</SelectItem>
-                  <SelectItem value="safety">{t('safety', language)}</SelectItem>
-                  <SelectItem value="critical">{t('critical', language)}</SelectItem>
-                  <SelectItem value="other">{t('other', language)}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Sévérité' : 'Severity'}</Label>
-              <Select value={String(item.severity || 'medium')} onValueChange={v => onChange({ ...item, severity: v as Incident['severity'] })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">{t('low', language)}</SelectItem>
-                  <SelectItem value="medium">{t('medium', language)}</SelectItem>
-                  <SelectItem value="high">{t('high', language)}</SelectItem>
-                  <SelectItem value="critical">{t('critical', language)}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={String(item.status || 'open')} onValueChange={v => onChange({ ...item, status: v as Incident['status'] })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="open">{t('open', language)}</SelectItem>
-                  <SelectItem value="investigating">{t('investigating', language)}</SelectItem>
-                  <SelectItem value="resolved">{t('resolved', language)}</SelectItem>
-                  <SelectItem value="closed">{t('closed', language)}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('calendar', language)}</Label>
-              <Input type="date" value={String(item.date || '')} onChange={e => onChange({ ...item, date: e.target.value })} />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Description' : 'Description'}</Label>
-            <Textarea value={String(item.description || '')} onChange={e => onChange({ ...item, description: e.target.value })} rows={3} />
-          </div>
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Action prise' : 'Action Taken'}</Label>
-            <Textarea value={String(item.actionTaken || '')} onChange={e => onChange({ ...item, actionTaken: e.target.value })} rows={2} />
-          </div>
-          <div className="space-y-2">
-            <Label>{language === 'fr' ? 'Rapporté par' : 'Reported By'}</Label>
-            <Input value={String(item.reportedBy || '')} onChange={e => onChange({ ...item, reportedBy: e.target.value })} />
-          </div>
-        </div>
-      )}
-    />
-  );
-}
-
-// ============================================================
-// MESSAGING PAGE
-// ============================================================
-
-function MessagingPage() {
-  const { templates, setTemplates, students, classes, schoolInfo, language } = useAppStore();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<Template | null>(null);
-  const [form, setForm] = useState({ name: '', content: '', category: '' });
-  const [quickStudentId, setQuickStudentId] = useState('');
-  const [quickTemplateId, setQuickTemplateId] = useState('');
-  const [bulkClassId, setBulkClassId] = useState('');
-  const [bulkTemplateId, setBulkTemplateId] = useState('');
-
-  // Initialize default templates if empty
-  useEffect(() => {
-    if (templates.length === 0) {
-      const defaults: Template[] = [
-        { id: genId(), name: 'Absence Notification', category: 'absence', content: 'Dear {guardian_name}, we would like to inform you that {student_name} was marked absent from {class} today ({date}). If this absence was planned, please disregard this message. Otherwise, please contact {school_name} to discuss. Thank you.', createdAt: new Date().toISOString() },
-        { id: genId(), name: 'Late Arrival', category: 'late', content: 'Hello {guardian_name}, {student_name} arrived late to {class} today ({date}). Please ensure punctuality.', createdAt: new Date().toISOString() },
-        { id: genId(), name: 'Guardian Meeting Request', category: 'meeting', content: "Dear {guardian_name}, we would like to schedule a meeting with you to discuss {student_name}'s progress in {class}. Please contact {school_name} at your earliest convenience.", createdAt: new Date().toISOString() },
-        { id: genId(), name: 'Academic Progress Update', category: 'academic', content: "Dear {guardian_name}, this is an update regarding {student_name}'s academic progress in {class}. Please feel free to contact us if you have any questions.", createdAt: new Date().toISOString() },
-        { id: genId(), name: 'Student Achievement', category: 'achievement', content: 'Dear {guardian_name}, we are pleased to inform you that {student_name} has shown excellent progress in {class}. Congratulations!', createdAt: new Date().toISOString() },
-        { id: genId(), name: 'General Reminder', category: 'reminder', content: 'Dear {guardian_name}, this is a reminder regarding {student_name} in {class}. Please contact us if you have any questions.', createdAt: new Date().toISOString() },
-      ];
-      setTemplates(defaults);
-    }
-  }, []);
-
-  // Category labels and icons
-  const categoryLabels: Record<string, string> = {
-    absence: language === 'fr' ? 'Absence' : 'Absence Templates',
-    late: language === 'fr' ? 'Retard' : 'Late Arrival Templates',
-    meeting: language === 'fr' ? 'Réunion' : 'Meeting Templates',
-    academic: language === 'fr' ? 'Académique' : 'Academic Templates',
-    announcement: language === 'fr' ? 'Annonce' : 'Announcement Templates',
-    behavioral: language === 'fr' ? 'Comportement' : 'Behavioral Templates',
-    achievement: language === 'fr' ? 'Réalisation' : 'Achievement Templates',
-    reminder: language === 'fr' ? 'Rappel' : 'Reminder Templates',
-    custom: language === 'fr' ? 'Personnalisé' : 'Custom Templates',
-  };
-
-  const categoryColors: Record<string, string> = {
-    absence: 'border-l-red-500', late: 'border-l-amber-500', meeting: 'border-l-blue-500',
-    academic: 'border-l-emerald-500', announcement: 'border-l-purple-500', behavioral: 'border-l-orange-500',
-    achievement: 'border-l-yellow-500', reminder: 'border-l-sky-500', custom: 'border-l-gray-400',
-  };
-
-  // Group templates by category
-  const groupedTemplates = useMemo(() => {
-    const groups: Record<string, Template[]> = {};
-    templates.forEach(tmpl => {
-      const cat = tmpl.category || 'custom';
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(tmpl);
-    });
-    return groups;
-  }, [templates]);
-
-  // Format phone number for WhatsApp
-  const formatWhatsAppPhone = (phone: string | undefined): string => {
-    if (!phone) return '';
-    let cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length === 10) cleaned = '1' + cleaned;
-    else if (cleaned.length === 11 && cleaned.startsWith('1')) { /* ok */ }
-    else if (cleaned.length === 9 && cleaned.startsWith('0')) cleaned = '44' + cleaned.substring(1);
-    else if (cleaned.length === 10 && cleaned.startsWith('0')) cleaned = '212' + cleaned.substring(1);
-    return cleaned;
-  };
-
-  // Build message from template + student data
-  const buildMessage = (template: Template, student: Student): string => {
-    const studentClass = classes.find(c => c.id === student.classId);
-    return template.content
-      .replace(/{student_name}/g, student.fullName)
-      .replace(/{guardian_name}/g, student.guardianName || 'Guardian')
-      .replace(/{class}/g, studentClass?.name || 'class')
-      .replace(/{date}/g, new Date().toLocaleDateString())
-      .replace(/{time}/g, new Date().toLocaleTimeString())
-      .replace(/{school_name}/g, schoolInfo?.name || 'School');
-  };
-
-  // Open WhatsApp Web with pre-filled message
-  const openWhatsApp = (phone: string | undefined, message: string) => {
-    if (!phone) { toast.error(language === 'fr' ? 'Aucun numéro de téléphone' : 'No phone number found'); return; }
-    const formatted = formatWhatsAppPhone(phone);
-    const url = `https://wa.me/${formatted}?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank');
-    toast.success(language === 'fr' ? 'WhatsApp ouvert!' : 'WhatsApp opened!');
-  };
-
-  // Quick Send: opens WhatsApp for selected student + template
-  const handleQuickSend = () => {
-    const student = students.find(s => s.id === quickStudentId);
-    const template = templates.find(t => t.id === quickTemplateId);
-    if (!student) { toast.error(language === 'fr' ? 'Sélectionnez un étudiant' : 'Please select a student'); return; }
-    if (!template) { toast.error(language === 'fr' ? 'Sélectionnez un modèle' : 'Please select a template'); return; }
-    if (!student.guardianPhone) { toast.error(language === 'fr' ? 'Aucun numéro pour cet étudiant' : 'No phone number for this student'); return; }
-    const message = buildMessage(template, student);
-    openWhatsApp(student.guardianPhone, message);
-  };
-
-  // Bulk Send: opens WhatsApp for each guardian in a class
-  const handleBulkSend = () => {
-    const template = templates.find(t => t.id === bulkTemplateId);
-    if (!template) { toast.error(language === 'fr' ? 'Sélectionnez un modèle' : 'Please select a template'); return; }
-    const classStudents = students.filter(s => s.classId === bulkClassId && s.guardianPhone);
-    if (classStudents.length === 0) { toast.error(language === 'fr' ? 'Aucun étudiant avec téléphone' : 'No students with phone numbers in this class'); return; }
-    if (!confirm(language === 'fr' ? `Envoyer à ${classStudents.length} gardiens?` : `Send to ${classStudents.length} guardians?`)) return;
-    classStudents.forEach((student, idx) => {
-      setTimeout(() => {
-        const message = buildMessage(template, student);
-        openWhatsApp(student.guardianPhone, message);
-      }, idx * 1500);
-    });
-    toast.success(language === 'fr' ? `Envoi à ${classStudents.length} gardiens...` : `Sending to ${classStudents.length} guardians...`);
-  };
-
-  // Template CRUD
-  const openAddTemplate = () => { setEditing(null); setForm({ name: '', content: '', category: '' }); setDialogOpen(true); };
-  const openEditTemplate = (t: Template) => { setEditing(t); setForm({ name: t.name, content: t.content, category: t.category || '' }); setDialogOpen(true); };
-  const handleSaveTemplate = () => {
-    if (!form.name || !form.content) { toast.error('Name and content required'); return; }
-    if (editing) { setTemplates(templates.map(t => t.id === editing.id ? { ...t, ...form } : t)); }
-    else { setTemplates([...templates, { ...form, id: genId(), createdAt: new Date().toISOString() }]); }
-    toast.success(language === 'fr' ? 'Modèle sauvegardé' : 'Template saved');
-    setDialogOpen(false);
-  };
-  const handleDeleteTemplate = (id: string) => { setTemplates(templates.filter(t => t.id !== id)); toast.success(language === 'fr' ? 'Supprimé' : 'Deleted'); };
-
-  return (
-    <div className="space-y-6">
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-3 flex-row items-center justify-between">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <MessageCircle className="h-5 w-5 text-emerald-600" />
-            {language === 'fr' ? 'Messagerie WhatsApp' : 'WhatsApp Messaging'}
-          </CardTitle>
-          <Button size="sm" onClick={openAddTemplate}><Plus className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Ajouter Modèle' : 'Add Template'}</Button>
-        </CardHeader>
-        <CardContent>
-          <div className="grid lg:grid-cols-2 gap-6">
-            {/* Left: Templates */}
-            <div>
-              <h3 className="font-semibold text-sm text-muted-foreground mb-3">{language === 'fr' ? 'Modèles de Message' : 'Message Templates'}</h3>
-              {Object.keys(groupedTemplates).length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">{t('no_data', language)}</div>
-              ) : (
-                <div className="max-h-[60vh] overflow-y-auto custom-scrollbar space-y-4">
-                  {Object.entries(groupedTemplates).map(([category, tmpls]) => (
-                    <div key={category}>
-                      <h4 className="text-xs font-semibold text-primary mb-2 pb-1 border-b border-primary/20">
-                        {categoryLabels[category] || category}
-                      </h4>
-                      <div className="space-y-2">
-                        {tmpls.map(tmpl => (
-                          <div key={tmpl.id} className={`p-3 border border-border rounded-lg border-l-4 ${categoryColors[category] || 'border-l-gray-400'} hover:bg-muted/50 transition-colors`}>
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <h4 className="font-medium text-sm">{tmpl.name}</h4>
-                                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{tmpl.content}</p>
-                                <p className="text-[10px] text-muted-foreground mt-1">
-                                  {'{student_name}'} {'{guardian_name}'} {'{class}'} {'{date}'} {'{school_name}'}
-                                </p>
-                              </div>
-                              <div className="flex gap-1 shrink-0">
-                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditTemplate(tmpl)}><Pencil className="h-3.5 w-3.5" /></Button>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDeleteTemplate(tmpl.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Right: Quick Send + Bulk */}
-            <div className="space-y-6">
-              {/* Quick Send */}
-              <div className="border border-border rounded-xl p-4">
-                <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-                  <Send className="h-4 w-4 text-emerald-600" />
-                  {language === 'fr' ? 'Envoi Rapide' : 'Quick Send'}
-                </h3>
-                <div className="space-y-3">
-                  <Select value={quickStudentId} onValueChange={setQuickStudentId}>
-                    <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner étudiant...' : 'Select student...'} /></SelectTrigger>
-                    <SelectContent>
-                      {students.filter(s => s.guardianPhone).map(s => (
-                        <SelectItem key={s.id} value={s.id}>{s.fullName} ({s.studentId}) — {s.guardianPhone}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={quickTemplateId} onValueChange={setQuickTemplateId}>
-                    <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner modèle...' : 'Select template...'} /></SelectTrigger>
-                    <SelectContent>
-                      {templates.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleQuickSend}>
-                    <MessageCircle className="h-4 w-4 mr-2" />
-                    {language === 'fr' ? 'Ouvrir WhatsApp' : 'Send WhatsApp'}
-                  </Button>
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-2">
-                  {language === 'fr'
-                    ? 'Ouvre WhatsApp Web avec un message pré-rempli ciblant le numéro du gardien.'
-                    : 'Opens WhatsApp Web with a pre-filled message targeting the guardian\'s number.'}
-                </p>
-              </div>
-
-              {/* Bulk Send */}
-              <div className="border border-border rounded-xl p-4">
-                <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-                  <Users className="h-4 w-4 text-amber-600" />
-                  {language === 'fr' ? 'Envoi Groupé' : 'Bulk Messaging'}
-                </h3>
-                <div className="space-y-3">
-                  <Select value={bulkClassId} onValueChange={setBulkClassId}>
-                    <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner classe...' : 'Select class...'} /></SelectTrigger>
-                    <SelectContent>
-                      {classes.map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name} ({students.filter(s => s.classId === c.id && s.guardianPhone).length} {language === 'fr' ? 'avec téléphone' : 'with phone'})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={bulkTemplateId} onValueChange={setBulkTemplateId}>
-                    <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner modèle...' : 'Select template...'} /></SelectTrigger>
-                    <SelectContent>
-                      {templates.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <Button className="w-full bg-amber-600 hover:bg-amber-700 text-white" onClick={handleBulkSend}>
-                    <Send className="h-4 w-4 mr-2" />
-                    {language === 'fr' ? 'Envoyer à toute la classe' : 'Send to Class'}
-                  </Button>
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-2">
-                  {language === 'fr'
-                    ? 'Ouvre WhatsApp pour chaque gardien de la classe sélectionnée (délai de 1.5s entre chaque).'
-                    : 'Opens WhatsApp for each guardian in the selected class (1.5s delay between each).'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Template Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{editing ? t('edit', language) : t('add', language)} {language === 'fr' ? 'Modèle' : 'Template'}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Nom' : 'Name'}</Label>
-              <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Absence Notification" />
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Catégorie' : 'Category'}</Label>
-              <Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}>
-                <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner...' : 'Select...'} /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="absence">{language === 'fr' ? 'Absence' : 'Absence'}</SelectItem>
-                  <SelectItem value="late">{language === 'fr' ? 'Retard' : 'Late'}</SelectItem>
-                  <SelectItem value="meeting">{language === 'fr' ? 'Réunion' : 'Meeting'}</SelectItem>
-                  <SelectItem value="academic">{language === 'fr' ? 'Académique' : 'Academic'}</SelectItem>
-                  <SelectItem value="announcement">{language === 'fr' ? 'Annonce' : 'Announcement'}</SelectItem>
-                  <SelectItem value="behavioral">{language === 'fr' ? 'Comportement' : 'Behavioral'}</SelectItem>
-                  <SelectItem value="achievement">{language === 'fr' ? 'Réalisation' : 'Achievement'}</SelectItem>
-                  <SelectItem value="reminder">{language === 'fr' ? 'Rappel' : 'Reminder'}</SelectItem>
-                  <SelectItem value="custom">{language === 'fr' ? 'Personnalisé' : 'Custom'}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Contenu' : 'Content'}</Label>
-              <Textarea value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} rows={6} placeholder="Dear {guardian_name}, {student_name} was marked absent from {class} today ({date})..." />
-              <p className="text-[11px] text-muted-foreground">
-                Variables: {'{student_name}'} {'{guardian_name}'} {'{class}'} {'{date}'} {'{time}'} {'{school_name}'}
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button>
-            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveTemplate}>{t('save', language)}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-// ============================================================
-// REPORTS PAGE
-// ============================================================
-
-function ReportsPage() {
-  const { students, attendance, grades, behavior, incidents, classes, modules, language } = useAppStore();
-
-  // Attendance trend - last 30 days
-  const trendData = useMemo(() => {
-    const days = [];
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
-      const dayRecords = attendance.filter(r => r.date === dateStr);
-      days.push({
-        date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { month: 'short', day: 'numeric' }),
-        present: dayRecords.filter(r => r.status === 'present').length,
-        absent: dayRecords.filter(r => r.status === 'absent').length,
-        late: dayRecords.filter(r => r.status === 'late').length,
-      });
-    }
-    return days;
-  }, [attendance, language]);
-
-  // Class distribution
-  const classDistribution = classes.map(c => ({
-    name: c.name,
-    students: students.filter(s => s.classId === c.id).length,
-  }));
-
-  // Grade distribution
-  const gradeDist = [
-    { name: 'A (90-100)', value: grades.filter(g => g.percentage != null && g.percentage >= 90).length },
-    { name: 'B (80-89)', value: grades.filter(g => g.percentage != null && g.percentage >= 80 && g.percentage < 90).length },
-    { name: 'C (70-79)', value: grades.filter(g => g.percentage != null && g.percentage >= 70 && g.percentage < 80).length },
-    { name: 'D (60-69)', value: grades.filter(g => g.percentage != null && g.percentage >= 60 && g.percentage < 70).length },
-    { name: 'F (<60)', value: grades.filter(g => g.percentage != null && g.percentage < 60).length },
-  ].filter(d => d.value > 0);
-
-  // Incident severity
-  const incidentData = [
-    { name: t('low', language), value: incidents.filter(i => i.severity === 'low').length },
-    { name: t('medium', language), value: incidents.filter(i => i.severity === 'medium').length },
-    { name: t('high', language), value: incidents.filter(i => i.severity === 'high').length },
-    { name: t('critical', language), value: incidents.filter(i => i.severity === 'critical').length },
-  ].filter(d => d.value > 0);
-
-  // Summary stats
-  const totalAttendance = attendance.length;
-  const avgAttendance = totalAttendance > 0
-    ? Math.round((attendance.filter(r => r.status === 'present').length / totalAttendance) * 100)
-    : 0;
-
-  return (
-    <div className="space-y-6">
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4 text-center">
-            <p className="text-3xl font-bold text-emerald-600">{avgAttendance}%</p>
-            <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Taux de présence moyen' : 'Avg. Attendance Rate'}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4 text-center">
-            <p className="text-3xl font-bold text-blue-600">{grades.length}</p>
-            <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Total des notes' : 'Total Grades'}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4 text-center">
-            <p className="text-3xl font-bold text-amber-600">{behavior.length}</p>
-            <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Enregistrements comportement' : 'Behavior Records'}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4 text-center">
-            <p className="text-3xl font-bold text-red-600">{incidents.length}</p>
-            <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Total incidents' : 'Total Incidents'}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Charts */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Attendance trend */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{language === 'fr' ? 'Tendance de présence (30 jours)' : 'Attendance Trend (30 days)'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} interval={4} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <ReTooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="present" stroke="#10b981" strokeWidth={2} name={t('present', language)} dot={false} />
-                  <Line type="monotone" dataKey="absent" stroke="#ef4444" strokeWidth={2} name={t('absent', language)} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Grade distribution */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{language === 'fr' ? 'Distribution des notes' : 'Grade Distribution'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              {gradeDist.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={gradeDist} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                      {gradeDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                    </Pie>
-                    <ReTooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Class distribution */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{language === 'fr' ? 'Distribution par classe' : 'Class Distribution'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              {classDistribution.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={classDistribution}>
-                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <ReTooltip />
-                    <Bar dataKey="students" fill="#3b82f6" radius={[4, 4, 0, 0]} name={t('students', language)} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Incident severity */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{language === 'fr' ? 'Sévérité des incidents' : 'Incident Severity'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              {incidentData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={incidentData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label>
-                      {incidentData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                    </Pie>
-                    <ReTooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// SETTINGS PAGE
-// ============================================================
-
-function SettingsPage() {
-  const { schoolInfo, setSchoolInfo, teachers, setTeachers, employees, setEmployees, academicYears, setAcademicYears, language, students, classes, modules, attendance, grades, behavior, tasks, incidents, templates } = useAppStore();
-  const [passwordForm, setPasswordForm] = useState({ current: '', newPass: '', confirm: '' });
-  const [teacherForm, setTeacherForm] = useState({ name: '', subject: '', email: '', phone: '', experience: '', qualification: '', notes: '' });
-  const [employeeForm, setEmployeeForm] = useState({ fullName: '', email: '', phone: '', department: '', position: '' });
-  const [yearForm, setYearForm] = useState({ name: '', startDate: '', endDate: '', isCurrent: false });
-  const [infoForm, setInfoForm] = useState({ name: schoolInfo.name || '', address: schoolInfo.address || '', phone: schoolInfo.phone || '', email: schoolInfo.email || '' });
-  const [generalSettings, setGeneralSettings] = useState({ currentYear: academicYears.find(y => y.isCurrent)?.id || '', timezone: 'UTC', defaultLanguage: language });
-  const [autoBackup, setAutoBackup] = useState(false);
-  const [backupFreq, setBackupFreq] = useState('weekly');
-  const [backupDest, setBackupDest] = useState('local');
-  const [backupIncludes, setBackupIncludes] = useState({ students: true, attendance: true, grades: true, settings: true });
-  const [lastBackup, setLastBackup] = useState<string | null>(null);
-  const [cloudConfig, setCloudConfig] = useState({ gdrive: '', dropbox: '', onedriveId: '', onedriveSecret: '' });
-  const [adminForm, setAdminForm] = useState({ username: '', email: '', role: 'admin' });
-  const [adminUsers, setAdminUsers] = useState<{ id: string; username: string; email: string; role: string }[]>(() => {
-    try { return JSON.parse(localStorage.getItem('admin_users') || '[]'); } catch { return []; }
-  });
-
-  const handlePasswordChange = () => {
-    if (!passwordForm.current || !passwordForm.newPass) { toast.error('All fields required'); return; }
-    if (passwordForm.newPass !== passwordForm.confirm) { toast.error(language === 'fr' ? 'Les mots de passe ne correspondent pas' : 'Passwords do not match'); return; }
-    toast.success(language === 'fr' ? 'Mot de passe changé!' : 'Password changed!');
-    setPasswordForm({ current: '', newPass: '', confirm: '' });
-  };
-
-  const handleSaveGeneral = () => {
-    if (generalSettings.defaultLanguage !== language) useAppStore.setState({ language: generalSettings.defaultLanguage });
-    localStorage.setItem('general_settings', JSON.stringify(generalSettings));
-    toast.success(language === 'fr' ? 'Paramètres enregistrés' : 'Settings saved');
-  };
-
-  const handleSaveInfo = () => {
-    setSchoolInfo(infoForm);
-    toast.success(language === 'fr' ? 'Info école sauvegardée' : 'School info saved');
-  };
-
-  const handleAddTeacher = () => {
-    if (!teacherForm.name) { toast.error('Name required'); return; }
-    const newTeacher: Teacher = { id: genId(), name: teacherForm.name, subject: teacherForm.subject, email: teacherForm.email, phone: teacherForm.phone, experience: parseInt(teacherForm.experience) || 0, qualification: teacherForm.qualification, notes: teacherForm.notes, createdAt: new Date().toISOString() };
-    setTeachers([...teachers, newTeacher]);
-    setTeacherForm({ name: '', subject: '', email: '', phone: '', experience: '', qualification: '', notes: '' });
-    toast.success(language === 'fr' ? 'Enseignant ajouté' : 'Teacher added');
-  };
-
-  const handleAddEmployee = () => {
-    if (!employeeForm.fullName) { toast.error('Name required'); return; }
-    const newEmployee: Employee = { id: genId(), fullName: employeeForm.fullName, email: employeeForm.email, phone: employeeForm.phone, department: employeeForm.department, position: employeeForm.position, createdAt: new Date().toISOString() };
-    setEmployees([...employees, newEmployee]);
-    setEmployeeForm({ fullName: '', email: '', phone: '', department: '', position: '' });
-    toast.success(language === 'fr' ? 'Employé ajouté' : 'Employee added');
-  };
-
-  const handleAddYear = () => {
-    if (!yearForm.name) { toast.error('Name required'); return; }
-    if (yearForm.isCurrent) setAcademicYears(academicYears.map(y => ({ ...y, isCurrent: false })));
-    const newYear: AcademicYear = { id: genId(), name: yearForm.name, startDate: yearForm.startDate, endDate: yearForm.endDate, isCurrent: yearForm.isCurrent, createdAt: new Date().toISOString() };
-    setAcademicYears([...academicYears, newYear]);
-    setYearForm({ name: '', startDate: '', endDate: '', isCurrent: false });
-    toast.success(language === 'fr' ? 'Année ajoutée' : 'Academic year added');
-  };
-
-  // Backup functions
-  const createBackup = () => {
-    const data = { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, templates, academicYears, schoolInfo, backupDate: new Date().toISOString() };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `backup_${new Date().toISOString().split('T')[0]}.json`; a.click();
-    URL.revokeObjectURL(url);
-    const history = JSON.parse(localStorage.getItem('backup_history') || '[]');
-    history.unshift({ id: genId(), date: new Date().toISOString(), size: blob.size });
-    if (history.length > 20) history.pop();
-    localStorage.setItem('backup_history', JSON.stringify(history));
-    setLastBackup(new Date().toISOString());
-    toast.success(language === 'fr' ? 'Sauvegarde créée et téléchargée' : 'Backup created and downloaded');
-  };
-
-  const restoreBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target?.result as string);
-        if (data.students) useAppStore.getState().setStudents(data.students);
-        if (data.classes) useAppStore.getState().setClasses(data.classes);
-        if (data.modules) useAppStore.getState().setModules(data.modules);
-        if (data.attendance) useAppStore.getState().setAttendance(data.attendance);
-        if (data.grades) useAppStore.getState().setGrades(data.grades);
-        if (data.behavior) useAppStore.getState().setBehavior(data.behavior);
-        if (data.tasks) useAppStore.getState().setTasks(data.tasks);
-        if (data.incidents) useAppStore.getState().setIncidents(data.incidents);
-        if (data.teachers) useAppStore.getState().setTeachers(data.teachers);
-        if (data.employees) useAppStore.getState().setEmployees(data.employees);
-        if (data.templates) useAppStore.getState().setTemplates(data.templates);
-        if (data.academicYears) useAppStore.getState().setAcademicYears(data.academicYears);
-        if (data.schoolInfo) useAppStore.getState().setSchoolInfo(data.schoolInfo);
-        toast.success(language === 'fr' ? 'Données restaurées avec succès!' : 'Data restored successfully!');
-      } catch { toast.error(language === 'fr' ? 'Fichier invalide' : 'Invalid backup file'); }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-
-  const [showBackupHistory, setShowBackupHistory] = useState(false);
-  const backupHistory = JSON.parse(localStorage.getItem('backup_history') || '[]');
-
-  const handleAddAdmin = () => {
-    if (!adminForm.username) { toast.error('Username required'); return; }
-    const newAdmin = { id: genId(), ...adminForm };
-    const updated = [...adminUsers, newAdmin];
-    setAdminUsers(updated);
-    localStorage.setItem('admin_users', JSON.stringify(updated));
-    setAdminForm({ username: '', email: '', role: 'admin' });
-    toast.success(language === 'fr' ? 'Admin ajouté' : 'Admin added');
-  };
-
-  const handleDeleteAdmin = (id: string) => {
-    const updated = adminUsers.filter(a => a.id !== id);
-    setAdminUsers(updated);
-    localStorage.setItem('admin_users', JSON.stringify(updated));
-    toast.success(language === 'fr' ? 'Admin supprimé' : 'Admin deleted');
-  };
-
-  const handleClearAllData = () => {
-    if (!confirm(language === 'fr' ? 'Êtes-vous sûr? Toutes les données seront supprimées!' : 'Are you sure? All data will be deleted!')) return;
-    if (!confirm(language === 'fr' ? 'Cette action est irréversible. Continuer?' : 'This action is irreversible. Continue?')) return;
-    useAppStore.getState().setStudents([]);
-    useAppStore.getState().setClasses([]);
-    useAppStore.getState().setModules([]);
-    useAppStore.getState().setAttendance([]);
-    useAppStore.getState().setGrades([]);
-    useAppStore.getState().setBehavior([]);
-    useAppStore.getState().setTasks([]);
-    useAppStore.getState().setIncidents([]);
-    useAppStore.getState().setTemplates([]);
-    useAppStore.getState().setTeachers([]);
-    useAppStore.getState().setEmployees([]);
-    useAppStore.getState().setAcademicYears([]);
-    toast.success(language === 'fr' ? 'Toutes les données supprimées' : 'All data cleared');
-  };
-
-  return (
-    <Tabs defaultValue="general" className="space-y-4">
-      <TabsList className="flex-wrap gap-1 h-auto bg-transparent p-0">
-        <TabsTrigger value="general" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Général' : 'General'}</TabsTrigger>
-        <TabsTrigger value="years" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Gestion Année Académique' : 'Academic Year Mgmt'}</TabsTrigger>
-        <TabsTrigger value="backup" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Système de Sauvegarde' : 'Backup System'}</TabsTrigger>
-        <TabsTrigger value="teachers" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Gestion des Enseignants' : 'Teacher Mgmt'}</TabsTrigger>
-        <TabsTrigger value="employees" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Gestion des Employés' : 'Employee Mgmt'}</TabsTrigger>
-        <TabsTrigger value="school" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Info École' : 'School Info'}</TabsTrigger>
-        <TabsTrigger value="data" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Gestion Données' : 'Data Management'}</TabsTrigger>
-        <TabsTrigger value="admins" className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/30 dark:data-[state=active]:text-emerald-400">{language === 'fr' ? 'Utilisateurs Admin' : 'Admin Users'}</TabsTrigger>
-      </TabsList>
-
-      {/* General Settings */}
-      <TabsContent value="general">
-        <Card className="border-0 shadow-sm">
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Settings className="h-5 w-5" />{language === 'fr' ? 'Paramètres Généraux' : 'General Settings'}</CardTitle></CardHeader>
-          <CardContent className="space-y-4 max-w-lg">
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Année Académique Actuelle' : 'Current Academic Year'}</Label>
-              <Select value={generalSettings.currentYear} onValueChange={v => setGeneralSettings({ ...generalSettings, currentYear: v })}>
-                <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger>
-                <SelectContent>{academicYears.map(y => <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Fuseau Horaire' : 'Timezone'}</Label>
-              <Select value={generalSettings.timezone} onValueChange={v => setGeneralSettings({ ...generalSettings, timezone: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="UTC">UTC</SelectItem><SelectItem value="UTC+1">UTC+1 (Europe)</SelectItem><SelectItem value="UTC+2">UTC+2 (Africa)</SelectItem><SelectItem value="UTC+3">UTC+3 (Middle East)</SelectItem><SelectItem value="UTC+4">UTC+4 (Gulf)</SelectItem><SelectItem value="UTC+5">UTC+5 (Pakistan)</SelectItem><SelectItem value="UTC-5">UTC-5 (EST)</SelectItem><SelectItem value="UTC-8">UTC-8 (PST)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Langue par Défaut' : 'Default Language'}</Label>
-              <Select value={generalSettings.defaultLanguage} onValueChange={v => setGeneralSettings({ ...generalSettings, defaultLanguage: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="fr">{language === 'fr' ? 'Français' : 'French'}</SelectItem><SelectItem value="en">{language === 'fr' ? 'Anglais' : 'English'}</SelectItem></SelectContent>
-              </Select>
-            </div>
-            <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleSaveGeneral}><Save className="h-4 w-4 mr-2" />{language === 'fr' ? 'Enregistrer Paramètres' : 'Save Settings'}</Button>
-          </CardContent>
-        </Card>
-      </TabsContent>
-
-      {/* Academic Years */}
-      <TabsContent value="years">
-        <div className="space-y-4">
-          <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Gestion des Années Académiques' : 'Academic Year Management'}</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid md:grid-cols-2 gap-4 max-w-2xl">
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Nom' : 'Name'} *</Label><Input value={yearForm.name} onChange={e => setYearForm({ ...yearForm, name: e.target.value })} placeholder="2024-2025" /></div>
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Date début' : 'Start Date'}</Label><Input type="date" value={yearForm.startDate} onChange={e => setYearForm({ ...yearForm, startDate: e.target.value })} /></div>
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Date fin' : 'End Date'}</Label><Input type="date" value={yearForm.endDate} onChange={e => setYearForm({ ...yearForm, endDate: e.target.value })} /></div>
-                <div className="flex items-center gap-2 pt-6"><Switch checked={yearForm.isCurrent} onCheckedChange={v => setYearForm({ ...yearForm, isCurrent: v })} /><Label>{language === 'fr' ? 'Année en cours' : 'Current Year'}</Label></div>
-              </div>
-              <Button className="mt-4 bg-emerald-600 hover:bg-emerald-700" onClick={handleAddYear}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
-            </CardContent>
-          </Card>
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-0">
-              {academicYears.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
-                <div className="max-h-72 overflow-y-auto custom-scrollbar">
-                  <Table><TableHeader><TableRow><TableHead>{language === 'fr' ? 'Nom' : 'Name'}</TableHead><TableHead>{language === 'fr' ? 'Début' : 'Start'}</TableHead><TableHead>{language === 'fr' ? 'Fin' : 'End'}</TableHead><TableHead>Status</TableHead><TableHead className="w-16"></TableHead></TableRow></TableHeader>
-                  <TableBody>{academicYears.map(y => (
-                    <TableRow key={y.id}><TableCell className="font-medium">{y.name}</TableCell><TableCell>{y.startDate || '-'}</TableCell><TableCell>{y.endDate || '-'}</TableCell><TableCell>{y.isCurrent ? <Badge className="bg-emerald-100 text-emerald-800">Current</Badge> : '-'}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setAcademicYears(academicYears.map(a => ({ ...a, isCurrent: a.id === y.id }))); toast.success('Updated'); }}><CheckCircle2 className="h-4 w-4 text-emerald-600" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => setAcademicYears(academicYears.filter(a => a.id !== y.id))}><Trash2 className="h-4 w-4" /></Button></div></TableCell></TableRow>
-                  ))}</TableBody></Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </TabsContent>
-
-      {/* Backup System */}
-      <TabsContent value="backup">
-        <div className="space-y-6">
-          {/* Auto Backup */}
-          <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Sauvegarde Automatique' : 'Automatic Backup'}</CardTitle></CardHeader>
-            <CardContent className="space-y-4 max-w-lg">
-              <div className="flex items-center gap-3"><Switch checked={autoBackup} onCheckedChange={setAutoBackup} /><Label>{language === 'fr' ? 'Activer Sauvegarde Automatique' : 'Enable Automatic Backup'}</Label></div>
-              <div className="space-y-2"><Label>{language === 'fr' ? 'Fréquence de Sauvegarde' : 'Backup Frequency'}</Label>
-                <Select value={backupFreq} onValueChange={setBackupFreq}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="daily">{language === 'fr' ? 'Quotidienne' : 'Daily'}</SelectItem><SelectItem value="weekly">{language === 'fr' ? 'Hebdomadaire' : 'Weekly'}</SelectItem><SelectItem value="monthly">{language === 'fr' ? 'Mensuelle' : 'Monthly'}</SelectItem></SelectContent></Select>
-              </div>
-              <div className="space-y-2"><Label>{language === 'fr' ? 'Destination de Sauvegarde' : 'Backup Destination'}</Label>
-                <Select value={backupDest} onValueChange={setBackupDest}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="local">{language === 'fr' ? 'Téléchargement Local' : 'Local Download'}</SelectItem><SelectItem value="cloud">{language === 'fr' ? 'Stockage Cloud' : 'Cloud Storage'}</SelectItem></SelectContent></Select>
-              </div>
-              <p className="text-sm text-muted-foreground"><span className="font-medium">{language === 'fr' ? 'Dernière Sauvegarde' : 'Last Backup'}:</span> {lastBackup ? new Date(lastBackup).toLocaleString() : (language === 'fr' ? 'Jamais' : 'Never')}</p>
-            </CardContent>
-          </Card>
-
-          {/* Backup Includes */}
-          <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Sauvegarde Inclut' : 'Backup Includes'}</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              {Object.entries(backupIncludes).map(([key, val]) => (
-                <div key={key} className="flex items-center gap-3"><Checkbox checked={val} onCheckedChange={(c) => setBackupIncludes({ ...backupIncludes, [key]: !!c })} /><Label>{language === 'fr' ? { students: 'Dossiers Étudiants', attendance: 'Données de Présence', grades: 'Données de Notes', settings: 'Données de Paramètres' }[key] : { students: 'Student Folders', attendance: 'Attendance Data', grades: 'Grade Data', settings: 'Settings Data' }[key]}</Label></div>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* Manual Backup */}
-          <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Sauvegarde Manuelle' : 'Manual Backup'}</CardTitle></CardHeader>
-            <CardContent className="flex flex-wrap gap-3">
-              <Button className="bg-blue-600 hover:bg-blue-700" onClick={createBackup}><Save className="h-4 w-4 mr-2" />{language === 'fr' ? 'Sauvegarder Maintenant' : 'Backup Now'}</Button>
-              <label className="cursor-pointer"><input type="file" accept=".json" className="hidden" onChange={restoreBackup} /><Button variant="outline" className="border-blue-400 text-blue-600" asChild><span><RefreshCw className="h-4 w-4 mr-2" />{language === 'fr' ? 'Restaurer Sauvegarde' : 'Restore Backup'}</span></Button></label>
-              <Button variant="outline" className="border-orange-400 text-orange-600" onClick={() => setShowBackupHistory(true)}><Clock className="h-4 w-4 mr-2" />{language === 'fr' ? 'Historique des Sauvegardes' : 'Backup History'}</Button>
-            </CardContent>
-          </Card>
-
-          {/* Cloud Storage Config */}
-          <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Configurer Stockage Cloud' : 'Configure Cloud Storage'}</CardTitle><CardDescription>{language === 'fr' ? 'Configurez vos clés API pour la sauvegarde automatique.' : 'Configure your API keys for automatic backup.'}</CardDescription></CardHeader>
-            <CardContent className="space-y-4 max-w-lg">
-              <div className="space-y-2"><Label>Google Drive API Key</Label><Input value={cloudConfig.gdrive} onChange={e => setCloudConfig({ ...cloudConfig, gdrive: e.target.value })} placeholder="Enter API key" /></div>
-              <div className="space-y-2"><Label>Dropbox Access Token</Label><Input value={cloudConfig.dropbox} onChange={e => setCloudConfig({ ...cloudConfig, dropbox: e.target.value })} placeholder="Enter access token" /></div>
-              <div className="space-y-2"><Label>OneDrive Client ID</Label><Input value={cloudConfig.onedriveId} onChange={e => setCloudConfig({ ...cloudConfig, onedriveId: e.target.value })} placeholder="Enter client ID" /></div>
-              <div className="space-y-2"><Label>OneDrive Client Secret</Label><Input type="password" value={cloudConfig.onedriveSecret} onChange={e => setCloudConfig({ ...cloudConfig, onedriveSecret: e.target.value })} placeholder="Enter client secret" /></div>
-              <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => { localStorage.setItem('cloud_config', JSON.stringify(cloudConfig)); toast.success(language === 'fr' ? 'Configuration cloud sauvegardée' : 'Cloud config saved'); }}><Save className="h-4 w-4 mr-2" />{language === 'fr' ? 'Sauvegarder Configuration Cloud' : 'Save Cloud Configuration'}</Button>
-            </CardContent>
-          </Card>
-
-          {/* Backup History Dialog */}
-          <Dialog open={showBackupHistory} onOpenChange={setShowBackupHistory}>
-            <DialogContent className="max-w-md"><DialogHeader><DialogTitle>{language === 'fr' ? 'Historique des Sauvegardes' : 'Backup History'}</DialogTitle></DialogHeader>
-              <div className="max-h-64 overflow-y-auto custom-scrollbar">{backupHistory.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">{language === 'fr' ? 'Aucune sauvegarde' : 'No backups'}</p> : backupHistory.map((b: { id: string; date: string; size: number }) => (<div key={b.id} className="flex justify-between items-center py-2 border-b last:border-0"><span className="text-sm">{new Date(b.date).toLocaleString()}</span><span className="text-xs text-muted-foreground">{(b.size / 1024).toFixed(1)} KB</span></div>))}</div>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </TabsContent>
-
-      {/* Teachers */}
-      <TabsContent value="teachers">
-        <div className="space-y-4">
-          <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Gestion des Enseignants' : 'Teacher Management'}</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid md:grid-cols-2 gap-4 max-w-2xl">
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Nom' : 'Name'} *</Label><Input value={teacherForm.name} onChange={e => setTeacherForm({ ...teacherForm, name: e.target.value })} /></div>
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Matière' : 'Subject'}</Label><Input value={teacherForm.subject} onChange={e => setTeacherForm({ ...teacherForm, subject: e.target.value })} /></div>
-                <div className="space-y-2"><Label>Email</Label><Input value={teacherForm.email} onChange={e => setTeacherForm({ ...teacherForm, email: e.target.value })} /></div>
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Téléphone' : 'Phone'}</Label><Input value={teacherForm.phone} onChange={e => setTeacherForm({ ...teacherForm, phone: e.target.value })} /></div>
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Expérience (ans)' : 'Experience (years)'}</Label><Input type="number" value={teacherForm.experience} onChange={e => setTeacherForm({ ...teacherForm, experience: e.target.value })} /></div>
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Qualification' : 'Qualification'}</Label><Input value={teacherForm.qualification} onChange={e => setTeacherForm({ ...teacherForm, qualification: e.target.value })} /></div>
-              </div>
-              <Button className="mt-4 bg-emerald-600 hover:bg-emerald-700" onClick={handleAddTeacher}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
-            </CardContent>
-          </Card>
-          <Card className="border-0 shadow-sm"><CardContent className="p-0">
-            {teachers.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
-              <div className="max-h-72 overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow><TableHead>{language === 'fr' ? 'Nom' : 'Name'}</TableHead><TableHead>{language === 'fr' ? 'Matière' : 'Subject'}</TableHead><TableHead>Email</TableHead><TableHead className="hidden md:table-cell">{language === 'fr' ? 'Tél' : 'Phone'}</TableHead><TableHead className="w-16"></TableHead></TableRow></TableHeader>
-              <TableBody>{teachers.map(tch => (<TableRow key={tch.id}><TableCell className="font-medium">{tch.name}</TableCell><TableCell>{tch.subject || '-'}</TableCell><TableCell>{tch.email || '-'}</TableCell><TableCell className="hidden md:table-cell">{tch.phone || '-'}</TableCell><TableCell><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => setTeachers(teachers.filter(t => t.id !== tch.id))}><Trash2 className="h-4 w-4" /></Button></TableCell></TableRow>))}</TableBody></Table></div>)}
-          </CardContent></Card>
-        </div>
-      </TabsContent>
-
-      {/* Employees */}
-      <TabsContent value="employees">
-        <div className="space-y-4">
-          <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Gestion des Employés' : 'Employee Management'}</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid md:grid-cols-2 gap-4 max-w-2xl">
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Nom Complet' : 'Full Name'} *</Label><Input value={employeeForm.fullName} onChange={e => setEmployeeForm({ ...employeeForm, fullName: e.target.value })} /></div>
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Département' : 'Department'}</Label><Input value={employeeForm.department} onChange={e => setEmployeeForm({ ...employeeForm, department: e.target.value })} /></div>
-                <div className="space-y-2"><Label>Email</Label><Input value={employeeForm.email} onChange={e => setEmployeeForm({ ...employeeForm, email: e.target.value })} /></div>
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Téléphone' : 'Phone'}</Label><Input value={employeeForm.phone} onChange={e => setEmployeeForm({ ...employeeForm, phone: e.target.value })} /></div>
-                <div className="space-y-2"><Label>{language === 'fr' ? 'Position' : 'Position'}</Label><Input value={employeeForm.position} onChange={e => setEmployeeForm({ ...employeeForm, position: e.target.value })} /></div>
-              </div>
-              <Button className="mt-4 bg-emerald-600 hover:bg-emerald-700" onClick={handleAddEmployee}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
-            </CardContent>
-          </Card>
-          <Card className="border-0 shadow-sm"><CardContent className="p-0">
-            {employees.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
-              <div className="max-h-72 overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow><TableHead>{language === 'fr' ? 'Nom' : 'Name'}</TableHead><TableHead>{language === 'fr' ? 'Département' : 'Department'}</TableHead><TableHead>{language === 'fr' ? 'Position' : 'Position'}</TableHead><TableHead className="hidden md:table-cell">Email</TableHead><TableHead className="w-16"></TableHead></TableRow></TableHeader>
-              <TableBody>{employees.map(emp => (<TableRow key={emp.id}><TableCell className="font-medium">{emp.fullName}</TableCell><TableCell>{emp.department || '-'}</TableCell><TableCell>{emp.position || '-'}</TableCell><TableCell className="hidden md:table-cell">{emp.email || '-'}</TableCell><TableCell><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => setEmployees(employees.filter(e => e.id !== emp.id))}><Trash2 className="h-4 w-4" /></Button></TableCell></TableRow>))}</TableBody></Table></div>)}
-          </CardContent></Card>
-        </div>
-      </TabsContent>
-
-      {/* School Info */}
-      <TabsContent value="school">
-        <Card className="border-0 shadow-sm">
-          <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Info École' : 'School Info'}</CardTitle></CardHeader>
-          <CardContent className="space-y-4 max-w-lg">
-            <div className="space-y-2"><Label>{language === 'fr' ? 'Nom de l\'école' : 'School Name'}</Label><Input value={infoForm.name} onChange={e => setInfoForm({ ...infoForm, name: e.target.value })} /></div>
-            <div className="space-y-2"><Label>{language === 'fr' ? 'Adresse' : 'Address'}</Label><Input value={infoForm.address} onChange={e => setInfoForm({ ...infoForm, address: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Téléphone' : 'Phone'}</Label><Input value={infoForm.phone} onChange={e => setInfoForm({ ...infoForm, phone: e.target.value })} /></div><div className="space-y-2"><Label>Email</Label><Input value={infoForm.email} onChange={e => setInfoForm({ ...infoForm, email: e.target.value })} /></div></div>
-            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveInfo}><Save className="h-4 w-4 mr-2" />{t('save', language)}</Button>
-          </CardContent>
-        </Card>
-      </TabsContent>
-
-      {/* Data Management */}
-      <TabsContent value="data">
-        <div className="space-y-4">
-          <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Statistiques des Données' : 'Data Statistics'}</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[{ label: language === 'fr' ? 'Étudiants' : 'Students', value: students.length }, { label: language === 'fr' ? 'Classes' : 'Classes', value: classes.length }, { label: language === 'fr' ? 'Modules' : 'Modules', value: modules.length }, { label: language === 'fr' ? 'Présence' : 'Attendance', value: attendance.length }, { label: language === 'fr' ? 'Notes' : 'Grades', value: grades.length }, { label: language === 'fr' ? 'Comportement' : 'Behavior', value: behavior.length }, { label: language === 'fr' ? 'Tâches' : 'Tasks', value: tasks.length }, { label: language === 'fr' ? 'Incidents' : 'Incidents', value: incidents.length }].map((s, i) => (
-                  <div key={i} className="p-3 bg-muted rounded-lg text-center"><p className="text-2xl font-bold">{s.value}</p><p className="text-xs text-muted-foreground">{s.label}</p></div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Actions' : 'Actions'}</CardTitle></CardHeader>
-            <CardContent className="flex flex-wrap gap-3">
-              <Button className="bg-blue-600 hover:bg-blue-700" onClick={createBackup}><Download className="h-4 w-4 mr-2" />{language === 'fr' ? 'Exporter Toutes les Données (JSON)' : 'Export All Data (JSON)'}</Button>
-              <label className="cursor-pointer"><input type="file" accept=".json" className="hidden" onChange={restoreBackup} /><Button variant="outline" className="border-blue-400 text-blue-600" asChild><span><Upload className="h-4 w-4 mr-2" />{language === 'fr' ? 'Importer des Données' : 'Import Data'}</span></Button></label>
-              <Button variant="outline" className="border-red-400 text-red-600 hover:bg-red-50" onClick={handleClearAllData}><Trash2 className="h-4 w-4 mr-2" />{language === 'fr' ? 'Supprimer Toutes les Données' : 'Clear All Data'}</Button>
-            </CardContent>
-          </Card>
-        </div>
-      </TabsContent>
-
-      {/* Admin Users */}
-      <TabsContent value="admins">
-        <div className="space-y-4">
-          <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Utilisateurs Admin' : 'Admin Users'}</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid md:grid-cols-3 gap-4 max-w-2xl">
-                <div className="space-y-2"><Label>Username *</Label><Input value={adminForm.username} onChange={e => setAdminForm({ ...adminForm, username: e.target.value })} /></div>
-                <div className="space-y-2"><Label>Email</Label><Input value={adminForm.email} onChange={e => setAdminForm({ ...adminForm, email: e.target.value })} /></div>
-                <div className="space-y-2"><Label>Role</Label><Select value={adminForm.role} onValueChange={v => setAdminForm({ ...adminForm, role: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">Admin</SelectItem><SelectItem value="teacher">Teacher</SelectItem><SelectItem value="employee">Employee</SelectItem></SelectContent></Select></div>
-              </div>
-              <Button className="mt-4 bg-emerald-600 hover:bg-emerald-700" onClick={handleAddAdmin}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter Admin' : 'Add Admin'}</Button>
-            </CardContent>
-          </Card>
-          <Card className="border-0 shadow-sm"><CardContent className="p-0">
-            {adminUsers.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
-              <div className="max-h-72 overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow><TableHead>Username</TableHead><TableHead>Email</TableHead><TableHead>Role</TableHead><TableHead className="w-16"></TableHead></TableRow></TableHeader>
-              <TableBody>{adminUsers.map(a => (<TableRow key={a.id}><TableCell className="font-medium">{a.username}</TableCell><TableCell>{a.email || '-'}</TableCell><TableCell><StatusBadge status={a.role} /></TableCell><TableCell><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleDeleteAdmin(a.id)}><Trash2 className="h-4 w-4" /></Button></TableCell></TableRow>))}</TableBody></Table></div>)}
-          </CardContent></Card>
-        </div>
-      </TabsContent>
-    </Tabs>
-  );
-}
-
-// ============================================================
-// SUPER ADMIN PAGE
-// ============================================================
-
-function SuperAdminPage() {
-  const { language, admins } = useAppStore();
-  const [tenantForm, setTenantForm] = useState({ name: '', slug: '', adminEmail: '', adminPassword: '' });
-  const [creating, setCreating] = useState(false);
-
-  const handleCreateSchool = () => {
-    if (!tenantForm.name || !tenantForm.slug || !tenantForm.adminEmail || !tenantForm.adminPassword) {
-      toast.error('All fields are required');
-      return;
-    }
-    setCreating(true);
-    setTimeout(() => {
-      toast.success(language === 'fr' ? 'École créée avec succès!' : 'School created successfully!');
-      setTenantForm({ name: '', slug: '', adminEmail: '', adminPassword: '' });
-      setCreating(false);
-    }, 1000);
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Create School */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-base">{language === 'fr' ? 'Créer une Nouvelle École' : 'Create New School'}</CardTitle>
-          <CardDescription>{language === 'fr' ? 'Configurez un nouveau locataire avec un administrateur' : 'Set up a new tenant with an admin'}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid md:grid-cols-2 gap-4 max-w-2xl">
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Nom de l\'école' : 'School Name'}</Label>
-              <Input value={tenantForm.name} onChange={e => setTenantForm({ ...tenantForm, name: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>Slug</Label>
-              <Input value={tenantForm.slug} onChange={e => setTenantForm({ ...tenantForm, slug: e.target.value })} placeholder="my-school" />
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Email Admin' : 'Admin Email'}</Label>
-              <Input type="email" value={tenantForm.adminEmail} onChange={e => setTenantForm({ ...tenantForm, adminEmail: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Mot de passe Admin' : 'Admin Password'}</Label>
-              <Input type="password" value={tenantForm.adminPassword} onChange={e => setTenantForm({ ...tenantForm, adminPassword: e.target.value })} />
-            </div>
-          </div>
-          <Button className="mt-4 bg-emerald-600 hover:bg-emerald-700" onClick={handleCreateSchool} disabled={creating}>
-            {creating ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <Building2 className="h-4 w-4 mr-2" />}
-            {language === 'fr' ? 'Créer l\'école' : 'Create School'}
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Activity Log */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-base">{language === 'fr' ? 'Journal d\'activité' : 'Activity Log'}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <EmptyState message={language === 'fr' ? 'Aucune activité récente' : 'No recent activity'} />
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ============================================================
-// EXPORT DIALOG
-// ============================================================
-
-function ExportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, language } = useAppStore();
-
-  const exports = [
-    { label: language === 'fr' ? 'Étudiants CSV' : 'Students CSV', icon: <Users className="h-5 w-5" />, action: () => exportUtils.exportStudentsCSV(students, classes), disabled: students.length === 0 },
-    { label: language === 'fr' ? 'Présence CSV' : 'Attendance CSV', icon: <ClipboardCheck className="h-5 w-5" />, action: () => exportUtils.exportAttendanceCSV(attendance, students, classes), disabled: attendance.length === 0 },
-    { label: language === 'fr' ? 'Classes CSV' : 'Classes CSV', icon: <GraduationCap className="h-5 w-5" />, action: () => exportUtils.exportClassesCSV(classes, students), disabled: classes.length === 0 },
-    { label: language === 'fr' ? 'Modules CSV' : 'Modules CSV', icon: <BookOpen className="h-5 w-5" />, action: () => exportUtils.exportModulesCSV(modules), disabled: modules.length === 0 },
-    { label: language === 'fr' ? 'Notes CSV' : 'Grades CSV', icon: <FileText className="h-5 w-5" />, action: () => exportUtils.exportGradesCSV(grades, students, modules), disabled: grades.length === 0 },
-    { label: language === 'fr' ? 'Comportement CSV' : 'Behavior CSV', icon: <SmilePlus className="h-5 w-5" />, action: () => exportUtils.exportBehaviorCSV(behavior, students), disabled: behavior.length === 0 },
-    { label: language === 'fr' ? 'Tâches CSV' : 'Tasks CSV', icon: <ListTodo className="h-5 w-5" />, action: () => exportUtils.exportTasksCSV(tasks), disabled: tasks.length === 0 },
-    { label: language === 'fr' ? 'Incidents CSV' : 'Incidents CSV', icon: <AlertTriangle className="h-5 w-5" />, action: () => exportUtils.exportIncidentsCSV(incidents, students), disabled: incidents.length === 0 },
-    { label: language === 'fr' ? 'Enseignants CSV' : 'Teachers CSV', icon: <BookOpen className="h-5 w-5" />, action: () => exportUtils.exportTeachersCSV(teachers), disabled: teachers.length === 0 },
-    { label: language === 'fr' ? 'Employés CSV' : 'Employees CSV', icon: <Building2 className="h-5 w-5" />, action: () => exportUtils.exportEmployeesCSV(employees), disabled: employees.length === 0 },
-    { label: language === 'fr' ? 'Exporter Tout (CSV)' : 'Export All (CSV)', icon: <FileDown className="h-5 w-5" />, action: () => exportUtils.exportAllCSV({ students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees }), disabled: false, highlight: true },
-  ];
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t('export', language)} {language === 'fr' ? 'Données' : 'Data'}</DialogTitle>
-          <DialogDescription>{language === 'fr' ? 'Téléchargez vos données au format CSV' : 'Download your data in CSV format'}</DialogDescription>
-        </DialogHeader>
-        <div className="grid grid-cols-2 gap-3 py-4 max-h-96 overflow-y-auto custom-scrollbar">
-          {exports.map((exp, i) => (
-            <Button
-              key={i}
-              variant={exp.highlight ? 'default' : 'outline'}
-              className={`h-auto py-3 justify-start gap-3 ${exp.highlight ? 'bg-emerald-600 hover:bg-emerald-700 col-span-2' : ''} ${exp.disabled ? 'opacity-50' : ''}`}
-              disabled={exp.disabled}
-              onClick={() => { exp.action(); onOpenChange(false); toast.success(language === 'fr' ? 'Export réussi!' : 'Export successful!'); }}
-            >
-              {exp.icon}
-              <div className="text-left">
-                <div className="text-sm font-medium">{exp.label}</div>
-                {exp.disabled && <div className="text-xs opacity-70">{t('no_data', language)}</div>}
-              </div>
-            </Button>
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ============================================================
-// MAIN APPLICATION
-// ============================================================
-
-export default function AttendanceApp() {
-  const { isAuthenticated, currentPage, loadAllData } = useAppStore();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
-  const [initialized, setInitialized] = useState(false);
-
-  useEffect(() => {
-    // Restore auth from localStorage
-    try {
-      const auth = localStorage.getItem('attendance_auth');
-      if (auth) {
-        const data = JSON.parse(auth);
-        if (data.token) {
-            setApiToken(data.token);
-          useAppStore.setState({
-            isAuthenticated: true,
-            currentUser: {
-              id: data.userId,
-              username: data.userId,
-              fullName: data.userId,
-              role: data.userRole,
-              tenantId: data.tenantId,
-              is_super_admin: data.isSuperAdmin,
-            },
-          });
-        }
-      }
-    } catch {}
-
-    // Restore language
-    const lang = localStorage.getItem('attendance_language');
-    if (lang === 'fr') useAppStore.setState({ language: 'fr' });
-
-    // Load data
-    loadAllData().finally(() => setInitialized(true));
-  }, []);
-
-  // Persist language changes
-  const language = useAppStore(s => s.language);
-  useEffect(() => {
-    localStorage.setItem('attendance_language', language);
-  }, [language]);
-
-  if (!initialized) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <RefreshCw className="h-8 w-8 animate-spin text-emerald-600" />
-          <p className="text-sm text-muted-foreground">{t('loading', language)}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <LoginScreen />;
-  }
-
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'dashboard': return <DashboardPage />;
-      case 'students': return <StudentsPage />;
-      case 'classes': return <ClassesPage />;
-      case 'modules': return <ModulesPage />;
-      case 'attendance': return <AttendancePage />;
-      case 'calendar': return <CalendarPage />;
-      case 'grades': return <GradesPage />;
-      case 'behavior': return <BehaviorPage />;
-      case 'tasks': return <TasksPage />;
-      case 'incidents': return <IncidentsPage />;
-      case 'messaging': return <MessagingPage />;
-      case 'reports': return <ReportsPage />;
-      case 'settings': return <SettingsPage />;
-      case 'superadmin': return <SuperAdminPage />;
-      default: return <DashboardPage />;
-    }
-  };
-
-  return (
-    <div className="min-h-screen flex bg-muted/30">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex-1 flex flex-col min-h-screen">
-        <Header onMenuClick={() => setSidebarOpen(true)} onExportClick={() => setExportOpen(true)} />
-        <main className="flex-1 p-4 lg:p-6">
-          {renderPage()}
-        </main>
-      </div>
-      <ExportDialog open={exportOpen} onOpenChange={setExportOpen} />
+        <DialogFooter><Button variant="outline" onClick={() => setEventOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddEvent}>{t('save', language)}</Button></DialogFooter>
+      </DialogContent></Dialog>
     </div>
   );
 }

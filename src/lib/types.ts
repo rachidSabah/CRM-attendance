@@ -170,6 +170,16 @@ export interface SchoolInfo {
   logo?: string;
 }
 
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  date: string;
+  type: 'exam' | 'holiday' | 'meeting' | 'other';
+  description?: string;
+  color?: string;
+  createdAt: string;
+}
+
 export interface Notification {
   id: string;
   title: string;
@@ -177,6 +187,7 @@ export interface Notification {
   urgent?: boolean;
   read?: boolean;
   timestamp: string;
+  action?: string;
 }
 
 export type PageName = 'dashboard' | 'students' | 'classes' | 'modules' | 'attendance' | 'calendar' | 'grades' | 'behavior' | 'tasks' | 'incidents' | 'messaging' | 'reports' | 'settings' | 'superadmin';
