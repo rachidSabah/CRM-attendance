@@ -2513,6 +2513,9 @@ function SettingsPage() {
     try { return JSON.parse(localStorage.getItem('attendance_backup_history') || '[]'); } catch { return []; }
   });
   const [restorePreview, setRestorePreview] = useState<Record<string, number> | null>(null);
+  const [restoreData, setRestoreData] = useState<Record<string, unknown> | null>(null);
+  const [selectedRestoreTypes, setSelectedRestoreTypes] = useState<Set<string>>(new Set());
+  const [restoreMode, setRestoreMode] = useState<'full' | 'selective'>('full');
 
   // Cloud storage config state
   const [cloudConfig, setCloudConfig] = useState(() => {
@@ -2638,45 +2641,111 @@ function SettingsPage() {
     }
   };
 
-  // Manual backup
-  const handleManualBackup = (silent: boolean = false) => {
-    const backupData = {
-      version: '1.0',
-      timestamp: new Date().toISOString(),
-      data: {
-        students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees,
-        templates: [], academicYears, schoolInfo
-      }
+  // Manual backup - supports full and incremental
+  const handleManualBackup = (silent: boolean = false, incremental: boolean = false) => {
+    const allData = {
+      students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees,
+      schedules, exams, examGrades, curriculum, templates: [], academicYears, schoolInfo
     };
+
+    let backupData: Record<string, unknown>;
+
+    if (incremental) {
+      // Incremental: only include entities that changed since last backup
+      const lastSnapshot = (() => {
+        try { return JSON.parse(localStorage.getItem('attendance_last_snapshot') || '{}'); } catch { return {}; }
+      })();
+
+      const incrementalData: Record<string, unknown> = {};
+      const changedKeys: string[] = [];
+      const entityMap: Record<string, unknown[]> = {
+        students, classes, modules, attendance, grades, behavior, tasks, incidents,
+        teachers, employees, schedules, exams, examGrades, curriculum,
+        templates: [], academicYears,
+      };
+
+      for (const [key, currentArr] of Object.entries(entityMap)) {
+        const lastArr = lastSnapshot[key];
+        const currentJSON = JSON.stringify(currentArr);
+        const lastJSON = JSON.stringify(lastArr);
+        if (currentJSON !== lastJSON) {
+          incrementalData[key] = currentArr;
+          changedKeys.push(key);
+        }
+      }
+
+      // Also check schoolInfo
+      const currentSIJSON = JSON.stringify(schoolInfo);
+      const lastSIJSON = JSON.stringify(lastSnapshot.schoolInfo);
+      if (currentSIJSON !== lastSIJSON) {
+        incrementalData.schoolInfo = schoolInfo;
+        changedKeys.push('schoolInfo');
+      }
+
+      if (changedKeys.length === 0) {
+        if (!silent) toast.info(language === 'fr' ? 'Aucun changement depuis la dernière sauvegarde' : 'No changes since last backup');
+        return;
+      }
+
+      backupData = {
+        version: '1.1',
+        type: 'incremental',
+        timestamp: new Date().toISOString(),
+        changedEntities: changedKeys,
+        baseTimestamp: lastSnapshot._timestamp || lastBackupTime || new Date().toISOString(),
+        data: incrementalData,
+      };
+
+      // Update last snapshot
+      const snapshot = { ...allData, _timestamp: new Date().toISOString() };
+      localStorage.setItem('attendance_last_snapshot', JSON.stringify(snapshot));
+    } else {
+      // Full backup
+      backupData = {
+        version: '1.1',
+        type: 'full',
+        timestamp: new Date().toISOString(),
+        data: allData,
+      };
+
+      // Update last snapshot
+      const snapshot = { ...allData, _timestamp: new Date().toISOString() };
+      localStorage.setItem('attendance_last_snapshot', JSON.stringify(snapshot));
+    }
+
     const jsonStr = JSON.stringify(backupData, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const sizeKB = (blob.size / 1024).toFixed(1);
     const timestamp = new Date().toISOString();
+    const prefix = incremental ? 'incremental' : 'backup';
 
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `infohas_backup_${timestamp.slice(0, 10)}_${timestamp.slice(11, 19).replace(/:/g, '-')}.json`;
+    link.download = `infohas_${prefix}_${timestamp.slice(0, 10)}_${timestamp.slice(11, 19).replace(/:/g, '-')}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
     // Update history
     const newEntry = { timestamp, size: `${sizeKB} KB` };
-    const updatedHistory = [newEntry, ...backupHistory].slice(0, 5);
+    const updatedHistory = [newEntry, ...backupHistory].slice(0, 10);
     setBackupHistory(updatedHistory);
     localStorage.setItem('attendance_backup_history', JSON.stringify(updatedHistory));
     setLastBackupTime(timestamp);
     localStorage.setItem('attendance_last_backup', timestamp);
 
-    if (!silent) toast.success(language === 'fr' ? 'Sauvegarde créée!' : 'Backup created!');
+    if (!silent) {
+      const isInc = incremental ? (language === 'fr' ? 'incrémentielle' : 'incremental') : '';
+      toast.success(`${language === 'fr' ? 'Sauvegarde' : 'Backup'} ${isInc} ${language === 'fr' ? 'créée!' : 'created!'}`);
+    }
 
-    // Also upload to server in background
+    // Upload to server in background
     api.post('/backup/upload', backupData).then(() => {
       console.log('[Backup] Uploaded to server');
     }).catch(() => {});
   };
 
-  // Restore backup
+  // Restore backup - supports full and selective restore
   const handleRestoreBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2686,19 +2755,26 @@ function SettingsPage() {
         const parsed = JSON.parse(ev.target?.result as string);
         const data = parsed.data || parsed;
         const preview: Record<string, number> = {};
-        if (data.students) preview.students = data.students.length;
-        if (data.classes) preview.classes = data.classes.length;
-        if (data.modules) preview.modules = data.modules.length;
-        if (data.attendance) preview.attendance = data.attendance.length;
-        if (data.grades) preview.grades = data.grades.length;
-        if (data.behavior) preview.behavior = data.behavior.length;
-        if (data.tasks) preview.tasks = data.tasks.length;
-        if (data.incidents) preview.incidents = data.incidents.length;
-        if (data.teachers) preview.teachers = data.teachers.length;
-        if (data.employees) preview.employees = data.employees.length;
-        if (data.academicYears) preview.academicYears = data.academicYears.length;
+        if (data.students) preview.students = (data.students as unknown[]).length;
+        if (data.classes) preview.classes = (data.classes as unknown[]).length;
+        if (data.modules) preview.modules = (data.modules as unknown[]).length;
+        if (data.attendance) preview.attendance = (data.attendance as unknown[]).length;
+        if (data.grades) preview.grades = (data.grades as unknown[]).length;
+        if (data.behavior) preview.behavior = (data.behavior as unknown[]).length;
+        if (data.tasks) preview.tasks = (data.tasks as unknown[]).length;
+        if (data.incidents) preview.incidents = (data.incidents as unknown[]).length;
+        if (data.teachers) preview.teachers = (data.teachers as unknown[]).length;
+        if (data.employees) preview.employees = (data.employees as unknown[]).length;
+        if (data.schedules) preview.schedules = (data.schedules as unknown[]).length;
+        if (data.exams) preview.exams = (data.exams as unknown[]).length;
+        if (data.examGrades) preview.examGrades = (data.examGrades as unknown[]).length;
+        if (data.curriculum) preview.curriculum = (data.curriculum as unknown[]).length;
+        if (data.academicYears) preview.academicYears = (data.academicYears as unknown[]).length;
         if (data.schoolInfo) preview.schoolInfo = 1;
         setRestorePreview(preview);
+        setRestoreData(data);
+        setSelectedRestoreTypes(new Set(Object.keys(preview)));
+        setRestoreMode('selective'); // Default to selective
       } catch {
         toast.error('Invalid backup file');
       }
@@ -2707,32 +2783,66 @@ function SettingsPage() {
   };
 
   const confirmRestore = () => {
-    const fileInput = document.getElementById('restore-file-input') as HTMLInputElement;
-    if (!fileInput?.files?.[0]) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const parsed = JSON.parse(ev.target?.result as string);
-        const data = parsed.data || parsed;
-        if (data.students) { setStudents(data.students); localStorage.setItem('attendance_students', JSON.stringify(data.students)); }
-        if (data.classes) { setClasses(data.classes); localStorage.setItem('attendance_classes', JSON.stringify(data.classes)); }
-        if (data.modules) { setModules(data.modules); localStorage.setItem('attendance_modules', JSON.stringify(data.modules)); }
-        if (data.attendance) { setAttendance(data.attendance); localStorage.setItem('attendance_records', JSON.stringify(data.attendance)); }
-        if (data.grades) { setGrades(data.grades); localStorage.setItem('attendance_grades', JSON.stringify(data.grades)); }
-        if (data.behavior) { setBehavior(data.behavior); localStorage.setItem('attendance_behavior', JSON.stringify(data.behavior)); }
-        if (data.tasks) { setTasks(data.tasks); localStorage.setItem('attendance_tasks', JSON.stringify(data.tasks)); }
-        if (data.incidents) { setIncidents(data.incidents); localStorage.setItem('attendance_incidents', JSON.stringify(data.incidents)); }
-        if (data.teachers) { setTeachers(data.teachers); localStorage.setItem('attendance_teachers', JSON.stringify(data.teachers)); }
-        if (data.employees) { setEmployees(data.employees); localStorage.setItem('attendance_employees', JSON.stringify(data.employees)); }
-        if (data.academicYears) { setAcademicYears(data.academicYears); localStorage.setItem('attendance_academic_years', JSON.stringify(data.academicYears)); }
-        if (data.schoolInfo) { setSchoolInfo(data.schoolInfo); }
-        toast.success(language === 'fr' ? 'Données restaurées!' : 'Data restored!');
-        setRestorePreview(null);
-      } catch {
-        toast.error('Restore failed');
-      }
+    if (!restoreData) return;
+
+    const data = restoreData;
+    const typesToRestore = restoreMode === 'full' ? Object.keys(data) : Array.from(selectedRestoreTypes);
+
+    const setterMap: Record<string, (val: unknown) => void> = {
+      students: (v) => setStudents(v as Student[]),
+      classes: (v) => setClasses(v as Class[]),
+      modules: (v) => setModules(v as Module[]),
+      attendance: (v) => setAttendance(v as AttendanceRecord[]),
+      grades: (v) => setGrades(v as Grade[]),
+      behavior: (v) => setBehavior(v as BehaviorRecord[]),
+      tasks: (v) => setTasks(v as Task[]),
+      incidents: (v) => setIncidents(v as Incident[]),
+      teachers: (v) => setTeachers(v as Teacher[]),
+      employees: (v) => setEmployees(v as Employee[]),
+      schedules: (v) => setSchedules(v as ClassScheduleEntry[]),
+      exams: (v) => setExams(v as Exam[]),
+      examGrades: (v) => setExamGrades(v as ExamGrade[]),
+      curriculum: (v) => setCurriculum(v as CurriculumItem[]),
+      academicYears: (v) => setAcademicYears(v as AcademicYear[]),
+      schoolInfo: (v) => setSchoolInfo(v as SchoolInfo),
     };
-    reader.readAsText(fileInput.files[0]);
+
+    const lsKeyMap: Record<string, string> = {
+      students: 'attendance_students',
+      classes: 'attendance_classes',
+      modules: 'attendance_modules',
+      attendance: 'attendance_records',
+      grades: 'attendance_grades',
+      behavior: 'attendance_behavior',
+      tasks: 'attendance_tasks',
+      incidents: 'attendance_incidents',
+      teachers: 'attendance_teachers',
+      employees: 'attendance_employees',
+      schedules: 'attendance_schedules',
+      exams: 'attendance_exams',
+      examGrades: 'attendance_exam_grades',
+      curriculum: 'attendance_curriculum',
+      academicYears: 'attendance_academic_years',
+      schoolInfo: 'attendance_school_info',
+    };
+
+    let restoredCount = 0;
+    for (const type of typesToRestore) {
+      const val = data[type];
+      if (val === undefined || val === null) continue;
+      if (setterMap[type]) setterMap[type](val);
+      if (lsKeyMap[type]) localStorage.setItem(lsKeyMap[type], JSON.stringify(val));
+      restoredCount++;
+    }
+
+    toast.success(`${language === 'fr' ? 'Restauré' : 'Restored'} ${restoredCount} ${language === 'fr' ? 'types de données' : 'data types'}!`);
+    setRestorePreview(null);
+    setRestoreData(null);
+    setSelectedRestoreTypes(new Set());
+
+    // Reset file input
+    const fileInput = document.getElementById('restore-file-input') as HTMLInputElement;
+    if (fileInput) fileInput.value = '';
   };
 
   // Color picker handler
@@ -2885,12 +2995,13 @@ function SettingsPage() {
           <Card><CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Sauvegarde & Restauration' : 'Backup & Restore'}</CardTitle></CardHeader><CardContent className="space-y-6">
             {/* Manual Backup */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-medium text-sm">{language === 'fr' ? 'Sauvegarde manuelle' : 'Manual Backup'}</h4>
-                  <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Télécharger une copie complète de toutes les données' : 'Download a complete copy of all data'}</p>
-                </div>
-                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => handleManualBackup(false)}><HardDrive className="h-4 w-4 mr-1" />{language === 'fr' ? 'Créer sauvegarde' : 'Create Backup'}</Button>
+              <div>
+                <h4 className="font-medium text-sm">{language === 'fr' ? 'Créer une sauvegarde' : 'Create Backup'}</h4>
+                <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Télécharger une copie de vos données' : 'Download a copy of your data'}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => handleManualBackup(false, false)}><HardDrive className="h-4 w-4 mr-1" />{language === 'fr' ? 'Sauvegarde Complète' : 'Full Backup'}</Button>
+                <Button variant="outline" onClick={() => handleManualBackup(false, true)}><FileDown className="h-4 w-4 mr-1" />{language === 'fr' ? 'Sauvegarde Incrémentielle' : 'Incremental Backup'}</Button>
               </div>
               {lastBackupTime && (
                 <p className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" />{language === 'fr' ? 'Dernière sauvegarde' : 'Last backup'}: {new Date(lastBackupTime).toLocaleString()}</p>
@@ -2912,11 +3023,11 @@ function SettingsPage() {
 
             <Separator />
 
-            {/* Restore Backup */}
+            {/* Restore Backup - Selective */}
             <div className="space-y-3">
               <div>
                 <h4 className="font-medium text-sm">{language === 'fr' ? 'Restaurer une sauvegarde' : 'Restore Backup'}</h4>
-                <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Charger un fichier de sauvegarde JSON' : 'Load a JSON backup file'}</p>
+                <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Charger un fichier JSON et choisir quoi restaurer' : 'Load a JSON file and choose what to restore'}</p>
               </div>
               <div className="flex items-center gap-3">
                 <label className="cursor-pointer"><input id="restore-file-input" type="file" accept=".json" className="hidden" onChange={handleRestoreBackup} /><Button variant="outline" asChild><span><FolderOpen className="h-4 w-4 mr-1" />{language === 'fr' ? 'Choisir un fichier' : 'Choose File'}</span></Button></label>
@@ -2925,12 +3036,66 @@ function SettingsPage() {
                 )}
               </div>
               {restorePreview && (
-                <div className="rounded-lg border bg-amber-50 dark:bg-amber-900/10 p-3 space-y-1">
-                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-400">{language === 'fr' ? 'Aperçu de la sauvegarde' : 'Backup Preview'}:</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                    {Object.entries(restorePreview).map(([key, count]) => (
-                      <div key={key} className="text-xs"><span className="font-medium">{key}</span>: <span className="text-muted-foreground">{count}</span></div>
-                    ))}
+                <div className="rounded-lg border bg-amber-50 dark:bg-amber-900/10 p-4 space-y-3">
+                  {/* Restore Mode Toggle */}
+                  <div className="flex items-center gap-3">
+                    <Label className="text-xs font-semibold">{language === 'fr' ? 'Mode de restauration' : 'Restore Mode'}:</Label>
+                    <div className="flex gap-1">
+                      <Button variant={restoreMode === 'full' ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setRestoreMode('full')}>{language === 'fr' ? 'Tout restaurer' : 'Restore All'}</Button>
+                      <Button variant={restoreMode === 'selective' ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setRestoreMode('selective')}>{language === 'fr' ? 'Sélectif' : 'Selective'}</Button>
+                    </div>
+                  </div>
+
+                  {/* Selective Restore Checkboxes */}
+                  {restoreMode === 'selective' && (
+                    <div className="space-y-2">
+                      <div className="flex gap-2 mb-2">
+                        <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => setSelectedRestoreTypes(new Set(Object.keys(restorePreview)))}>{language === 'fr' ? 'Tout sélectionner' : 'Select All'}</Button>
+                        <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => setSelectedRestoreTypes(new Set())}>{language === 'fr' ? 'Tout désélectionner' : 'Deselect All'}</Button>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                        {Object.entries(restorePreview).map(([key, count]) => {
+                          const typeLabels: Record<string, string> = {
+                            students: t('students', language), classes: t('classes', language),
+                            modules: t('modules', language), attendance: t('attendance', language),
+                            grades: t('grades', language), behavior: t('behavior', language),
+                            tasks: t('tasks', language), incidents: t('incidents', language),
+                            teachers: t('teachers_management', language), employees: t('employees_management', language),
+                            schedules: t('schedule', language), exams: t('exams', language),
+                            examGrades: language === 'fr' ? 'Notes Examens' : 'Exam Grades',
+                            curriculum: t('curriculum', language), academicYears: t('academic_year', language),
+                            schoolInfo: t('school_info', language),
+                          };
+                          const isChecked = selectedRestoreTypes.has(key);
+                          return (
+                            <label key={key} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${isChecked ? 'bg-amber-100 dark:bg-amber-900/20 border-amber-300' : 'hover:bg-muted'}`}>
+                              <Checkbox checked={isChecked} onCheckedChange={(checked) => {
+                                const next = new Set(selectedRestoreTypes);
+                                if (checked) next.add(key); else next.delete(key);
+                                setSelectedRestoreTypes(next);
+                              }} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium truncate">{typeLabels[key] || key}</p>
+                                <p className="text-[10px] text-muted-foreground">{count} {count === 1 ? (language === 'fr' ? 'élément' : 'item') : (language === 'fr' ? 'éléments' : 'items')}</p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                        {selectedRestoreTypes.size} / {Object.keys(restorePreview).length} {language === 'fr' ? 'types sélectionnés' : 'types selected'}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Backup Info */}
+                  <div className="text-xs text-muted-foreground">
+                    <p>{language === 'fr' ? 'Aperçu de la sauvegarde' : 'Backup Preview'}:</p>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {Object.entries(restorePreview).map(([key, count]) => (
+                        <Badge key={key} variant="secondary" className="text-[10px]">{key}: {count}</Badge>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -3399,7 +3564,7 @@ function CurriculumPage() {
             <Label>{t('academic_year', language)}</Label>
             <Select value={selectedYear} onValueChange={setSelectedYear}>
               <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Toutes les années' : 'All years'} /></SelectTrigger>
-              <SelectContent><SelectItem value="">{language === 'fr' ? 'Toutes les années' : 'All years'}</SelectItem>{(academicYears || []).map(y => <SelectItem key={y.id} value={y.year}>{y.year}</SelectItem>)}</SelectContent>
+              <SelectContent><SelectItem value="">{language === 'fr' ? 'Toutes les années' : 'All years'}</SelectItem>{(academicYears || []).map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
@@ -3463,7 +3628,7 @@ function CurriculumPage() {
             <div className="space-y-2"><Label>{t('topic_description', language)}</Label><Textarea value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>{t('modules', language)} *</Label><Select value={form.moduleId} onValueChange={v => setForm({ ...form, moduleId: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-2"><Label>{t('academic_year', language)}</Label><Select value={form.academicYear} onValueChange={v => setForm({ ...form, academicYear: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{(academicYears || []).map(y => <SelectItem key={y.id} value={y.year}>{y.year}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>{t('academic_year', language)}</Label><Select value={form.academicYear} onValueChange={v => setForm({ ...form, academicYear: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{(academicYears || []).map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2"><Label>{t('hours_allocated', language)}</Label><Input type="number" min={1} value={form.hours} onChange={e => setForm({ ...form, hours: Number(e.target.value) })} /></div>
