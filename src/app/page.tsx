@@ -144,7 +144,7 @@ function GlobalSearchDialog({ open, onOpenChange }: { open: boolean; onOpenChang
             <>
               {results.students.length > 0 && <><p className="text-xs font-semibold text-muted-foreground px-2 py-1">{t('students', language)}</p>
                 {results.students.map(s => (
-                  <button key={s.id} onClick={() => { onOpenChange(false); useAppStore.setState({ profileViewStudent: s }); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted text-left">
+                  <button key={s.id} onClick={() => { onOpenChange(false); useAppStore.setState({ profileViewStudent: s } as Partial<typeof useAppStore.getState>); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted text-left">
                     <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center text-emerald-600 text-sm">👤</div>
                     <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{s.fullName}</p><p className="text-xs text-muted-foreground">{s.studentId} • {classes.find(c => c.id === s.classId)?.name || '-'}</p></div>
                   </button>
@@ -551,7 +551,7 @@ function DashboardPage() {
   const lateCount = todayRecords.filter(r => r.status === 'late').length;
 
   const last7Days = useMemo(() => {
-    const days = [];
+    const days: Array<{ date: string; present: number; absent: number; late: number }> = [];
     for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const ds = d.toISOString().split('T')[0]; const dr = attendance.filter(r => r.date === ds); days.push({ date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'short' }), present: dr.filter(r => r.status === 'present').length, absent: dr.filter(r => r.status === 'absent').length, late: dr.filter(r => r.status === 'late').length }); }
     return days;
   }, [attendance, language]);
@@ -813,7 +813,7 @@ function AttendancePage() {
   const [overrides, setOverrides] = useState<Record<string, AttendanceRecord['status']>>({});
   const [saving, setSaving] = useState(false);
   const [quickMode, setQuickMode] = useState(false);
-  const [quickBulk, setQuickBulk] = useState<Record<string, boolean>>({});
+  const [quickBulk, setQuickBulk] = useState<Record<string, AttendanceRecord['status']>>({});
 
   const filteredStudents = students.filter(s => s.status === 'active' && (!selectedClass || selectedClass === 'all' || s.classId === selectedClass));
   const baseRecords = useMemo(() => { const m: Record<string, AttendanceRecord['status']> = {}; attendance.filter(r => r.date === selectedDate).forEach(r => { m[r.studentId] = r.status; }); return m; }, [selectedDate, attendance]);
@@ -874,9 +874,9 @@ function AttendancePage() {
         <div className="flex gap-2">
           {!quickMode && <><Button variant="outline" size="sm" onClick={() => handleMarkAll('present')}><CheckCircle2 className="h-4 w-4 mr-1 text-emerald-600" />{t('present', language)}</Button>
           <Button variant="outline" size="sm" onClick={() => handleMarkAll('absent')}><XCircle className="h-4 w-4 mr-1 text-red-600" />{t('absent', language)}</Button></>}
-          {quickMode && <Button variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleQuickBulk('present')}>✅ {t('present', language)} All</Button>}
+          {quickMode && <Button variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleQuickBulk('present')}>✅ {t('present', language)} All</Button>}
           {quickMode && <Button variant="outline" size="sm" className="border-red-400 text-red-600" onClick={() => handleQuickBulk('absent')}>❌ {t('absent', language)} All</Button>}
-          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={quickMode ? handleQuickSave : handleSave} disabled={saving}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
+          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => quickMode ? handleQuickSave() : handleSave()} disabled={saving}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
         </div>
       </div>
 
@@ -953,7 +953,7 @@ function CalendarPage() {
 
   const handleAddEvent = () => {
     if (!eventForm.title || !eventForm.date) { toast.error('Title and date required'); return; }
-    if (editingEvent) { setEvents(events.map(e => e.id === editingEvent.id ? { ...eventForm } : e)); }
+    if (editingEvent) { setEvents(events.map(e => e.id === editingEvent.id ? { ...e, ...eventForm, id: e.id, createdAt: e.createdAt } : e)); }
     else setEvents([...events, { ...eventForm, id: genId(), createdAt: new Date().toISOString() }]);
     toast.success(language === 'fr' ? 'Événement sauvegardé' : 'Event saved');
     setEventOpen(false); setEditingEvent(null); setEventForm({ title: '', date: new Date().toISOString().split('T')[0], type: 'other', description: '', color: '#10b981' });
@@ -1703,7 +1703,7 @@ function ReportsPage() {
 
 // ==================== SETTINGS PAGE ====================
 function SettingsPage() {
-  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser } = useAppStore();
+  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser, setStudents, setClasses, setModules, setAttendance, setGrades, setBehavior, setTasks, setIncidents, setTemplates } = useAppStore();
   const [activeTab, setActiveTab] = useState('general');
 
   // Teachers state
@@ -2019,8 +2019,10 @@ export default function App() {
   // Listen for profile view events from store
   useEffect(() => {
     const unsub = useAppStore.subscribe((state, prev) => {
-      if ((state as Record<string, unknown>).profileViewStudent && !(prev as Record<string, unknown>).profileViewStudent) {
-        setProfileStudent((state as Record<string, unknown>).profileViewStudent as Student);
+      const s = state as unknown as Record<string, unknown>;
+      const p = prev as unknown as Record<string, unknown>;
+      if (s.profileViewStudent && !p.profileViewStudent) {
+        setProfileStudent(s.profileViewStudent as Student);
       }
     });
     return unsub;
@@ -2072,7 +2074,7 @@ export default function App() {
       </div>
       <ExportDataDialog open={exportOpen} onOpenChange={setExportOpen} />
       <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
-      {profileStudent && <Student360Profile student={profileStudent} onClose={() => { setProfileStudent(null); useAppStore.setState({ profileViewStudent: null }); }} />}
+      {profileStudent && <Student360Profile student={profileStudent} onClose={() => { setProfileStudent(null); useAppStore.setState({ profileViewStudent: null } as Partial<typeof useAppStore.getState>); }} />}
     </div>
   );
 }
