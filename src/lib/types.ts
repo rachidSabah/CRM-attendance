@@ -191,4 +191,16 @@ export interface Notification {
   action?: string;
 }
 
-export type PageName = 'dashboard' | 'students' | 'classes' | 'modules' | 'attendance' | 'calendar' | 'grades' | 'behavior' | 'tasks' | 'incidents' | 'messaging' | 'reports' | 'settings' | 'superadmin';
+export interface ClassScheduleEntry {
+  id: string;
+  classId: string;
+  date: string; // YYYY-MM-DD
+  teacherId: string;
+  roomId: string;
+  timeSlot: string; // e.g. "09:00-12:00"
+  moduleId: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export type PageName = 'dashboard' | 'students' | 'classes' | 'modules' | 'attendance' | 'calendar' | 'schedule' | 'grades' | 'behavior' | 'tasks' | 'incidents' | 'messaging' | 'reports' | 'settings' | 'superadmin';

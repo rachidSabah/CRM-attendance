@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification } from './types';
+import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification, ClassScheduleEntry } from './types';
 import { api, setApiToken, getApiToken } from './api';
 
 interface AppState {
@@ -26,6 +26,7 @@ interface AppState {
   schoolInfo: SchoolInfo;
   notifications: Notification[];
   admins: Record<string, unknown>[];
+  schedules: ClassScheduleEntry[];
 
   // Settings
   language: 'en' | 'fr';
@@ -50,6 +51,7 @@ interface AppState {
   setAcademicYears: (years: AcademicYear[]) => void;
   setSchoolInfo: (info: SchoolInfo) => void;
   setNotifications: (notifications: Notification[]) => void;
+  setSchedules: (schedules: ClassScheduleEntry[]) => void;
   loadAllData: () => Promise<void>;
 }
 
@@ -86,6 +88,7 @@ export const useAppStore = create<AppState>((set) => ({
   schoolInfo: {},
   notifications: [],
   admins: [],
+  schedules: [],
   language: 'en',
   primaryColor: '#10b981',
 
@@ -142,6 +145,7 @@ export const useAppStore = create<AppState>((set) => ({
   setAcademicYears: (y) => { set({ academicYears: y }); localStorage.setItem('attendance_academic_years', JSON.stringify(y)); },
   setSchoolInfo: (i) => { set({ schoolInfo: i }); localStorage.setItem('attendance_school_info', JSON.stringify(i)); },
   setNotifications: (n) => { set({ notifications: n }); },
+  setSchedules: (s) => { set({ schedules: s }); localStorage.setItem('attendance_schedules', JSON.stringify(s)); },
   setPrimaryColor: (color) => { set({ primaryColor: color }); localStorage.setItem('attendance_primary_color', color); },
 
   loadAllData: async () => {
@@ -161,6 +165,7 @@ export const useAppStore = create<AppState>((set) => ({
       schoolInfo: loadLocalObj('attendance_school_info', {}),
       primaryColor: typeof window !== 'undefined' ? localStorage.getItem('attendance_primary_color') || '#10b981' : '#10b981',
       admins: loadLocal('attendance_admins'),
+      schedules: loadLocal('attendance_schedules'),
     });
 
     const token = getApiToken();

@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, SchoolInfo } from './types';
+import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, SchoolInfo, ClassScheduleEntry } from './types';
 
 type Orientation = 'portrait' | 'landscape';
 
@@ -535,4 +535,251 @@ export function exportFullReportPDF(
 
   addFooter(doc, schoolInfo);
   downloadPdf(doc, `full_report_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+export function exportSchedulePDF(
+  scheduleEntries: ClassScheduleEntry[],
+  targetClass: Class,
+  teachers: { id: string; name: string }[],
+  modules: { id: string; name: string }[],
+  monthLabel: string,
+  schoolInfo: SchoolInfo
+) {
+  // A4 Portrait
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // ---- HEADER (same as addHeader) ----
+  let yPos = 10;
+  if (schoolInfo.logo) {
+    try {
+      const logoStr = schoolInfo.logo;
+      let imgData: string;
+      let imgFormat: string = 'JPEG';
+      if (logoStr.includes('base64,')) {
+        const parts = logoStr.split('base64,');
+        imgData = parts[1];
+        const mimeMatch = parts[0].match(/data:image\/(png|jpeg|jpg|gif|webp)/i);
+        if (mimeMatch) {
+          const fmt = mimeMatch[1].toUpperCase();
+          imgFormat = fmt === 'JPG' ? 'JPEG' : (fmt === 'PNG' ? 'PNG' : 'JPEG');
+        }
+      } else {
+        imgData = logoStr;
+      }
+      doc.addImage(imgData, imgFormat, 14, yPos, 15, 15);
+    } catch {}
+  }
+  const textX = schoolInfo.logo ? 32 : 14;
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text(schoolInfo.name || 'INFOHAS', textX, yPos + 6);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  if (schoolInfo.field) {
+    doc.text(schoolInfo.field, textX, yPos + 12);
+  }
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Schedule - ${targetClass.name}`, pageWidth - 14, yPos + 6, { align: 'right' });
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.text(monthLabel, pageWidth - 14, yPos + 12, { align: 'right' });
+  yPos = 28;
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.3);
+  doc.line(14, yPos, pageWidth - 14, yPos);
+  yPos += 4;
+
+  // ---- GROUP SCHEDULE DATA BY DATE ----
+  const sorted = [...scheduleEntries].sort((a, b) => a.date.localeCompare(b.date));
+
+  // Group entries by week (Mon-Sun) to fit A4 portrait vertically
+  // Each day row will show: Date | Time | Teacher | Room | Module
+  const tableHead = [['Date', 'Time', 'Teacher', 'Room', 'Module']];
+  const tableBody = sorted.map(entry => {
+    const teacher = teachers.find(tc => tc.id === entry.teacherId);
+    const module = modules.find(m => m.id === entry.moduleId);
+    const dateObj = new Date(entry.date + 'T00:00:00');
+    const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+    const dateStr = `${dayName} ${entry.date}`;
+    return [
+      dateStr,
+      entry.timeSlot || '-',
+      teacher?.name || entry.teacherId || '-',
+      entry.roomId || '-',
+      module?.name || entry.moduleId || '-',
+    ];
+  });
+
+  if (tableBody.length === 0) {
+    doc.setFontSize(10);
+    doc.text('No schedule entries for this period.', 14, yPos + 10);
+  } else {
+    // Calculate optimal font size based on number of rows to fit vertically
+    // A4 portrait usable height from yPos(32) to footer(282) = ~250mm
+    // header row ~8mm, each body row ~6-7mm
+    const availableHeight = pageHeight - yPos - 20; // 20mm for footer
+    const estimatedRowHeight = 6.5;
+    const maxRowsPerPage = Math.floor(availableHeight / estimatedRowHeight);
+    const fontSize = tableBody.length > maxRowsPerPage * 3 ? 6 : tableBody.length > maxRowsPerPage ? 6.5 : 7;
+
+    autoTable(doc, {
+      startY: yPos,
+      head: tableHead,
+      body: tableBody,
+      theme: 'grid',
+      headStyles: { fillColor: [16, 185, 129], fontSize: 7.5, fontStyle: 'bold', halign: 'center' },
+      bodyStyles: { fontSize: fontSize, valign: 'middle' },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+      margin: { left: 14, right: 14 },
+      columnStyles: {
+        0: { cellWidth: 30 },
+        1: { cellWidth: 28, halign: 'center' },
+        2: { cellWidth: 35 },
+        3: { cellWidth: 25, halign: 'center' },
+        4: { cellWidth: 'auto' },
+      },
+      didDrawPage: (data) => {
+        // Footer on each page
+        const pg = doc.getNumberOfPages();
+        const ph = doc.internal.pageSize.getHeight();
+        const pw = doc.internal.pageSize.getWidth();
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(150, 150, 150);
+        const footerParts = [
+          schoolInfo.address || '',
+          schoolInfo.phone ? `Tel: ${schoolInfo.phone}` : '',
+          schoolInfo.email ? `Email: ${schoolInfo.email}` : ''
+        ].filter(Boolean);
+        doc.text(footerParts.join('  |  '), 14, ph - 8);
+        doc.text(`Page ${pg}`, pw - 14, ph - 8, { align: 'right' });
+        doc.setDrawColor(220, 220, 220);
+        doc.setLineWidth(0.2);
+        doc.line(14, ph - 10, pw - 14, ph - 10);
+        doc.setTextColor(0, 0, 0);
+      },
+    });
+  }
+
+  doc.save(`schedule_${targetClass.name}_${monthLabel.replace(/\s+/g, '_')}.pdf`);
+}
+
+export function exportAllSchedulesPDF(
+  allScheduleEntries: ClassScheduleEntry[],
+  classes: Class[],
+  teachers: { id: string; name: string }[],
+  modules: { id: string; name: string }[],
+  schoolInfo: SchoolInfo
+) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Header
+  let yPos = 10;
+  if (schoolInfo.logo) {
+    try {
+      const logoStr = schoolInfo.logo;
+      let imgData: string; let imgFormat = 'JPEG';
+      if (logoStr.includes('base64,')) {
+        const parts = logoStr.split('base64,'); imgData = parts[1];
+        const m = parts[0].match(/data:image\/(png|jpeg|jpg|gif|webp)/i);
+        if (m) { const f = m[1].toUpperCase(); imgFormat = f === 'JPG' ? 'JPEG' : (f === 'PNG' ? 'PNG' : 'JPEG'); }
+      } else { imgData = logoStr; }
+      doc.addImage(imgData, imgFormat, 14, yPos, 15, 15);
+    } catch {}
+  }
+  const textX = schoolInfo.logo ? 32 : 14;
+  doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+  doc.text(schoolInfo.name || 'INFOHAS', textX, yPos + 6);
+  doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+  if (schoolInfo.field) doc.text(schoolInfo.field, textX, yPos + 12);
+  doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+  doc.text('All Classes Schedule', pageWidth - 14, yPos + 6, { align: 'right' });
+  doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+  doc.text(new Date().toLocaleDateString(), pageWidth - 14, yPos + 12, { align: 'right' });
+  yPos = 28;
+  doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.3);
+  doc.line(14, yPos, pageWidth - 14, yPos); yPos += 4;
+
+  // Group schedule by class
+  const entriesByClass = new Map<string, ClassScheduleEntry[]>();
+  allScheduleEntries.forEach(e => {
+    if (!entriesByClass.has(e.classId)) entriesByClass.set(e.classId, []);
+    entriesByClass.get(e.classId)!.push(e);
+  });
+
+  let isFirstPage = true;
+  entriesByClass.forEach((entries, classId) => {
+    const cls = classes.find(c => c.id === classId);
+    if (!cls) return;
+
+    if (!isFirstPage) {
+      doc.addPage();
+      yPos = 20;
+    }
+    isFirstPage = false;
+
+    // Class title
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold');
+    doc.setTextColor(16, 185, 129);
+    doc.text(`Class: ${cls.name}`, 14, yPos);
+    yPos += 2;
+    doc.setTextColor(0, 0, 0);
+    yPos += 4;
+
+    const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+    const tableBody = sorted.map(entry => {
+      const teacher = teachers.find(tc => tc.id === entry.teacherId);
+      const module = modules.find(m => m.id === entry.moduleId);
+      return [
+        entry.date,
+        entry.timeSlot || '-',
+        teacher?.name || '-',
+        entry.roomId || '-',
+        module?.name || '-',
+      ];
+    });
+
+    const fontSize = tableBody.length > 20 ? 5.5 : tableBody.length > 12 ? 6 : 6.5;
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Date', 'Time', 'Teacher', 'Room', 'Module']],
+      body: tableBody,
+      theme: 'grid',
+      headStyles: { fillColor: [16, 185, 129], fontSize: 7, fontStyle: 'bold', halign: 'center' },
+      bodyStyles: { fontSize: fontSize, valign: 'middle' },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+      margin: { left: 14, right: 14 },
+      columnStyles: {
+        0: { cellWidth: 28 },
+        1: { cellWidth: 26, halign: 'center' },
+        2: { cellWidth: 32 },
+        3: { cellWidth: 22, halign: 'center' },
+        4: { cellWidth: 'auto' },
+      },
+    });
+
+    yPos = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
+  });
+
+  // Footer on all pages
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    const ph = doc.internal.pageSize.getHeight();
+    const pw = doc.internal.pageSize.getWidth();
+    doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(150, 150, 150);
+    const fp = [schoolInfo.address || '', schoolInfo.phone ? `Tel: ${schoolInfo.phone}` : '', schoolInfo.email ? `Email: ${schoolInfo.email}` : ''].filter(Boolean);
+    doc.text(fp.join('  |  '), 14, ph - 8);
+    doc.text(`Page ${i} of ${pageCount}`, pw - 14, ph - 8, { align: 'right' });
+    doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.2);
+    doc.line(14, ph - 10, pw - 14, ph - 10);
+  }
+
+  doc.save(`all_schedules_${new Date().toISOString().slice(0, 10)}.pdf`);
 }

@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { setApiToken } from '@/lib/api';
 import { t } from '@/lib/i18n';
-import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, PageName, CalendarEvent } from '@/lib/types';
+import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, PageName, CalendarEvent, ClassScheduleEntry } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
 import * as pdfUtils from '@/lib/pdf';
 
@@ -53,6 +53,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'modules', labelKey: 'modules', icon: <BookOpen className="h-5 w-5" /> },
   { id: 'attendance', labelKey: 'attendance', icon: <ClipboardCheck className="h-5 w-5" /> },
   { id: 'calendar', labelKey: 'calendar', icon: <Calendar className="h-5 w-5" /> },
+  { id: 'schedule', labelKey: 'schedule', icon: <Clock className="h-5 w-5" /> },
   { id: 'grades', labelKey: 'grades', icon: <FileText className="h-5 w-5" /> },
   { id: 'behavior', labelKey: 'behavior', icon: <SmilePlus className="h-5 w-5" /> },
   { id: 'tasks', labelKey: 'tasks', icon: <ListTodo className="h-5 w-5" /> },
@@ -1037,6 +1038,547 @@ function CalendarPage() {
         </div>
         <DialogFooter><Button variant="outline" onClick={() => setEventOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddEvent}>{t('save', language)}</Button></DialogFooter>
       </DialogContent></Dialog>
+    </div>
+  );
+}
+
+// ==================== SCHEDULE PAGE ====================
+function SchedulePage() {
+  const { classes, teachers, modules, schedules, schoolInfo, language, setSchedules } = useAppStore();
+  const [selectedClassId, setSelectedClassId] = useState('');
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [editingDay, setEditingDay] = useState<string | null>(null); // YYYY-MM-DD
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [conflictMsg, setConflictMsg] = useState<string | null>(null);
+
+  // Form state for the editing day
+  const [entryForm, setEntryForm] = useState({
+    teacherId: '',
+    roomId: '',
+    timeSlot: '',
+    moduleId: '',
+    notes: '',
+  });
+
+  const TIME_SLOTS = [
+    { value: '08:00-10:00', label: language === 'fr' ? '08:00 - 10:00' : '08:00 - 10:00' },
+    { value: '10:00-12:00', label: language === 'fr' ? '10:00 - 12:00' : '10:00 - 12:00' },
+    { value: '13:00-15:00', label: language === 'fr' ? '13:00 - 15:00' : '13:00 - 15:00' },
+    { value: '15:00-17:00', label: language === 'fr' ? '15:00 - 17:00' : '15:00 - 17:00' },
+    { value: '08:00-12:00', label: language === 'fr' ? '08:00 - 12:00' : '08:00 - 12:00' },
+    { value: '13:00-17:00', label: language === 'fr' ? '13:00 - 17:00' : '13:00 - 17:00' },
+    { value: '09:00-12:00', label: language === 'fr' ? '09:00 - 12:00' : '09:00 - 12:00' },
+    { value: '14:00-17:00', label: language === 'fr' ? '14:00 - 17:00' : '14:00 - 17:00' },
+  ];
+
+  // Derive unique rooms from classes
+  const rooms = useMemo(() => {
+    const roomSet = new Set<string>();
+    classes.forEach(c => { if (c.room) roomSet.add(c.room); });
+    // Add some defaults
+    if (roomSet.size === 0) {
+      return ['Classroom 1', 'Classroom 2', 'Classroom 3', 'Lab 1', 'Lab 2', 'Amphitheater'];
+    }
+    return Array.from(roomSet).sort();
+  }, [classes]);
+
+  const selectedClass = classes.find(c => c.id === selectedClassId);
+
+  // Get schedule entries for the selected class and current month
+  const classSchedules = useMemo(() => {
+    if (!selectedClassId) return [];
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+    return schedules.filter(s => s.classId === selectedClassId && s.date.startsWith(prefix))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [schedules, selectedClassId, currentMonth]);
+
+  // Calendar helpers
+  const year = currentMonth.getFullYear();
+  const month = currentMonth.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startOffset = language === 'fr' ? (firstDay === 0 ? 6 : firstDay - 1) : firstDay;
+  const monthName = currentMonth.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { month: 'long', year: 'numeric' });
+  const dayNames = language === 'fr' ? ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  // Check for conflicts when scheduling
+  const checkConflicts = (date: string, timeSlot: string, roomId: string, teacherId: string, excludeClassId: string): string | null => {
+    const conflicting = schedules.filter(s => {
+      if (s.classId === excludeClassId) return false;
+      if (s.date !== date) return false;
+      if (s.timeSlot !== timeSlot) return false;
+      // Check room conflict
+      if (s.roomId === roomId && roomId) {
+        const conflictClass = classes.find(c => c.id === s.classId);
+        return true;
+      }
+      // Check teacher conflict
+      if (s.teacherId === teacherId && teacherId) {
+        const conflictClass = classes.find(c => c.id === s.classId);
+        return true;
+      }
+      return false;
+    });
+
+    if (conflicting.length > 0) {
+      const conflictClass = classes.find(c => c.id === conflicting[0].classId);
+      const conflictTeacher = teachers.find(tc => tc.id === conflicting[0].teacherId);
+      if (conflicting[0].roomId === roomId) {
+        return `${language === 'fr' ? 'Conflit' : 'Conflict'}: ${conflictClass?.name || language === 'fr' ? 'Autre groupe' : 'Other group'} ${language === 'fr' ? 'a déjà cette salle réservée' : 'already booked this room'} (${roomId}) ${language === 'fr' ? 'à ce créneau' : 'at this time slot'}.`;
+      }
+      if (conflicting[0].teacherId === teacherId) {
+        return `${language === 'fr' ? 'Conflit' : 'Conflict'}: ${conflictTeacher?.name || language === 'fr' ? 'Enseignant' : 'Teacher'} ${language === 'fr' ? 'est déjà assigné à' : 'is already assigned to'} ${conflictClass?.name || language === 'fr' ? 'un autre groupe' : 'another group'} ${language === 'fr' ? 'à ce créneau' : 'at this time slot'}.`;
+      }
+    }
+    return null;
+  };
+
+  // Get entry for a specific day
+  const getEntryForDay = (day: number): ClassScheduleEntry | undefined => {
+    const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return classSchedules.find(s => s.date === ds);
+  };
+
+  // Open editing dialog for a day
+  const openDayEdit = (day: number) => {
+    if (!selectedClassId) {
+      toast.error(language === 'fr' ? 'Veuillez sélectionner une classe' : 'Please select a class first');
+      return;
+    }
+    const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const existing = getEntryForDay(day);
+    setEditingDay(ds);
+    if (existing) {
+      setEntryForm({
+        teacherId: existing.teacherId,
+        roomId: existing.roomId,
+        timeSlot: existing.timeSlot,
+        moduleId: existing.moduleId,
+        notes: existing.notes || '',
+      });
+    } else {
+      setEntryForm({ teacherId: '', roomId: '', timeSlot: '', moduleId: '', notes: '' });
+    }
+    setConflictMsg(null);
+    setDialogOpen(true);
+  };
+
+  // Save entry
+  const handleSaveEntry = () => {
+    if (!editingDay || !selectedClassId) return;
+    if (!entryForm.teacherId && !entryForm.roomId && !entryForm.timeSlot && !entryForm.moduleId) {
+      toast.error(language === 'fr' ? 'Veuillez remplir au moins un champ' : 'Please fill at least one field');
+      return;
+    }
+
+    // Check conflicts
+    if (entryForm.roomId && entryForm.timeSlot) {
+      const conflict = checkConflicts(editingDay, entryForm.timeSlot, entryForm.roomId, entryForm.teacherId, selectedClassId);
+      if (conflict) {
+        setConflictMsg(conflict);
+        return;
+      }
+    }
+
+    const existing = classSchedules.find(s => s.date === editingDay);
+    if (existing) {
+      // Update existing
+      setSchedules(schedules.map(s => s.id === existing.id ? {
+        ...s,
+        teacherId: entryForm.teacherId,
+        roomId: entryForm.roomId,
+        timeSlot: entryForm.timeSlot,
+        moduleId: entryForm.moduleId,
+        notes: entryForm.notes,
+      } : s));
+    } else {
+      // Add new
+      setSchedules([...schedules, {
+        id: genId(),
+        classId: selectedClassId,
+        date: editingDay,
+        teacherId: entryForm.teacherId,
+        roomId: entryForm.roomId,
+        timeSlot: entryForm.timeSlot,
+        moduleId: entryForm.moduleId,
+        notes: entryForm.notes,
+        createdAt: new Date().toISOString(),
+      }]);
+    }
+    toast.success(language === 'fr' ? t('schedule_entry_saved', language) : 'Schedule entry saved');
+    setDialogOpen(false);
+    setEditingDay(null);
+    setConflictMsg(null);
+  };
+
+  // Delete entry for a day
+  const handleDeleteDay = () => {
+    if (!editingDay) return;
+    const existing = classSchedules.find(s => s.date === editingDay);
+    if (existing) {
+      setSchedules(schedules.filter(s => s.id !== existing.id));
+      toast.success(language === 'fr' ? t('schedule_entry_deleted', language) : 'Schedule entry deleted');
+    }
+    setDialogOpen(false);
+    setEditingDay(null);
+  };
+
+  // Download PDF for current class/month
+  const handleDownloadPDF = () => {
+    if (classSchedules.length === 0) {
+      toast.error(language === 'fr' ? 'Aucune entrée à exporter' : 'No entries to export');
+      return;
+    }
+    pdfUtils.exportSchedulePDF(
+      classSchedules,
+      selectedClass || { id: '', name: 'Unknown', createdAt: '' },
+      teachers.map(tc => ({ id: tc.id, name: tc.name })),
+      modules.map(m => ({ id: m.id, name: m.name })),
+      monthName,
+      schoolInfo
+    );
+  };
+
+  // Download all classes schedules
+  const handleDownloadAllPDF = () => {
+    if (schedules.length === 0) {
+      toast.error(language === 'fr' ? 'Aucune entrée à exporter' : 'No entries to export');
+      return;
+    }
+    pdfUtils.exportAllSchedulesPDF(
+      schedules,
+      classes,
+      teachers.map(tc => ({ id: tc.id, name: tc.name })),
+      modules.map(m => ({ id: m.id, name: m.name })),
+      schoolInfo
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Top Controls */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* Class Selector */}
+          <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder={t('select_class', language)} />
+            </SelectTrigger>
+            <SelectContent>
+              {classes.map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Month Navigation */}
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="icon" onClick={() => setCurrentMonth(new Date(year, month - 1, 1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm font-medium px-2 capitalize min-w-[140px] text-center">{monthName}</span>
+            <Button variant="outline" size="icon" onClick={() => setCurrentMonth(new Date())}>
+              <Calendar className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="icon" onClick={() => setCurrentMonth(new Date(year, month + 1, 1))}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={handleDownloadPDF} disabled={!selectedClassId || classSchedules.length === 0}>
+            <FileDown className="h-4 w-4 mr-1" />
+            {t('download_schedule_pdf', language)}
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleDownloadAllPDF} disabled={schedules.length === 0}>
+            <Download className="h-4 w-4 mr-1" />
+            {language === 'fr' ? 'Tous les Emplois PDF' : 'All Schedules PDF'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Schedule Summary for selected class */}
+      {selectedClassId && (
+        <div className="flex items-center gap-4 text-sm">
+          <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+            {selectedClass?.name}: {classSchedules.length} {language === 'fr' ? 'entrées' : 'entries'}
+          </Badge>
+          {rooms.length > 0 && (
+            <span className="text-muted-foreground">
+              {t('rooms', language)}: {rooms.join(', ')}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Calendar Grid */}
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-4">
+          {!selectedClassId ? (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+              <Calendar className="h-12 w-12 mb-4 opacity-50" />
+              <p>{t('select_class', language)}</p>
+              <p className="text-xs mt-1">{t('add_schedule_entry', language)}</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-7 gap-1 mb-1">
+                {dayNames.map(d => (
+                  <div key={d} className="text-center text-xs font-medium text-muted-foreground py-2">{d}</div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {[...Array(startOffset)].map((_, i) => <div key={`e-${i}`} />)}
+                {[...Array(daysInMonth)].map((_, i) => {
+                  const day = i + 1;
+                  const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                  const entry = getEntryForDay(day);
+                  const isToday = ds === new Date().toISOString().split('T')[0];
+
+                  return (
+                    <button
+                      key={day}
+                      onClick={() => openDayEdit(day)}
+                      className={`relative p-1.5 rounded-lg text-sm min-h-[72px] flex flex-col transition-colors hover:bg-muted border border-transparent ${
+                        isToday ? 'ring-2 ring-emerald-500 border-emerald-200' : ''
+                      } ${entry ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800' : ''}`}
+                    >
+                      <span className={`text-xs font-medium mb-0.5 ${isToday ? 'text-emerald-700 font-bold' : ''}`}>{day}</span>
+                      {entry && (
+                        <div className="flex-1 flex flex-col gap-0.5 text-[10px] leading-tight overflow-hidden">
+                          {entry.timeSlot && (
+                            <div className="flex items-center gap-0.5">
+                              <Clock className="h-2.5 w-2.5 text-emerald-600 shrink-0" />
+                              <span className="truncate text-emerald-700 dark:text-emerald-400">{entry.timeSlot}</span>
+                            </div>
+                          )}
+                          {entry.moduleId && (
+                            <div className="truncate text-muted-foreground">
+                              {modules.find(m => m.id === entry.moduleId)?.name || entry.moduleId}
+                            </div>
+                          )}
+                          {entry.roomId && (
+                            <div className="truncate text-muted-foreground">
+                              <MapPin className="h-2.5 w-2.5 inline mr-0.5" />{entry.roomId}
+                            </div>
+                          )}
+                          {entry.teacherId && (
+                            <div className="truncate text-muted-foreground">
+                              <UserPlus className="h-2.5 w-2.5 inline mr-0.5" />
+                              {teachers.find(tc => tc.id === entry.teacherId)?.name || entry.teacherId}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {!entry && (
+                        <div className="flex-1 flex items-center justify-center opacity-0 hover:opacity-40 transition-opacity">
+                          <Plus className="h-3.5 w-3.5" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Schedule Table View for selected class */}
+      {selectedClassId && classSchedules.length > 0 && (
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              {t('schedule_for_class', language)} {selectedClass?.name} - {monthName}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('calendar', language)}</TableHead>
+                    <TableHead>{t('assigned_time', language)}</TableHead>
+                    <TableHead>{t('assigned_teacher', language)}</TableHead>
+                    <TableHead>{t('assigned_room', language)}</TableHead>
+                    <TableHead>{t('assigned_module', language)}</TableHead>
+                    <TableHead>{t('actions', language)}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {classSchedules.map(entry => {
+                    const teacher = teachers.find(tc => tc.id === entry.teacherId);
+                    const module = modules.find(m => m.id === entry.moduleId);
+                    const day = parseInt(entry.date.split('-')[2]);
+                    return (
+                      <TableRow key={entry.id}>
+                        <TableCell className="font-medium">{entry.date}</TableCell>
+                        <TableCell><Badge variant="outline" className="text-xs">{entry.timeSlot}</Badge></TableCell>
+                        <TableCell>{teacher?.name || '-'}</TableCell>
+                        <TableCell><Badge variant="secondary" className="text-xs">{entry.roomId || '-'}</Badge></TableCell>
+                        <TableCell>{module?.name || '-'}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openDayEdit(day)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => {
+                              setSchedules(schedules.filter(s => s.id !== entry.id));
+                              toast.success(t('schedule_entry_deleted', language));
+                            }}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Schedule Entry Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {editingDay && classSchedules.find(s => s.date === editingDay)
+                ? (language === 'fr' ? 'Modifier le Programme' : 'Edit Schedule')
+                : (language === 'fr' ? 'Ajouter au Programme' : 'Add to Schedule')}
+              {' - '}{editingDay}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedClass?.name}
+            </DialogDescription>
+          </DialogHeader>
+
+          {conflictMsg && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-red-800 dark:text-red-400">{t('schedule_conflict', language)}</p>
+                <p className="text-xs text-red-700 dark:text-red-400 mt-1">{conflictMsg}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>{t('assigned_time', language)}</Label>
+              <Select value={entryForm.timeSlot} onValueChange={v => {
+                setEntryForm({ ...entryForm, timeSlot: v });
+                // Auto-check conflicts on change
+                if (entryForm.roomId && editingDay && selectedClassId) {
+                  const c = checkConflicts(editingDay, v, entryForm.roomId, entryForm.teacherId, selectedClassId);
+                  setConflictMsg(c);
+                }
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder={language === 'fr' ? 'Sélectionner un créneau' : 'Select time slot'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIME_SLOTS.map(ts => (
+                    <SelectItem key={ts.value} value={ts.value}>{ts.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('assigned_teacher', language)}</Label>
+              <Select value={entryForm.teacherId} onValueChange={v => {
+                setEntryForm({ ...entryForm, teacherId: v });
+                if (entryForm.roomId && entryForm.timeSlot && editingDay && selectedClassId) {
+                  const c = checkConflicts(editingDay, entryForm.timeSlot, entryForm.roomId, v, selectedClassId);
+                  setConflictMsg(c);
+                }
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder={language === 'fr' ? 'Sélectionner un enseignant' : 'Select teacher'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {teachers.length === 0 && (
+                    <SelectItem value="__none" disabled>{t('no_teachers', language)}</SelectItem>
+                  )}
+                  {teachers.map(tc => (
+                    <SelectItem key={tc.id} value={tc.id}>{tc.name}{tc.subject ? ` (${tc.subject})` : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('assigned_room', language)}</Label>
+              <Select value={entryForm.roomId} onValueChange={v => {
+                setEntryForm({ ...entryForm, roomId: v });
+                if (entryForm.timeSlot && editingDay && selectedClassId) {
+                  const c = checkConflicts(editingDay, entryForm.timeSlot, v, entryForm.teacherId, selectedClassId);
+                  setConflictMsg(c);
+                }
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder={language === 'fr' ? 'Sélectionner une salle' : 'Select room'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {rooms.map(r => (
+                    <SelectItem key={r} value={r}>{r}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('assigned_module', language)}</Label>
+              <Select value={entryForm.moduleId} onValueChange={v => setEntryForm({ ...entryForm, moduleId: v })}>
+                <SelectTrigger>
+                  <SelectValue placeholder={language === 'fr' ? 'Sélectionner un module' : 'Select module'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {modules.length === 0 && (
+                    <SelectItem value="__none" disabled>{t('no_modules', language)}</SelectItem>
+                  )}
+                  {modules.map(m => (
+                    <SelectItem key={m.id} value={m.id}>{m.name}{m.code ? ` (${m.code})` : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{language === 'fr' ? 'Notes' : 'Notes'}</Label>
+              <Textarea
+                value={entryForm.notes}
+                onChange={e => setEntryForm({ ...entryForm, notes: e.target.value })}
+                rows={2}
+                placeholder={language === 'fr' ? 'Notes optionnelles...' : 'Optional notes...'}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            {classSchedules.find(s => s.date === editingDay) && (
+              <Button variant="destructive" size="sm" onClick={handleDeleteDay}>
+                <Trash2 className="h-4 w-4 mr-1" />
+                {t('clear_day', language)}
+              </Button>
+            )}
+            <div className="flex-1" />
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              {t('cancel', language)}
+            </Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveEntry} disabled={!!conflictMsg}>
+              <Save className="h-4 w-4 mr-1" />
+              {t('save_schedule', language)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -2462,6 +3004,7 @@ export default function App() {
       case 'modules': return <ModulesPage />;
       case 'attendance': return <AttendancePage />;
       case 'calendar': return <CalendarPage />;
+      case 'schedule': return <SchedulePage />;
       case 'grades': return <GradesPage />;
       case 'behavior': return <BehaviorPage />;
       case 'tasks': return <TasksPage />;
