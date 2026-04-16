@@ -29,6 +29,8 @@ interface AppState {
 
   // Settings
   language: 'en' | 'fr';
+  primaryColor: string;
+  setPrimaryColor: (color: string) => void;
 
   // Actions
   setCurrentPage: (page: PageName) => void;
@@ -85,6 +87,7 @@ export const useAppStore = create<AppState>((set) => ({
   notifications: [],
   admins: [],
   language: 'en',
+  primaryColor: '#10b981',
 
   setCurrentPage: (page) => set({ currentPage: page }),
 
@@ -139,6 +142,7 @@ export const useAppStore = create<AppState>((set) => ({
   setAcademicYears: (y) => { set({ academicYears: y }); localStorage.setItem('attendance_academic_years', JSON.stringify(y)); },
   setSchoolInfo: (i) => { set({ schoolInfo: i }); localStorage.setItem('attendance_school_info', JSON.stringify(i)); },
   setNotifications: (n) => { set({ notifications: n }); },
+  setPrimaryColor: (color) => { set({ primaryColor: color }); localStorage.setItem('attendance_primary_color', color); },
 
   loadAllData: async () => {
     set({
@@ -155,6 +159,7 @@ export const useAppStore = create<AppState>((set) => ({
       templates: loadLocal('attendance_templates'),
       academicYears: loadLocal('attendance_academic_years'),
       schoolInfo: loadLocalObj('attendance_school_info', {}),
+      primaryColor: typeof window !== 'undefined' ? localStorage.getItem('attendance_primary_color') || '#10b981' : '#10b981',
       admins: loadLocal('attendance_admins'),
     });
 

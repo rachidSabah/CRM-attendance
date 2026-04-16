@@ -1,0 +1,538 @@
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, SchoolInfo } from './types';
+
+type Orientation = 'portrait' | 'landscape';
+
+interface PdfOptions {
+  orientation: Orientation;
+  title: string;
+  schoolInfo: SchoolInfo;
+}
+
+function createDoc(opts: PdfOptions) {
+  const doc = new jsPDF({ orientation: opts.orientation, unit: 'mm', format: 'a4' });
+  return { doc, pageWidth: doc.internal.pageSize.getWidth() };
+}
+
+function addHeader(doc: jsPDF, opts: PdfOptions) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  let yPos = 10;
+
+  // Logo on left
+  if (opts.schoolInfo.logo) {
+    try {
+      const logoStr = opts.schoolInfo.logo;
+      let imgData: string;
+      let imgFormat: string = 'JPEG';
+
+      if (logoStr.includes('base64,')) {
+        const parts = logoStr.split('base64,');
+        imgData = parts[1];
+        const mimeMatch = parts[0].match(/data:image\/(png|jpeg|jpg|gif|webp)/i);
+        if (mimeMatch) {
+          const fmt = mimeMatch[1].toUpperCase();
+          imgFormat = fmt === 'JPG' ? 'JPEG' : (fmt === 'PNG' ? 'PNG' : 'JPEG');
+        }
+      } else {
+        imgData = logoStr;
+      }
+
+      doc.addImage(imgData, imgFormat, 14, yPos, 15, 15);
+    } catch (e) {
+      // Logo failed, skip
+    }
+  }
+
+  // School name + field on left
+  const textX = opts.schoolInfo.logo ? 32 : 14;
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text(opts.schoolInfo.name || 'INFOHAS', textX, yPos + 6);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  if (opts.schoolInfo.field) {
+    doc.text(opts.schoolInfo.field, textX, yPos + 12);
+  }
+
+  // Title and date on right
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text(opts.title, pageWidth - 14, yPos + 6, { align: 'right' });
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth - 14, yPos + 12, { align: 'right' });
+
+  // Line separator
+  yPos = 28;
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.3);
+  doc.line(14, yPos, pageWidth - 14, yPos);
+
+  return yPos + 4;
+}
+
+function addFooter(doc: jsPDF, schoolInfo: SchoolInfo) {
+  const pageCount = doc.getNumberOfPages();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(150, 150, 150);
+
+    const footerParts = [
+      schoolInfo.address || '',
+      schoolInfo.phone ? `Tel: ${schoolInfo.phone}` : '',
+      schoolInfo.email ? `Email: ${schoolInfo.email}` : ''
+    ].filter(Boolean);
+
+    const footerText = footerParts.join('  |  ');
+    doc.text(footerText, 14, pageHeight - 8);
+    doc.text(`Page ${i} of ${pageCount}`, pageWidth - 14, pageHeight - 8, { align: 'right' });
+
+    doc.setDrawColor(220, 220, 220);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageHeight - 10, pageWidth - 14, pageHeight - 10);
+  }
+}
+
+function downloadPdf(doc: jsPDF, filename: string) {
+  doc.save(filename);
+}
+
+// ==================== EXPORT FUNCTIONS ====================
+
+export function exportStudentsPDF(students: Student[], classes: Class[], schoolInfo: SchoolInfo) {
+  const { doc } = createDoc({ orientation: 'portrait', title: 'Students List', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'portrait', title: 'Students List', schoolInfo });
+
+  const tableData = students.map(s => {
+    const cls = classes.find(c => c.id === s.classId);
+    return [
+      s.fullName,
+      s.studentId,
+      cls?.name || s.className || '-',
+      s.status,
+      s.guardianName || '-',
+      s.guardianPhone || '-',
+      s.email || '-',
+      new Date(s.createdAt).toLocaleDateString()
+    ];
+  });
+
+  autoTable(doc, {
+    startY,
+    head: [['Name', 'Student ID', 'Class', 'Status', 'Guardian', 'Phone', 'Email', 'Created']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7 },
+    alternateRowStyles: { fillColor: [245, 247, 250] },
+    margin: { left: 14, right: 14 },
+    columnStyles: {
+      0: { cellWidth: 35 },
+      1: { cellWidth: 22 },
+      2: { cellWidth: 25 },
+      3: { cellWidth: 18 },
+      4: { cellWidth: 25 },
+      5: { cellWidth: 25 },
+      6: { cellWidth: 30 },
+      7: { cellWidth: 20 },
+    },
+  });
+
+  addFooter(doc, schoolInfo);
+  downloadPdf(doc, `students_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+export function exportAttendancePDF(records: AttendanceRecord[], students: Student[], classes: Class[], schoolInfo: SchoolInfo, dateFrom?: string, dateTo?: string) {
+  const { doc } = createDoc({ orientation: 'portrait', title: 'Attendance Report', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'portrait', title: 'Attendance Report', schoolInfo });
+
+  let filtered = [...records];
+  if (dateFrom) filtered = filtered.filter(r => r.date >= dateFrom);
+  if (dateTo) filtered = filtered.filter(r => r.date <= dateTo);
+
+  // Summary section
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Summary', 14, startY);
+  startY += 2;
+
+  const present = filtered.filter(r => r.status === 'present').length;
+  const absent = filtered.filter(r => r.status === 'absent').length;
+  const late = filtered.filter(r => r.status === 'late').length;
+  const excused = filtered.filter(r => r.status === 'excused').length;
+  const total = filtered.length;
+  const rate = total > 0 ? Math.round((present / total) * 100) : 0;
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Total Records: ${total}  |  Present: ${present}  |  Absent: ${absent}  |  Late: ${late}  |  Excused: ${excused}  |  Rate: ${rate}%`, 14, startY + 5);
+  startY += 12;
+
+  if (dateFrom || dateTo) {
+    doc.setFontSize(8);
+    doc.text(`Date Range: ${dateFrom || 'All'} → ${dateTo || 'All'}`, 14, startY);
+    startY += 6;
+  }
+
+  const tableData = filtered.map(r => {
+    const s = students.find(st => st.id === r.studentId);
+    const cls = classes.find(c => c.id === s?.classId);
+    return [
+      r.date,
+      s?.fullName || 'Unknown',
+      s?.studentId || '-',
+      cls?.name || '-',
+      r.status,
+      r.notes || ''
+    ];
+  });
+
+  autoTable(doc, {
+    startY,
+    head: [['Date', 'Student Name', 'Student ID', 'Class', 'Status', 'Notes']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7 },
+    alternateRowStyles: { fillColor: [245, 247, 250] },
+    margin: { left: 14, right: 14 },
+  });
+
+  addFooter(doc, schoolInfo);
+  downloadPdf(doc, `attendance_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+export function exportGradesPDF(grades: Grade[], students: Student[], modules: Module[], schoolInfo: SchoolInfo) {
+  const { doc } = createDoc({ orientation: 'portrait', title: 'Grades Report', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'portrait', title: 'Grades Report', schoolInfo });
+
+  const tableData = grades.map(g => {
+    const s = students.find(st => st.id === g.studentId);
+    const m = modules.find(mod => mod.id === g.moduleId);
+    return [
+      s?.fullName || 'Unknown',
+      s?.studentId || '-',
+      m?.name || '-',
+      g.grade || '-',
+      g.percentage != null ? `${g.percentage}%` : 'N/A',
+      g.date ? new Date(g.date).toLocaleDateString() : '-'
+    ];
+  });
+
+  autoTable(doc, {
+    startY,
+    head: [['Student', 'Student ID', 'Module', 'Grade', 'Percentage', 'Date']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7 },
+    alternateRowStyles: { fillColor: [245, 247, 250] },
+    margin: { left: 14, right: 14 },
+  });
+
+  addFooter(doc, schoolInfo);
+  downloadPdf(doc, `grades_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+export function exportBehaviorPDF(records: BehaviorRecord[], students: Student[], schoolInfo: SchoolInfo) {
+  const { doc } = createDoc({ orientation: 'portrait', title: 'Behavior Report', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'portrait', title: 'Behavior Report', schoolInfo });
+
+  const tableData = records.map(r => {
+    const s = students.find(st => st.id === r.studentId);
+    return [
+      r.date,
+      s?.fullName || 'Unknown',
+      s?.studentId || '-',
+      r.type,
+      r.description,
+      r.points != null ? String(r.points) : '0',
+      r.teacher || '-'
+    ];
+  });
+
+  autoTable(doc, {
+    startY,
+    head: [['Date', 'Student', 'Student ID', 'Type', 'Description', 'Points', 'Teacher']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7 },
+    alternateRowStyles: { fillColor: [245, 247, 250] },
+    margin: { left: 14, right: 14 },
+  });
+
+  addFooter(doc, schoolInfo);
+  downloadPdf(doc, `behavior_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+export function exportIncidentsPDF(incidents: Incident[], students: Student[], schoolInfo: SchoolInfo) {
+  const { doc } = createDoc({ orientation: 'portrait', title: 'Incidents Report', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'portrait', title: 'Incidents Report', schoolInfo });
+
+  const tableData = incidents.map(i => {
+    const s = students.find(st => st.id === i.studentId);
+    return [
+      i.date || '-',
+      s?.fullName || 'Unknown',
+      i.incidentType || '-',
+      i.severity,
+      i.status,
+      i.description || '-',
+      i.actionTaken || '-',
+      i.reportedBy || '-'
+    ];
+  });
+
+  autoTable(doc, {
+    startY,
+    head: [['Date', 'Student', 'Type', 'Severity', 'Status', 'Description', 'Action Taken', 'Reported By']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7 },
+    alternateRowStyles: { fillColor: [245, 247, 250] },
+    margin: { left: 14, right: 14 },
+  });
+
+  addFooter(doc, schoolInfo);
+  downloadPdf(doc, `incidents_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+export function exportTasksPDF(tasks: Task[], schoolInfo: SchoolInfo) {
+  const { doc } = createDoc({ orientation: 'portrait', title: 'Tasks Report', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'portrait', title: 'Tasks Report', schoolInfo });
+
+  const tableData = tasks.map(t => [
+    t.ticketNumber || '-',
+    t.title,
+    t.priority,
+    t.status,
+    t.assignedTo || '-',
+    t.dueDate || '-',
+    t.progress != null ? `${t.progress}%` : '0%',
+    new Date(t.createdAt).toLocaleDateString()
+  ]);
+
+  autoTable(doc, {
+    startY,
+    head: [['Ticket', 'Title', 'Priority', 'Status', 'Assigned To', 'Due Date', 'Progress', 'Created']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7 },
+    alternateRowStyles: { fillColor: [245, 247, 250] },
+    margin: { left: 14, right: 14 },
+  });
+
+  addFooter(doc, schoolInfo);
+  downloadPdf(doc, `tasks_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+export function exportClassPerformancePDF(
+  students: Student[],
+  classes: Class[],
+  grades: Grade[],
+  attendance: AttendanceRecord[],
+  schoolInfo: SchoolInfo
+) {
+  const { doc } = createDoc({ orientation: 'landscape', title: 'Class Performance Comparison', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'landscape', title: 'Class Performance Comparison', schoolInfo });
+
+  const classData = classes.map(c => {
+    const classStudentIds = new Set(students.filter(s => s.classId === c.id).map(s => s.id));
+    const classGrades = grades.filter(g => classStudentIds.has(g.studentId));
+    const classAtt = attendance.filter(a => classStudentIds.has(a.studentId));
+
+    const avgGrade = classGrades.length > 0
+      ? Math.round(classGrades.reduce((s, g) => s + (g.percentage || 0), 0) / classGrades.length)
+      : 0;
+
+    const presentCount = classAtt.filter(a => a.status === 'present').length;
+    const attRate = classAtt.length > 0 ? Math.round((presentCount / classAtt.length) * 100) : 0;
+
+    const passRate = classGrades.length > 0
+      ? Math.round((classGrades.filter(g => (g.percentage || 0) >= 50).length / classGrades.length) * 100)
+      : 0;
+
+    return [
+      c.name,
+      String(classStudentIds.size),
+      String(classGrades.length),
+      `${avgGrade}%`,
+      String(classAtt.length),
+      `${attRate}%`,
+      `${passRate}%`,
+      c.teacher || '-'
+    ];
+  });
+
+  autoTable(doc, {
+    startY,
+    head: [['Class', 'Students', 'Total Grades', 'Avg Grade', 'Att. Records', 'Att. Rate', 'Pass Rate', 'Teacher']],
+    body: classData,
+    theme: 'grid',
+    headStyles: { fillColor: [16, 185, 129], fontSize: 9, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8 },
+    alternateRowStyles: { fillColor: [245, 247, 250] },
+    margin: { left: 14, right: 14 },
+  });
+
+  addFooter(doc, schoolInfo);
+  downloadPdf(doc, `class_performance_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+export function exportFullReportPDF(
+  allData: {
+    students: Student[];
+    classes: Class[];
+    modules: Module[];
+    attendance: AttendanceRecord[];
+    grades: Grade[];
+    behavior: BehaviorRecord[];
+    tasks: Task[];
+    incidents: Incident[];
+  },
+  schoolInfo: SchoolInfo
+) {
+  const { doc } = createDoc({ orientation: 'portrait', title: 'Comprehensive School Report', schoolInfo });
+  let yPos = addHeader(doc, { orientation: 'portrait', title: 'Comprehensive School Report', schoolInfo });
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  // ---- OVERVIEW STATS ----
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(16, 185, 129);
+  doc.text('1. Overview', 14, yPos);
+  yPos += 6;
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+
+  const statsText = [
+    `Total Students: ${allData.students.length}`,
+    `Active Students: ${allData.students.filter(s => s.status === 'active').length}`,
+    `Total Classes: ${allData.classes.length}`,
+    `Total Modules: ${allData.modules.length}`,
+    `Attendance Records: ${allData.attendance.length}`,
+    `Grade Records: ${allData.grades.length}`,
+    `Behavior Records: ${allData.behavior.length}`,
+    `Open Tasks: ${allData.tasks.filter(t => t.status !== 'completed').length}`,
+    `Open Incidents: ${allData.incidents.filter(i => i.status !== 'closed' && i.status !== 'resolved').length}`,
+  ];
+
+  statsText.forEach((text, i) => {
+    doc.text(text, 14, yPos + i * 5);
+  });
+  yPos += statsText.length * 5 + 10;
+
+  // ---- STUDENTS TABLE ----
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(16, 185, 129);
+  doc.text('2. Students', 14, yPos);
+  yPos += 4;
+
+  const studentsData = allData.students.map(s => {
+    const cls = allData.classes.find(c => c.id === s.classId);
+    return [s.fullName, s.studentId, cls?.name || '-', s.status];
+  });
+
+  autoTable(doc, {
+    startY: yPos,
+    head: [['Name', 'Student ID', 'Class', 'Status']],
+    body: studentsData,
+    theme: 'grid',
+    headStyles: { fillColor: [16, 185, 129], fontSize: 7, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 6.5 },
+    alternateRowStyles: { fillColor: [245, 247, 250] },
+    margin: { left: 14, right: 14 },
+  });
+
+  yPos = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 12;
+
+  // ---- ATTENDANCE SUMMARY ----
+  const present = allData.attendance.filter(r => r.status === 'present').length;
+  const absent = allData.attendance.filter(r => r.status === 'absent').length;
+  const rate = allData.attendance.length > 0 ? Math.round((present / allData.attendance.length) * 100) : 0;
+
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(16, 185, 129);
+  doc.text('3. Attendance Summary', 14, yPos);
+  yPos += 6;
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Total Records: ${allData.attendance.length}  |  Present: ${present}  |  Absent: ${absent}  |  Rate: ${rate}%`, 14, yPos);
+  yPos += 10;
+
+  // ---- GRADES SUMMARY ----
+  const avgGrade = allData.grades.length > 0
+    ? Math.round(allData.grades.reduce((s, g) => s + (g.percentage || 0), 0) / allData.grades.length)
+    : 0;
+
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(16, 185, 129);
+  doc.text('4. Grades Summary', 14, yPos);
+  yPos += 6;
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Total Grades: ${allData.grades.length}  |  Average: ${avgGrade}%  |  Above 70%: ${allData.grades.filter(g => (g.percentage || 0) >= 70).length}  |  Below 50%: ${allData.grades.filter(g => (g.percentage || 0) < 50).length}`, 14, yPos);
+  yPos += 10;
+
+  // ---- BEHAVIOR SUMMARY ----
+  const posBehavior = allData.behavior.filter(b => b.type === 'positive').length;
+  const negBehavior = allData.behavior.filter(b => b.type === 'negative').length;
+
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(16, 185, 129);
+  doc.text('5. Behavior Summary', 14, yPos);
+  yPos += 6;
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Total Records: ${allData.behavior.length}  |  Positive: ${posBehavior}  |  Negative: ${negBehavior}`, 14, yPos);
+  yPos += 10;
+
+  // ---- TASKS SUMMARY ----
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(16, 185, 129);
+  doc.text('6. Tasks Summary', 14, yPos);
+  yPos += 6;
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  const pendingTasks = allData.tasks.filter(t => t.status === 'pending').length;
+  const inProgressTasks = allData.tasks.filter(t => t.status === 'in_progress').length;
+  const completedTasks = allData.tasks.filter(t => t.status === 'completed').length;
+  const overdueTasks = allData.tasks.filter(t => t.status === 'overdue').length;
+  doc.text(`Total: ${allData.tasks.length}  |  Pending: ${pendingTasks}  |  In Progress: ${inProgressTasks}  |  Completed: ${completedTasks}  |  Overdue: ${overdueTasks}`, 14, yPos);
+  yPos += 10;
+
+  // ---- INCIDENTS SUMMARY ----
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(16, 185, 129);
+  doc.text('7. Incidents Summary', 14, yPos);
+  yPos += 6;
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  const openIncidents = allData.incidents.filter(i => i.status === 'open').length;
+  const resolvedIncidents = allData.incidents.filter(i => i.status === 'resolved' || i.status === 'closed').length;
+  doc.text(`Total: ${allData.incidents.length}  |  Open: ${openIncidents}  |  Resolved: ${resolvedIncidents}`, 14, yPos);
+
+  addFooter(doc, schoolInfo);
+  downloadPdf(doc, `full_report_${new Date().toISOString().slice(0, 10)}.pdf`);
+}

@@ -44,6 +44,7 @@
 }
 
 :root {
+  --app-primary-color: #10b981;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -138,4 +139,18 @@
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: oklch(0.5 0 0 / 50%);
+}
+
+/* Primary color custom property usage */
+.bg-primary-custom {
+  background-color: var(--app-primary-color) !important;
+}
+.bg-primary-custom:hover {
+  opacity: 0.9;
+}
+.text-primary-custom {
+  color: var(--app-primary-color) !important;
+}
+.border-primary-custom {
+  border-color: var(--app-primary-color) !important;
 }

@@ -8,6 +8,7 @@ import { setApiToken } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, PageName, CalendarEvent } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
+import * as pdfUtils from '@/lib/pdf';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,7 +36,8 @@ import {
   Save, Key, Languages, Building2, Phone, Mail, MapPin, Star,
   TrendingUp, TrendingDown, Minus, CircleDot, Send, FileDown,
   Copy, Printer, Lock, ArrowLeft, Filter, MoreHorizontal, MessageCircle,
-  Flame, Award, Zap, Globe, Database, Activity, ToggleLeft, CreditCard, IdCard
+  Flame, Award, Zap, Globe, Database, Activity, ToggleLeft, CreditCard, IdCard,
+  Palette, HardDrive, ChevronDown, Info, RotateCcw, Archive, Cloud, FolderOpen
 } from 'lucide-react';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
@@ -409,7 +411,7 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
 
 // ==================== LOGIN SCREEN ====================
 function LoginScreen() {
-  const { login, language } = useAppStore();
+  const { login, language, schoolInfo } = useAppStore();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [slug, setSlug] = useState('');
@@ -430,8 +432,14 @@ function LoginScreen() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-gray-900 dark:to-gray-800 p-4">
       <Card className="w-full max-w-md shadow-2xl border-0">
         <CardHeader className="text-center space-y-3 pb-2">
-          <div className="mx-auto w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center"><GraduationCap className="h-9 w-9 text-white" /></div>
-          <div><CardTitle className="text-2xl font-bold">INFOHAS</CardTitle><CardDescription className="text-sm mt-1">{language === 'fr' ? "Système de Gestion de Présence" : "Attendance Management System"}</CardDescription></div>
+          <div className="mx-auto w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center overflow-hidden">
+            {schoolInfo?.logo ? <img src={schoolInfo.logo} alt="Logo" className="w-full h-full object-cover" /> : <GraduationCap className="h-9 w-9 text-white" />}
+          </div>
+          <div>
+            <CardTitle className="text-2xl font-bold">{schoolInfo?.name || 'INFOHAS'}</CardTitle>
+            {schoolInfo?.field && <CardDescription className="text-sm mt-1">{schoolInfo.field}</CardDescription>}
+            <CardDescription className="text-xs mt-0.5 opacity-70">{language === 'fr' ? "Système de Gestion de Présence" : "Attendance Management System"}</CardDescription>
+          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -460,8 +468,10 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       <aside className={`fixed top-0 left-0 z-50 h-full w-64 bg-card border-r border-border transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:z-auto ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex flex-col h-full">
           <div className="p-4 border-b border-border flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shrink-0"><GraduationCap className="h-6 w-6 text-white" /></div>
-            <div className="flex-1 min-w-0"><h2 className="font-bold text-sm truncate">{schoolInfo?.name || 'INFOHAS'}</h2><p className="text-xs text-muted-foreground truncate">{language === 'fr' ? 'Système de Gestion Scolaire' : 'School Management System'}</p></div>
+            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
+              {schoolInfo?.logo ? <img src={schoolInfo.logo} alt="" className="w-full h-full object-cover" /> : <GraduationCap className="h-6 w-6 text-white" />}
+            </div>
+            <div className="flex-1 min-w-0"><h2 className="font-bold text-sm truncate">{schoolInfo?.name || 'INFOHAS'}</h2><p className="text-xs text-muted-foreground truncate">{schoolInfo?.field || (language === 'fr' ? 'Système de Gestion Scolaire' : 'School Management System')}</p></div>
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={onClose}><X className="h-5 w-5" /></Button>
           </div>
           <div className="p-4 border-b border-border">
@@ -1703,7 +1713,7 @@ function ReportsPage() {
 
 // ==================== SETTINGS PAGE ====================
 function SettingsPage() {
-  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser, setStudents, setClasses, setModules, setAttendance, setGrades, setBehavior, setTasks, setIncidents, setTemplates } = useAppStore();
+  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser, setStudents, setClasses, setModules, setAttendance, setGrades, setBehavior, setTasks, setIncidents, setTemplates, primaryColor, setPrimaryColor } = useAppStore();
   const [activeTab, setActiveTab] = useState('general');
 
   // Teachers state
@@ -1725,11 +1735,36 @@ function SettingsPage() {
   const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' });
 
   // School info
-  const [sForm, setSForm] = useState({ name: schoolInfo?.name || '', address: schoolInfo?.address || '', phone: schoolInfo?.phone || '', email: schoolInfo?.email || '' });
+  const [sForm, setSForm] = useState({ name: schoolInfo?.name || '', address: schoolInfo?.address || '', phone: schoolInfo?.phone || '', email: schoolInfo?.email || '', field: schoolInfo?.field || '', logo: schoolInfo?.logo || '' });
+
+  // Backup state
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState(() => localStorage.getItem('attendance_auto_backup') === 'true');
+  const [backupFrequency, setBackupFrequency] = useState(() => localStorage.getItem('attendance_backup_freq') || '12h');
+  const [lastBackupTime, setLastBackupTime] = useState(() => localStorage.getItem('attendance_last_backup') || '');
+  const [backupHistory, setBackupHistory] = useState<Array<{ timestamp: string; size: string }>>(() => {
+    try { return JSON.parse(localStorage.getItem('attendance_backup_history') || '[]'); } catch { return []; }
+  });
+  const [restorePreview, setRestorePreview] = useState<Record<string, number> | null>(null);
 
   // Language & timezone
   const [lang, setLang] = useState<'en' | 'fr'>(language);
   const [tz, setTz] = useState('Africa/Casablanca');
+
+  // Auto-backup effect
+  useEffect(() => {
+    localStorage.setItem('attendance_auto_backup', String(autoBackupEnabled));
+    localStorage.setItem('attendance_backup_freq', backupFrequency);
+  }, [autoBackupEnabled, backupFrequency]);
+
+  useEffect(() => {
+    if (!autoBackupEnabled) return;
+    const intervals: Record<string, number> = { '1h': 3600000, '6h': 21600000, '12h': 43200000, 'daily': 86400000 };
+    const ms = intervals[backupFrequency] || 43200000;
+    const timer = setInterval(() => {
+      handleManualBackup(true);
+    }, ms);
+    return () => clearInterval(timer);
+  }, [autoBackupEnabled, backupFrequency]);
 
   // Teacher handlers
   const openAddTeacher = () => { setEditTeacher(null); setTForm({ name: '', subject: '', email: '', phone: '', experience: '0', qualification: '' }); setTeacherDialog(true); };
@@ -1777,7 +1812,120 @@ function SettingsPage() {
   const handleChangePw = () => { if (pwForm.newPw !== pwForm.confirm) { toast.error(language === 'fr' ? 'Mots de passe différents' : 'Passwords do not match'); return; } toast.success(language === 'fr' ? 'Mot de passe changé' : 'Password changed'); setPwForm({ current: '', newPw: '', confirm: '' }); };
 
   // Save school info
-  const saveSchoolInfo = () => { setSchoolInfo({ name: sForm.name, address: sForm.address, phone: sForm.phone, email: sForm.email }); toast.success(language === 'fr' ? 'Info sauvegardée' : 'School info saved'); };
+  const saveSchoolInfo = () => { setSchoolInfo({ name: sForm.name, address: sForm.address, phone: sForm.phone, email: sForm.email, field: sForm.field, logo: sForm.logo }); toast.success(language === 'fr' ? 'Info sauvegardée' : 'School info saved'); };
+
+  // Logo upload handler
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      const r = new FileReader();
+      r.onload = (ev) => setSForm({ ...sForm, logo: ev.target?.result as string });
+      r.readAsDataURL(f);
+    }
+  };
+
+  // Manual backup
+  const handleManualBackup = (silent: boolean = false) => {
+    const backupData = {
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      data: {
+        students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees,
+        templates: [], academicYears, schoolInfo
+      }
+    };
+    const jsonStr = JSON.stringify(backupData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const sizeKB = (blob.size / 1024).toFixed(1);
+    const timestamp = new Date().toISOString();
+
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `infohas_backup_${timestamp.slice(0, 10)}_${timestamp.slice(11, 19).replace(/:/g, '-')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Update history
+    const newEntry = { timestamp, size: `${sizeKB} KB` };
+    const updatedHistory = [newEntry, ...backupHistory].slice(0, 5);
+    setBackupHistory(updatedHistory);
+    localStorage.setItem('attendance_backup_history', JSON.stringify(updatedHistory));
+    setLastBackupTime(timestamp);
+    localStorage.setItem('attendance_last_backup', timestamp);
+
+    if (!silent) toast.success(language === 'fr' ? 'Sauvegarde créée!' : 'Backup created!');
+  };
+
+  // Restore backup
+  const handleRestoreBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target?.result as string);
+        const data = parsed.data || parsed;
+        const preview: Record<string, number> = {};
+        if (data.students) preview.students = data.students.length;
+        if (data.classes) preview.classes = data.classes.length;
+        if (data.modules) preview.modules = data.modules.length;
+        if (data.attendance) preview.attendance = data.attendance.length;
+        if (data.grades) preview.grades = data.grades.length;
+        if (data.behavior) preview.behavior = data.behavior.length;
+        if (data.tasks) preview.tasks = data.tasks.length;
+        if (data.incidents) preview.incidents = data.incidents.length;
+        if (data.teachers) preview.teachers = data.teachers.length;
+        if (data.employees) preview.employees = data.employees.length;
+        if (data.academicYears) preview.academicYears = data.academicYears.length;
+        if (data.schoolInfo) preview.schoolInfo = 1;
+        setRestorePreview(preview);
+      } catch {
+        toast.error('Invalid backup file');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const confirmRestore = () => {
+    const fileInput = document.getElementById('restore-file-input') as HTMLInputElement;
+    if (!fileInput?.files?.[0]) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target?.result as string);
+        const data = parsed.data || parsed;
+        if (data.students) { setStudents(data.students); localStorage.setItem('attendance_students', JSON.stringify(data.students)); }
+        if (data.classes) { setClasses(data.classes); localStorage.setItem('attendance_classes', JSON.stringify(data.classes)); }
+        if (data.modules) { setModules(data.modules); localStorage.setItem('attendance_modules', JSON.stringify(data.modules)); }
+        if (data.attendance) { setAttendance(data.attendance); localStorage.setItem('attendance_records', JSON.stringify(data.attendance)); }
+        if (data.grades) { setGrades(data.grades); localStorage.setItem('attendance_grades', JSON.stringify(data.grades)); }
+        if (data.behavior) { setBehavior(data.behavior); localStorage.setItem('attendance_behavior', JSON.stringify(data.behavior)); }
+        if (data.tasks) { setTasks(data.tasks); localStorage.setItem('attendance_tasks', JSON.stringify(data.tasks)); }
+        if (data.incidents) { setIncidents(data.incidents); localStorage.setItem('attendance_incidents', JSON.stringify(data.incidents)); }
+        if (data.teachers) { setTeachers(data.teachers); localStorage.setItem('attendance_teachers', JSON.stringify(data.teachers)); }
+        if (data.employees) { setEmployees(data.employees); localStorage.setItem('attendance_employees', JSON.stringify(data.employees)); }
+        if (data.academicYears) { setAcademicYears(data.academicYears); localStorage.setItem('attendance_academic_years', JSON.stringify(data.academicYears)); }
+        if (data.schoolInfo) { setSchoolInfo(data.schoolInfo); }
+        toast.success(language === 'fr' ? 'Données restaurées!' : 'Data restored!');
+        setRestorePreview(null);
+      } catch {
+        toast.error('Restore failed');
+      }
+    };
+    reader.readAsText(fileInput.files[0]);
+  };
+
+  // Color picker handler
+  const handleColorChange = (color: string) => {
+    setPrimaryColor(color);
+    document.documentElement.style.setProperty('--app-primary-color', color);
+  };
+
+  // Initialize CSS custom property on mount
+  useEffect(() => {
+    document.documentElement.style.setProperty('--app-primary-color', primaryColor);
+  }, []);
 
   const dataStats = [
     { label: t('students', language), count: students.length },
@@ -1807,15 +1955,43 @@ function SettingsPage() {
 
         <TabsContent value="general" className="space-y-4">
           <Card><CardHeader><CardTitle className="text-base">{t('school_info', language)}</CardTitle></CardHeader><CardContent className="grid gap-4">
+            {/* Logo Upload */}
+            <div className="space-y-2">
+              <Label>{language === 'fr' ? 'Logo de l\'école' : 'School Logo'}</Label>
+              <div className="flex items-center gap-4">
+                <div className="w-20 h-20 rounded-xl border-2 border-dashed border-muted-foreground/30 flex items-center justify-center overflow-hidden cursor-pointer bg-muted/50 hover:bg-muted transition-colors" onClick={() => document.getElementById('logo-upload-input')?.click()}>
+                  {sForm.logo ? <img src={sForm.logo} alt="Logo" className="w-full h-full object-cover" /> : <Upload className="h-6 w-6 text-muted-foreground" />}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Button variant="outline" size="sm" onClick={() => document.getElementById('logo-upload-input')?.click()}><Upload className="h-4 w-4 mr-1" />{language === 'fr' ? 'Télécharger' : 'Upload'}</Button>
+                  {sForm.logo && <Button variant="outline" size="sm" className="text-red-600" onClick={() => setSForm({ ...sForm, logo: '' })}><Trash2 className="h-4 w-4 mr-1" />{language === 'fr' ? 'Supprimer' : 'Remove'}</Button>}
+                  <input id="logo-upload-input" type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                  <p className="text-xs text-muted-foreground">{language === 'fr' ? 'PNG, JPG (max 500KB)' : 'PNG, JPG (max 500KB)'}</p>
+                </div>
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2"><Label>{language === 'fr' ? 'Nom de l\'école' : 'School Name'}</Label><Input value={sForm.name} onChange={e => setSForm({ ...sForm, name: e.target.value })} /></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Domaine d\'études' : 'Field of Study'}</Label><Input value={sForm.field} onChange={e => setSForm({ ...sForm, field: e.target.value })} placeholder={language === 'fr' ? 'Ex: Académie de Formation Crew' : 'e.g. Cabin Crew Training Academy'} /></div>
               <div className="space-y-2"><Label>{language === 'fr' ? 'Téléphone' : 'Phone'}</Label><Input value={sForm.phone} onChange={e => setSForm({ ...sForm, phone: e.target.value })} /></div>
               <div className="space-y-2"><Label>Email</Label><Input value={sForm.email} onChange={e => setSForm({ ...sForm, email: e.target.value })} /></div>
-              <div className="space-y-2"><Label>{language === 'fr' ? 'Adresse' : 'Address'}</Label><Input value={sForm.address} onChange={e => setSForm({ ...sForm, address: e.target.value })} /></div>
+              <div className="space-y-2 md:col-span-2"><Label>{language === 'fr' ? 'Adresse' : 'Address'}</Label><Input value={sForm.address} onChange={e => setSForm({ ...sForm, address: e.target.value })} /></div>
             </div>
             <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={saveSchoolInfo}><Save className="h-4 w-4 mr-1" />{t('save_settings', language)}</Button>
           </CardContent></Card>
-          <Card><CardHeader><CardTitle className="text-base">{t('general_settings', language)}</CardTitle></CardHeader><CardContent className="grid gap-4">
+          <Card><CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Personnalisation' : 'Appearance'}</CardTitle></CardHeader><CardContent className="grid gap-4">
+            <div className="flex items-center gap-4">
+              <Label className="min-w-fit">{language === 'fr' ? 'Couleur principale' : 'Primary Color'}</Label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={primaryColor} onChange={e => handleColorChange(e.target.value)} className="w-10 h-10 rounded-lg cursor-pointer border-0" />
+                <Input value={primaryColor} onChange={e => handleColorChange(e.target.value)} className="w-28 font-mono text-sm" />
+              </div>
+              <div className="flex gap-1.5">
+                {['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316'].map(c => (
+                  <button key={c} onClick={() => handleColorChange(c)} className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${primaryColor === c ? 'border-gray-800 scale-110' : 'border-transparent'}`} style={{ backgroundColor: c }} />
+                ))}
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2"><Label>{t('default_language', language)}</Label><Select value={lang} onValueChange={v => { setLang(v as 'en' | 'fr'); useAppStore.setState({ language: v as 'en' | 'fr' }); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="fr">Français</SelectItem></SelectContent></Select></div>
               <div className="space-y-2"><Label>{t('timezone', language)}</Label><Select value={tz} onValueChange={setTz}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Africa/Casablanca">Africa/Casablanca</SelectItem><SelectItem value="Europe/Paris">Europe/Paris</SelectItem><SelectItem value="UTC">UTC</SelectItem></SelectContent></Select></div>
@@ -1881,8 +2057,118 @@ function SettingsPage() {
           <Card><CardHeader><CardTitle className="text-base">{t('data_management', language)}</CardTitle></CardHeader><CardContent className="space-y-4">
             <div className="flex flex-wrap gap-3">
               <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleExportAll}><Download className="h-4 w-4 mr-1" />{t('export_all_data', language)}</Button>
-              <Button variant="outline"><Upload className="h-4 w-4 mr-1" />{t('import_from_backup', language)}</Button>
               <Button variant="destructive" onClick={handleClearAll}><Trash2 className="h-4 w-4 mr-1" />{t('clear_all_data', language)}</Button>
+            </div>
+          </CardContent></Card>
+
+          {/* Backup & Restore */}
+          <Card><CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Sauvegarde & Restauration' : 'Backup & Restore'}</CardTitle></CardHeader><CardContent className="space-y-6">
+            {/* Manual Backup */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium text-sm">{language === 'fr' ? 'Sauvegarde manuelle' : 'Manual Backup'}</h4>
+                  <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Télécharger une copie complète de toutes les données' : 'Download a complete copy of all data'}</p>
+                </div>
+                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => handleManualBackup(false)}><HardDrive className="h-4 w-4 mr-1" />{language === 'fr' ? 'Créer sauvegarde' : 'Create Backup'}</Button>
+              </div>
+              {lastBackupTime && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" />{language === 'fr' ? 'Dernière sauvegarde' : 'Last backup'}: {new Date(lastBackupTime).toLocaleString()}</p>
+              )}
+              {backupHistory.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">{language === 'fr' ? 'Historique récent' : 'Recent History'}</p>
+                  <div className="space-y-1">
+                    {backupHistory.map((h, i) => (
+                      <div key={i} className="flex items-center justify-between text-xs bg-muted/50 rounded px-3 py-1.5">
+                        <span className="text-muted-foreground">{new Date(h.timestamp).toLocaleString()}</span>
+                        <Badge variant="secondary" className="text-[10px]">{h.size}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Restore Backup */}
+            <div className="space-y-3">
+              <div>
+                <h4 className="font-medium text-sm">{language === 'fr' ? 'Restaurer une sauvegarde' : 'Restore Backup'}</h4>
+                <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Charger un fichier de sauvegarde JSON' : 'Load a JSON backup file'}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="cursor-pointer"><input id="restore-file-input" type="file" accept=".json" className="hidden" onChange={handleRestoreBackup} /><Button variant="outline" asChild><span><FolderOpen className="h-4 w-4 mr-1" />{language === 'fr' ? 'Choisir un fichier' : 'Choose File'}</span></Button></label>
+                {restorePreview && (
+                  <Button className="bg-amber-600 hover:bg-amber-700" onClick={confirmRestore}><RotateCcw className="h-4 w-4 mr-1" />{language === 'fr' ? 'Restaurer' : 'Restore'}</Button>
+                )}
+              </div>
+              {restorePreview && (
+                <div className="rounded-lg border bg-amber-50 dark:bg-amber-900/10 p-3 space-y-1">
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-400">{language === 'fr' ? 'Aperçu de la sauvegarde' : 'Backup Preview'}:</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {Object.entries(restorePreview).map(([key, count]) => (
+                      <div key={key} className="text-xs"><span className="font-medium">{key}</span>: <span className="text-muted-foreground">{count}</span></div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Auto-Backup Settings */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium text-sm">{language === 'fr' ? 'Sauvegarde automatique' : 'Auto-Backup'}</h4>
+                  <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Sauvegarder automatiquement les données' : 'Automatically backup data periodically'}</p>
+                </div>
+                <Switch checked={autoBackupEnabled} onCheckedChange={setAutoBackupEnabled} />
+              </div>
+              {autoBackupEnabled && (
+                <div className="flex items-center gap-3">
+                  <Label className="text-xs whitespace-nowrap">{language === 'fr' ? 'Fréquence' : 'Frequency'}:</Label>
+                  <Select value={backupFrequency} onValueChange={setBackupFrequency}>
+                    <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1h">{language === 'fr' ? 'Toutes les heures' : 'Every 1 hour'}</SelectItem>
+                      <SelectItem value="6h">{language === 'fr' ? 'Toutes les 6h' : 'Every 6 hours'}</SelectItem>
+                      <SelectItem value="12h">{language === 'fr' ? 'Toutes les 12h' : 'Every 12 hours'}</SelectItem>
+                      <SelectItem value="daily">{language === 'fr' ? 'Quotidienne' : 'Daily'}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Cloud Storage (UI Only) */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <h4 className="font-medium text-sm">{language === 'fr' ? 'Stockage Cloud' : 'Cloud Storage'}</h4>
+                <Badge variant="secondary" className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">{language === 'fr' ? 'Bientôt disponible' : 'Coming Soon'}</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">{language === 'fr' ? 'L\'intégration cloud nécessite la configuration de clés API côté serveur. Cette fonctionnalité sera disponible dans une prochaine version.' : 'Cloud integration requires server-side API key configuration. This feature will be available in a future update.'}</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="rounded-lg border p-3 space-y-2">
+                  <p className="text-xs font-medium flex items-center gap-1"><Cloud className="h-3.5 w-3.5" />Google Drive</p>
+                  <Input placeholder="API Key" className="h-8 text-xs" disabled />
+                  <Button variant="outline" size="sm" className="w-full text-xs" disabled><Globe className="h-3 w-3 mr-1" />Connect</Button>
+                </div>
+                <div className="rounded-lg border p-3 space-y-2">
+                  <p className="text-xs font-medium flex items-center gap-1"><Cloud className="h-3.5 w-3.5" />OneDrive</p>
+                  <Input placeholder="Client ID" className="h-8 text-xs" disabled />
+                  <Button variant="outline" size="sm" className="w-full text-xs" disabled><Globe className="h-3 w-3 mr-1" />Connect</Button>
+                </div>
+                <div className="rounded-lg border p-3 space-y-2">
+                  <p className="text-xs font-medium flex items-center gap-1"><HardDrive className="h-3.5 w-3.5" />FTP</p>
+                  <Input placeholder="Host" className="h-8 text-xs" disabled />
+                  <Button variant="outline" size="sm" className="w-full text-xs" disabled><Globe className="h-3 w-3 mr-1" />Connect</Button>
+                </div>
+              </div>
             </div>
           </CardContent></Card>
         </TabsContent>
@@ -1912,8 +2198,67 @@ function SettingsPage() {
 
 // ==================== SUPER ADMIN PAGE ====================
 function SuperAdminPage() {
-  const { language, admins } = useAppStore();
+  const { language, admins, students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, schoolInfo } = useAppStore();
   const [tab, setTab] = useState('tenants');
+
+  // Export tab state
+  const [exportFormat, setExportFormat] = useState<'csv' | 'pdf'>('pdf');
+  const [exportDateFrom, setExportDateFrom] = useState('');
+  const [exportDateTo, setExportDateTo] = useState('');
+  const [selectedExportTypes, setSelectedExportTypes] = useState<Set<string>>(new Set(['students', 'classes', 'modules', 'attendance', 'grades']));
+
+  const exportTypes = [
+    { key: 'students', label: t('students', language) },
+    { key: 'classes', label: t('classes', language) },
+    { key: 'modules', label: t('modules', language) },
+    { key: 'attendance', label: t('attendance', language) },
+    { key: 'grades', label: t('grades', language) },
+    { key: 'behavior', label: t('behavior', language) },
+    { key: 'tasks', label: t('tasks', language) },
+    { key: 'incidents', label: t('incidents', language) },
+    { key: 'teachers', label: t('teachers_management', language) },
+    { key: 'employees', label: t('employees_management', language) },
+  ];
+
+  const toggleExportType = (key: string) => {
+    const next = new Set(selectedExportTypes);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    setSelectedExportTypes(next);
+  };
+
+  const handleExportSelected = () => {
+    const si = schoolInfo || {};
+    if (exportFormat === 'pdf') {
+      if (selectedExportTypes.has('students')) pdfUtils.exportStudentsPDF(students, classes, si);
+      if (selectedExportTypes.has('attendance')) pdfUtils.exportAttendancePDF(attendance, students, classes, si, exportDateFrom || undefined, exportDateTo || undefined);
+      if (selectedExportTypes.has('grades')) pdfUtils.exportGradesPDF(grades, students, modules, si);
+      if (selectedExportTypes.has('behavior')) pdfUtils.exportBehaviorPDF(behavior, students, si);
+      if (selectedExportTypes.has('incidents')) pdfUtils.exportIncidentsPDF(incidents, students, si);
+      if (selectedExportTypes.has('tasks')) pdfUtils.exportTasksPDF(tasks, si);
+    } else {
+      if (selectedExportTypes.has('students')) exportUtils.exportStudentsCSV(students, classes);
+      if (selectedExportTypes.has('classes')) exportUtils.exportClassesCSV(classes, students);
+      if (selectedExportTypes.has('modules')) exportUtils.exportModulesCSV(modules);
+      if (selectedExportTypes.has('attendance')) exportUtils.exportAttendanceCSV(attendance, students, classes);
+      if (selectedExportTypes.has('grades')) exportUtils.exportGradesCSV(grades, students, modules);
+      if (selectedExportTypes.has('behavior')) exportUtils.exportBehaviorCSV(behavior, students);
+      if (selectedExportTypes.has('tasks')) exportUtils.exportTasksCSV(tasks);
+      if (selectedExportTypes.has('incidents')) exportUtils.exportIncidentsCSV(incidents, students);
+      if (selectedExportTypes.has('teachers')) exportUtils.exportTeachersCSV(teachers);
+      if (selectedExportTypes.has('employees')) exportUtils.exportEmployeesCSV(employees);
+    }
+    toast.success(language === 'fr' ? 'Exporté!' : 'Exported!');
+  };
+
+  const handleExportAll = () => {
+    if (exportFormat === 'pdf') {
+      pdfUtils.exportFullReportPDF({ students, classes, modules, attendance, grades, behavior, tasks, incidents }, schoolInfo || {});
+      pdfUtils.exportClassPerformancePDF(students, classes, grades, attendance, schoolInfo || {});
+    } else {
+      exportUtils.exportAllCSV({ students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees });
+    }
+    toast.success(language === 'fr' ? 'Export complet!' : 'Full export!');
+  };
 
   const mockTenants = [
     { id: '1', name: 'INFOHAS Academy', slug: 'infohas-academy', students: 245, teachers: 18, status: 'active' },
@@ -1940,7 +2285,73 @@ function SuperAdminPage() {
   return (
     <div className="space-y-4">
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList><TabsTrigger value="tenants"><Building2 className="h-4 w-4 mr-1" />{language === 'fr' ? 'Écoles' : 'Tenants'}</TabsTrigger><TabsTrigger value="users"><Users className="h-4 w-4 mr-1" />{language === 'fr' ? 'Utilisateurs' : 'Users'}</TabsTrigger><TabsTrigger value="audit"><Activity className="h-4 w-4 mr-1" />{language === 'fr' ? 'Journal d\'audit' : 'Audit Log'}</TabsTrigger><TabsTrigger value="health"><Zap className="h-4 w-4 mr-1" />{language === 'fr' ? 'Santé système' : 'System Health'}</TabsTrigger></TabsList>
+        <TabsList className="flex flex-wrap h-auto gap-1">
+          <TabsTrigger value="tenants"><Building2 className="h-4 w-4 mr-1" />{language === 'fr' ? 'Écoles' : 'Tenants'}</TabsTrigger>
+          <TabsTrigger value="users"><Users className="h-4 w-4 mr-1" />{language === 'fr' ? 'Utilisateurs' : 'Users'}</TabsTrigger>
+          <TabsTrigger value="export"><Download className="h-4 w-4 mr-1" />{language === 'fr' ? 'Export' : 'Export'}</TabsTrigger>
+          <TabsTrigger value="audit"><Activity className="h-4 w-4 mr-1" />{language === 'fr' ? 'Journal d\'audit' : 'Audit Log'}</TabsTrigger>
+          <TabsTrigger value="health"><Zap className="h-4 w-4 mr-1" />{language === 'fr' ? 'Santé système' : 'System Health'}</TabsTrigger>
+        </TabsList>
+
+        {/* Export Tab */}
+        <TabsContent value="export" className="space-y-4">
+          <Card><CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Export de données' : 'Data Export'}</CardTitle><CardDescription>{language === 'fr' ? 'Sélectionner les données et le format d\'export' : 'Select data types and export format'}</CardDescription></CardHeader><CardContent className="space-y-4">
+            {/* Data Type Checkboxes */}
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{language === 'fr' ? 'Types de données' : 'Data Types'}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                {exportTypes.map(et => (
+                  <label key={et.key} className="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer hover:bg-muted transition-colors">
+                    <Checkbox checked={selectedExportTypes.has(et.key)} onCheckedChange={() => toggleExportType(et.key)} />
+                    <span className="text-xs font-medium">{et.label}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setSelectedExportTypes(new Set(exportTypes.map(e => e.key)))}>{language === 'fr' ? 'Tout sélectionner' : 'Select All'}</Button>
+                <Button variant="outline" size="sm" onClick={() => setSelectedExportTypes(new Set())}>{language === 'fr' ? 'Tout désélectionner' : 'Deselect All'}</Button>
+              </div>
+            </div>
+
+            {/* Format & Date Range */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>{language === 'fr' ? 'Format' : 'Format'}</Label>
+                <Select value={exportFormat} onValueChange={v => setExportFormat(v as 'csv' | 'pdf')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pdf">PDF ({language === 'fr' ? 'Professionnel' : 'Professional'})</SelectItem>
+                    <SelectItem value="csv">CSV</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>{language === 'fr' ? 'Date début' : 'Date From'} <span className="text-xs text-muted-foreground">({t('attendance', language)})</span></Label>
+                <Input type="date" value={exportDateFrom} onChange={e => setExportDateFrom(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>{language === 'fr' ? 'Date fin' : 'Date To'} <span className="text-xs text-muted-foreground">({t('attendance', language)})</span></Label>
+                <Input type="date" value={exportDateTo} onChange={e => setExportDateTo(e.target.value)} />
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex flex-wrap gap-3">
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleExportSelected} disabled={selectedExportTypes.size === 0}>
+                <Download className="h-4 w-4 mr-1" />
+                {language === 'fr' ? 'Exporter la sélection' : 'Export Selected'} ({selectedExportTypes.size})
+              </Button>
+              <Button variant="outline" onClick={handleExportAll}>
+                <FileDown className="h-4 w-4 mr-1" />
+                {language === 'fr' ? 'Tout exporter' : 'Export All'}
+              </Button>
+            </div>
+
+            {exportFormat === 'pdf' && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1"><Info className="h-3 w-3" />{language === 'fr' ? 'Les exports PDF incluent le logo et les informations de l\'école.' : 'PDF exports include school logo and branding information.'}</p>
+            )}
+          </CardContent></Card>
+        </TabsContent>
 
         <TabsContent value="tenants" className="space-y-4">
           <div className="flex justify-between items-center"><h3 className="font-semibold">{language === 'fr' ? 'Écoles gérées' : 'Managed Schools'} ({mockTenants.length})</h3><Button size="sm" className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter école' : 'Add School'}</Button></div>

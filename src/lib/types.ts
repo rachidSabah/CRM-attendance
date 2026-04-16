@@ -168,6 +168,7 @@ export interface SchoolInfo {
   phone?: string;
   email?: string;
   logo?: string;
+  field?: string;
 }
 
 export interface CalendarEvent {
