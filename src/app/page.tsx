@@ -1074,19 +1074,19 @@ function ExportDataDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
 // ==================== GRADES PAGE ====================
 function GradesPage() {
   const { students, classes, modules, grades, language, setGrades } = useAppStore();
-  const [classFilter, setClassFilter] = useState('');
-  const [moduleFilter, setModuleFilter] = useState('');
+  const [classFilter, setClassFilter] = useState('all');
+  const [moduleFilter, setModuleFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editGrade, setEditGrade] = useState<Grade | null>(null);
   const [form, setForm] = useState({ studentId: '', moduleId: '', grade: '', percentage: '', date: new Date().toISOString().split('T')[0] });
 
   const filteredGrades = useMemo(() => {
     let g = [...grades];
-    if (classFilter) {
+    if (classFilter !== 'all') {
       const classStudentIds = new Set(students.filter(s => s.classId === classFilter).map(s => s.id));
       g = g.filter(gr => classStudentIds.has(gr.studentId));
     }
-    if (moduleFilter) g = g.filter(gr => gr.moduleId === moduleFilter);
+    if (moduleFilter !== 'all') g = g.filter(gr => gr.moduleId === moduleFilter);
     return g.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }, [grades, classFilter, moduleFilter, students]);
 
@@ -1127,8 +1127,8 @@ function GradesPage() {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div className="flex flex-wrap gap-2">
-          <Select value={classFilter} onValueChange={v => setClassFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('class_name', language)} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Toutes les classes' : 'All Classes'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
-          <Select value={moduleFilter} onValueChange={v => setModuleFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('modules', language)} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Tous les modules' : 'All Modules'}</SelectItem>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select>
+          <Select value={classFilter} onValueChange={v => setClassFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('class_name', language)} /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Toutes les classes' : 'All Classes'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+          <Select value={moduleFilter} onValueChange={v => setModuleFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('modules', language)} /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Tous les modules' : 'All Modules'}</SelectItem>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select>
         </div>
         <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
       </div>
@@ -1143,7 +1143,7 @@ function GradesPage() {
       )}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent><DialogHeader><DialogTitle>{editGrade ? t('edit', language) : t('add', language)} {t('grades', language)}</DialogTitle></DialogHeader>
         <div className="grid gap-4 py-4">
-          <div className="space-y-2"><Label>{t('students', language)} *</Label><Select value={form.studentId} onValueChange={v => setForm({ ...form, studentId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{students.filter(s => !classFilter || s.classId === classFilter).map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label>{t('students', language)} *</Label><Select value={form.studentId} onValueChange={v => setForm({ ...form, studentId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{students.filter(s => classFilter === 'all' || s.classId === classFilter).map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2"><Label>{t('modules', language)} *</Label><Select value={form.moduleId} onValueChange={v => setForm({ ...form, moduleId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2"><Label>{language === 'fr' ? 'Note' : 'Grade'}</Label><Input value={form.grade} onChange={e => setForm({ ...form, grade: e.target.value })} placeholder="A, B, 18/20" /></div>
@@ -1160,16 +1160,16 @@ function GradesPage() {
 // ==================== BEHAVIOR PAGE ====================
 function BehaviorPage() {
   const { students, behavior, language, setBehavior, currentUser } = useAppStore();
-  const [typeFilter, setTypeFilter] = useState('');
-  const [studentFilter, setStudentFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [studentFilter, setStudentFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editRec, setEditRec] = useState<BehaviorRecord | null>(null);
   const [form, setForm] = useState({ studentId: '', type: 'positive' as 'positive' | 'negative', description: '', points: '0', date: new Date().toISOString().split('T')[0] });
 
   const filtered = useMemo(() => {
     let b = [...behavior];
-    if (typeFilter) b = b.filter(r => r.type === typeFilter);
-    if (studentFilter) b = b.filter(r => r.studentId === studentFilter);
+    if (typeFilter !== 'all') b = b.filter(r => r.type === typeFilter);
+    if (studentFilter !== 'all') b = b.filter(r => r.studentId === studentFilter);
     return b.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }, [behavior, typeFilter, studentFilter]);
 
@@ -1206,8 +1206,8 @@ function BehaviorPage() {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div className="flex flex-wrap gap-2">
-          <Select value={typeFilter} onValueChange={v => setTypeFilter(v)}><SelectTrigger className="w-36"><SelectValue placeholder={language === 'fr' ? 'Type' : 'Type'} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Tous' : 'All'}</SelectItem><SelectItem value="positive">{t('positive', language)}</SelectItem><SelectItem value="negative">{t('negative', language)}</SelectItem></SelectContent></Select>
-          <Select value={studentFilter} onValueChange={v => setStudentFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('students', language)} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Tous' : 'All'}</SelectItem>{students.map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}</SelectContent></Select>
+          <Select value={typeFilter} onValueChange={v => setTypeFilter(v)}><SelectTrigger className="w-36"><SelectValue placeholder={language === 'fr' ? 'Type' : 'Type'} /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Tous' : 'All'}</SelectItem><SelectItem value="positive">{t('positive', language)}</SelectItem><SelectItem value="negative">{t('negative', language)}</SelectItem></SelectContent></Select>
+          <Select value={studentFilter} onValueChange={v => setStudentFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('students', language)} /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Tous' : 'All'}</SelectItem>{students.map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}</SelectContent></Select>
         </div>
         <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
       </div>
@@ -1236,8 +1236,8 @@ function BehaviorPage() {
 // ==================== TASKS PAGE ====================
 function TasksPage() {
   const { tasks, language, setTasks, currentUser, teachers } = useAppStore();
-  const [statusFilter, setStatusFilter] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [editTask, setEditTask] = useState<Task | null>(null);
@@ -1247,8 +1247,8 @@ function TasksPage() {
 
   const filtered = useMemo(() => {
     let t = [...tasks];
-    if (statusFilter) t = t.filter(tk => tk.status === statusFilter);
-    if (priorityFilter) t = t.filter(tk => tk.priority === priorityFilter);
+    if (statusFilter !== 'all') t = t.filter(tk => tk.status === statusFilter);
+    if (priorityFilter !== 'all') t = t.filter(tk => tk.priority === priorityFilter);
     return t.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   }, [tasks, statusFilter, priorityFilter]);
 
@@ -1288,14 +1288,14 @@ function TasksPage() {
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         {([['all', 'total_students', counts.all], ['pending', 'pending', counts.pending], ['in_progress', 'in_progress', counts.in_progress], ['completed', 'completed', counts.completed], ['overdue', 'overdue', counts.overdue]] as const).map(([key, labelKey, count]) => (
-          <button key={key} onClick={() => setStatusFilter(statusFilter === key ? '' : key)} className={`rounded-lg p-3 text-center transition-colors border ${statusFilter === key ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'hover:bg-muted'}`}>
+          <button key={key} onClick={() => setStatusFilter(statusFilter === key ? 'all' : key)} className={`rounded-lg p-3 text-center transition-colors border ${statusFilter === key ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'hover:bg-muted'}`}>
             <p className="text-xl font-bold">{count}</p><p className="text-xs text-muted-foreground">{t(labelKey as string, language)}</p>
           </button>
         ))}
       </div>
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div className="flex flex-wrap gap-2">
-          <Select value={priorityFilter} onValueChange={v => setPriorityFilter(v)}><SelectTrigger className="w-36"><SelectValue placeholder={language === 'fr' ? 'Priorité' : 'Priority'} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Toutes' : 'All'}</SelectItem><SelectItem value="urgent">{t('urgent', language)}</SelectItem><SelectItem value="high">{t('high', language)}</SelectItem><SelectItem value="medium">{t('medium', language)}</SelectItem><SelectItem value="low">{t('low', language)}</SelectItem></SelectContent></Select>
+          <Select value={priorityFilter} onValueChange={v => setPriorityFilter(v)}><SelectTrigger className="w-36"><SelectValue placeholder={language === 'fr' ? 'Priorité' : 'Priority'} /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Toutes' : 'All'}</SelectItem><SelectItem value="urgent">{t('urgent', language)}</SelectItem><SelectItem value="high">{t('high', language)}</SelectItem><SelectItem value="medium">{t('medium', language)}</SelectItem><SelectItem value="low">{t('low', language)}</SelectItem></SelectContent></Select>
         </div>
         <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />{t('add', language)} {t('tasks', language)}</Button>
       </div>
@@ -1379,8 +1379,8 @@ function TasksPage() {
 // ==================== INCIDENTS PAGE ====================
 function IncidentsPage() {
   const { incidents, students, language, setIncidents, currentUser } = useAppStore();
-  const [severityFilter, setSeverityFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [severityFilter, setSeverityFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [editInc, setEditInc] = useState<Incident | null>(null);
@@ -1389,8 +1389,8 @@ function IncidentsPage() {
 
   const filtered = useMemo(() => {
     let i = [...incidents];
-    if (severityFilter) i = i.filter(inc => inc.severity === severityFilter);
-    if (statusFilter) i = i.filter(inc => inc.status === statusFilter);
+    if (severityFilter !== 'all') i = i.filter(inc => inc.severity === severityFilter);
+    if (statusFilter !== 'all') i = i.filter(inc => inc.status === statusFilter);
     return i.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }, [incidents, severityFilter, statusFilter]);
 
@@ -1421,14 +1421,14 @@ function IncidentsPage() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        {([['', 'total_students', severityCounts.all], ['low', 'low', severityCounts.low], ['medium', 'medium', severityCounts.medium], ['high', 'high', severityCounts.high], ['critical', 'critical', severityCounts.critical]] as const).map(([key, labelKey, count]) => (
-          <button key={key} onClick={() => setSeverityFilter(severityFilter === key ? '' : key)} className={`rounded-lg p-3 text-center transition-colors border ${severityFilter === key ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'hover:bg-muted'}`}>
-            <p className="text-xl font-bold">{count}</p><p className="text-xs text-muted-foreground">{key ? `${sevIcon[key]} ${t(labelKey as string, language)}` : t(labelKey as string, language)}</p>
+        {([['all', 'total_students', severityCounts.all], ['low', 'low', severityCounts.low], ['medium', 'medium', severityCounts.medium], ['high', 'high', severityCounts.high], ['critical', 'critical', severityCounts.critical]] as const).map(([key, labelKey, count]) => (
+          <button key={key} onClick={() => setSeverityFilter(severityFilter === key ? 'all' : key)} className={`rounded-lg p-3 text-center transition-colors border ${severityFilter === key ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'hover:bg-muted'}`}>
+            <p className="text-xl font-bold">{count}</p><p className="text-xs text-muted-foreground">{key !== 'all' ? `${sevIcon[key]} ${t(labelKey as string, language)}` : t(labelKey as string, language)}</p>
           </button>
         ))}
       </div>
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-        <Select value={statusFilter} onValueChange={v => setStatusFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('status', language)} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Tous' : 'All'}</SelectItem><SelectItem value="open">{t('open', language)}</SelectItem><SelectItem value="investigating">{t('investigating', language)}</SelectItem><SelectItem value="resolved">{t('resolved', language)}</SelectItem><SelectItem value="closed">{t('closed', language)}</SelectItem></SelectContent></Select>
+        <Select value={statusFilter} onValueChange={v => setStatusFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('status', language)} /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Tous' : 'All'}</SelectItem><SelectItem value="open">{t('open', language)}</SelectItem><SelectItem value="investigating">{t('investigating', language)}</SelectItem><SelectItem value="resolved">{t('resolved', language)}</SelectItem><SelectItem value="closed">{t('closed', language)}</SelectItem></SelectContent></Select>
         <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />{t('add', language)} {t('incidents', language)}</Button>
       </div>
       {filtered.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
@@ -1476,7 +1476,7 @@ function IncidentsPage() {
 function MessagingPage() {
   const { students, classes, templates, language, setTemplates, attendance } = useAppStore();
   const [mode, setMode] = useState<'individual' | 'bulk' | 'template'>('individual');
-  const [classFilter, setClassFilter] = useState('');
+  const [classFilter, setClassFilter] = useState('all');
   const [selectedStudent, setSelectedStudent] = useState('');
   const [message, setMessage] = useState('');
   const [templateName, setTemplateName] = useState('');
@@ -1485,7 +1485,7 @@ function MessagingPage() {
 
   const filteredStudents = useMemo(() => {
     let s = [...students].filter(st => st.status === 'active');
-    if (classFilter) s = s.filter(st => st.classId === classFilter);
+    if (classFilter !== 'all') s = s.filter(st => st.classId === classFilter);
     return s;
   }, [students, classFilter]);
 
@@ -1514,7 +1514,7 @@ function MessagingPage() {
   };
 
   const handleSendBulk = () => {
-    const targets = classFilter ? filteredStudents : students.filter(s => s.status === 'active');
+    const targets = classFilter !== 'all' ? filteredStudents : students.filter(s => s.status === 'active');
     const phones = targets.map(s => s.guardianPhone || s.phone).filter(Boolean);
     if (phones.length === 0) { toast.error(language === 'fr' ? 'Aucun numéro trouvé' : 'No phone numbers found'); return; }
     phones.forEach(p => sendWhatsApp(p, message));
@@ -1585,7 +1585,7 @@ function MessagingPage() {
 
       {mode === 'bulk' && (
         <Card><CardHeader className="pb-3"><CardTitle className="text-base">{language === 'fr' ? 'Envoi groupé' : 'Bulk Messaging'}</CardTitle></CardHeader><CardContent className="space-y-4">
-          <div className="space-y-2"><Label>{t('class_name', language)}</Label><Select value={classFilter} onValueChange={v => setClassFilter(v)}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Toutes les classes' : 'All Classes'} /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Tous les étudiants' : 'All Students'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({students.filter(s => s.classId === c.id && s.status === 'active').length})</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label>{t('class_name', language)}</Label><Select value={classFilter} onValueChange={v => setClassFilter(v)}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Toutes les classes' : 'All Classes'} /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Tous les étudiants' : 'All Students'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({students.filter(s => s.classId === c.id && s.status === 'active').length})</SelectItem>)}</SelectContent></Select></div>
           <p className="text-sm text-muted-foreground">{language === 'fr' ? 'Destinataires' : 'Recipients'}: <strong>{filteredStudents.length}</strong></p>
           <div className="space-y-2"><Label>{language === 'fr' ? 'Message' : 'Message'}</Label><Textarea value={message} onChange={e => setMessage(e.target.value)} rows={5} placeholder={language === 'fr' ? 'Écrire le message groupé...' : 'Write bulk message...'} /></div>
           <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSendBulk} disabled={!message}><Send className="h-4 w-4 mr-1" />{language === 'fr' ? 'Envoyer à tous' : 'Send to All'}</Button>
