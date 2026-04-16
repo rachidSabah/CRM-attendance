@@ -112,9 +112,12 @@ function genId() { return Date.now().toString(36) + Math.random().toString(36).s
 function formatWhatsAppPhone(phone: string | undefined): string {
   if (!phone) return '';
   let c = phone.replace(/\D/g, '');
-  if (c.length === 10) c = '1' + c;
-  else if (c.length === 10 && c.startsWith('0')) c = '212' + c.substring(1);
-  else if (c.length === 9 && c.startsWith('0')) c = '44' + c.substring(1);
+  // Moroccan format: 0600000000 (10 digits starting with 0)
+  if (c.length === 10 && c.startsWith('0')) c = '212' + c.substring(1);
+  // UK format: 07XXX XXXXX (10 digits starting with 0)
+  else if (c.length === 11 && c.startsWith('44')) { /* already formatted */ }
+  // US format: 10 digits
+  else if (c.length === 10) c = '1' + c;
   return c;
 }
 
@@ -1606,9 +1609,7 @@ function SchedulePage() {
                   <SelectValue placeholder={language === 'fr' ? 'Sélectionner un enseignant' : 'Select teacher'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {teachers.length === 0 && (
-                    <SelectItem value="__none" disabled>{t('no_teachers', language)}</SelectItem>
-                  )}
+                  {teachers.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">{t('no_teachers', language)}</p>}
                   {teachers.map(tc => (
                     <SelectItem key={tc.id} value={tc.id}>{tc.name}{tc.subject ? ` (${tc.subject})` : ''}</SelectItem>
                   ))}
@@ -1643,9 +1644,7 @@ function SchedulePage() {
                   <SelectValue placeholder={language === 'fr' ? 'Sélectionner un module' : 'Select module'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {modules.length === 0 && (
-                    <SelectItem value="__none" disabled>{t('no_modules', language)}</SelectItem>
-                  )}
+                  {modules.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">{t('no_modules', language)}</p>}
                   {modules.map(m => (
                     <SelectItem key={m.id} value={m.id}>{m.name}{m.code ? ` (${m.code})` : ''}</SelectItem>
                   ))}
@@ -2224,7 +2223,7 @@ function MessagingPage() {
       {mode === 'individual' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Card><CardHeader className="pb-3"><CardTitle className="text-base">{language === 'fr' ? 'Envoyer un message' : 'Send Message'}</CardTitle></CardHeader><CardContent className="space-y-4">
-            <div className="space-y-2"><Label>{t('students', language)}</Label><Select value={selectedStudent} onValueChange={v => setSelectedStudent(v)}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Choisir un étudiant' : 'Select student'} /></SelectTrigger><SelectContent>{students.filter(s => s.status === 'active').map(s => <SelectItem key={s.id} value={s.id}>{s.fullName} — {s.guardianPhone || s.phone || language === 'fr' ? 'pas de tél' : 'no phone'}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>{t('students', language)}</Label><Select value={selectedStudent} onValueChange={v => setSelectedStudent(v)}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Choisir un étudiant' : 'Select student'} /></SelectTrigger><SelectContent>{students.filter(s => s.status === 'active').map(s => <SelectItem key={s.id} value={s.id}>{s.fullName} — {s.guardianPhone || s.phone || (language === 'fr' ? 'pas de tél' : 'no phone')}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>{language === 'fr' ? 'Message' : 'Message'}</Label><Textarea value={message} onChange={e => setMessage(e.target.value)} rows={5} placeholder={language === 'fr' ? 'Écrire votre message...' : 'Write your message...'} /></div>
             <div className="flex gap-2">
               <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSendIndividual} disabled={!selectedStudent || !message}><Send className="h-4 w-4 mr-1" />WhatsApp</Button>
@@ -2476,7 +2475,7 @@ function ProgressReportsSection() {
 
 // ==================== SETTINGS PAGE ====================
 function SettingsPage() {
-  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser, setStudents, setClasses, setModules, setAttendance, setGrades, setBehavior, setTasks, setIncidents, setTemplates, primaryColor, setPrimaryColor } = useAppStore();
+  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser, setStudents, setClasses, setModules, setAttendance, setGrades, setBehavior, setTasks, setIncidents, setTemplates, primaryColor, setPrimaryColor, setSchedules, setExams, setExamGrades, setCurriculum, savedSchedules, setSavedSchedules, addAuditLog } = useAppStore();
   const [activeTab, setActiveTab] = useState('general');
 
   // Teachers state
@@ -2610,8 +2609,9 @@ function SettingsPage() {
   const handleExportAll = () => { exportUtils.exportAllCSV({ students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees }); toast.success(language === 'fr' ? 'Exporté!' : 'Exported!'); };
   const handleClearAll = () => {
     if (!confirm(t('clear_confirm', language))) return;
-    setStudents([]); setClasses([]); setModules([]); setAttendance([]); setGrades([]); setBehavior([]); setTasks([]); setIncidents([]); setTeachers([]); setEmployees([]); setTemplates([]); setAcademicYears([]);
-    ['attendance_students', 'attendance_classes', 'attendance_modules', 'attendance_records', 'attendance_grades', 'attendance_behavior', 'attendance_tasks', 'attendance_incidents', 'attendance_teachers', 'attendance_employees', 'attendance_templates', 'attendance_academic_years'].forEach(k => localStorage.removeItem(k));
+    setStudents([]); setClasses([]); setModules([]); setAttendance([]); setGrades([]); setBehavior([]); setTasks([]); setIncidents([]); setTeachers([]); setEmployees([]); setTemplates([]); setAcademicYears([]); setSchedules([]); setExams([]); setExamGrades([]); setCurriculum([]); setSavedSchedules([]);
+    addAuditLog('PURGE_CACHE', 'system', '', '', 'Cleared all data via Settings');
+    ['attendance_students', 'attendance_classes', 'attendance_modules', 'attendance_records', 'attendance_grades', 'attendance_behavior', 'attendance_tasks', 'attendance_incidents', 'attendance_teachers', 'attendance_employees', 'attendance_templates', 'attendance_academic_years', 'attendance_schedules', 'attendance_exams', 'attendance_exam_grades', 'attendance_curriculum', 'attendance_saved_schedules'].forEach(k => localStorage.removeItem(k));
     toast.success(language === 'fr' ? 'Données supprimées' : 'Data cleared');
   };
 
@@ -3557,14 +3557,14 @@ function CurriculumPage() {
             <Label>{t('modules', language)}</Label>
             <Select value={selectedModule} onValueChange={setSelectedModule}>
               <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Tous les modules' : 'All modules'} /></SelectTrigger>
-              <SelectContent><SelectItem value="">{language === 'fr' ? 'Tous les modules' : 'All modules'}</SelectItem>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
+              <SelectContent>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
             <Label>{t('academic_year', language)}</Label>
             <Select value={selectedYear} onValueChange={setSelectedYear}>
               <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Toutes les années' : 'All years'} /></SelectTrigger>
-              <SelectContent><SelectItem value="">{language === 'fr' ? 'Toutes les années' : 'All years'}</SelectItem>{(academicYears || []).map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}</SelectContent>
+              <SelectContent>{(academicYears || []).map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
@@ -3628,7 +3628,7 @@ function CurriculumPage() {
             <div className="space-y-2"><Label>{t('topic_description', language)}</Label><Textarea value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>{t('modules', language)} *</Label><Select value={form.moduleId} onValueChange={v => setForm({ ...form, moduleId: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-2"><Label>{t('academic_year', language)}</Label><Select value={form.academicYear} onValueChange={v => setForm({ ...form, academicYear: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{(academicYears || []).map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>{t('academic_year', language)}</Label><Select value={form.academicYear || undefined} onValueChange={v => setForm({ ...form, academicYear: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{(academicYears || []).map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2"><Label>{t('hours_allocated', language)}</Label><Input type="number" min={1} value={form.hours} onChange={e => setForm({ ...form, hours: Number(e.target.value) })} /></div>
