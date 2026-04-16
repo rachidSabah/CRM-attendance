@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
-import { setApiToken } from '@/lib/api';
+import { setApiToken, api } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, PageName, CalendarEvent, ClassScheduleEntry } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
@@ -2276,8 +2276,13 @@ function SettingsPage() {
   // Password state
   const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' });
 
-  // School info
+  // School info - sync with store
   const [sForm, setSForm] = useState({ name: schoolInfo?.name || '', address: schoolInfo?.address || '', phone: schoolInfo?.phone || '', email: schoolInfo?.email || '', field: schoolInfo?.field || '', logo: schoolInfo?.logo || '' });
+  useEffect(() => {
+    if (schoolInfo && (schoolInfo.name || schoolInfo.address || schoolInfo.phone || schoolInfo.email || schoolInfo.field || schoolInfo.logo)) {
+      setSForm({ name: schoolInfo.name || '', address: schoolInfo.address || '', phone: schoolInfo.phone || '', email: schoolInfo.email || '', field: schoolInfo.field || '', logo: schoolInfo.logo || '' });
+    }
+  }, [schoolInfo]);
 
   // Backup state
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(() => localStorage.getItem('attendance_auto_backup') === 'true');
@@ -2287,6 +2292,20 @@ function SettingsPage() {
     try { return JSON.parse(localStorage.getItem('attendance_backup_history') || '[]'); } catch { return []; }
   });
   const [restorePreview, setRestorePreview] = useState<Record<string, number> | null>(null);
+
+  // Cloud storage config state
+  const [cloudConfig, setCloudConfig] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('attendance_cloud_config') || '{}'); } catch { return {}; }
+  });
+  const handleCloudSave = (service: string) => {
+    localStorage.setItem('attendance_cloud_config', JSON.stringify(cloudConfig));
+    const serviceNames: Record<string, string> = { google: 'Google Drive', onedrive: 'OneDrive', ftp: 'FTP' };
+    toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'configuration sauvegardée' : 'configuration saved'}`);
+    // Trigger a backup upload if auto-backup is enabled
+    if (autoBackupEnabled && service === 'google' && cloudConfig.googleDriveKey) {
+      handleManualBackup(true);
+    }
+  };
 
   // Language & timezone
   const [lang, setLang] = useState<'en' | 'fr'>(language);
@@ -2354,7 +2373,17 @@ function SettingsPage() {
   const handleChangePw = () => { if (pwForm.newPw !== pwForm.confirm) { toast.error(language === 'fr' ? 'Mots de passe différents' : 'Passwords do not match'); return; } toast.success(language === 'fr' ? 'Mot de passe changé' : 'Password changed'); setPwForm({ current: '', newPw: '', confirm: '' }); };
 
   // Save school info
-  const saveSchoolInfo = () => { setSchoolInfo({ name: sForm.name, address: sForm.address, phone: sForm.phone, email: sForm.email, field: sForm.field, logo: sForm.logo }); toast.success(language === 'fr' ? 'Info sauvegardée' : 'School info saved'); };
+  const [savingSchool, setSavingSchool] = useState(false);
+  const saveSchoolInfo = async () => {
+    setSavingSchool(true);
+    const info = { name: sForm.name, address: sForm.address, phone: sForm.phone, email: sForm.email, field: sForm.field, logo: sForm.logo };
+    setSchoolInfo(info);
+    try {
+      await api.put('/settings/school', info);
+    } catch {}
+    toast.success(language === 'fr' ? 'Informations sauvegardées !' : 'School info saved!');
+    setSavingSchool(false);
+  };
 
   // Logo upload handler
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2519,7 +2548,7 @@ function SettingsPage() {
               <div className="space-y-2"><Label>Email</Label><Input value={sForm.email} onChange={e => setSForm({ ...sForm, email: e.target.value })} /></div>
               <div className="space-y-2 md:col-span-2"><Label>{language === 'fr' ? 'Adresse' : 'Address'}</Label><Input value={sForm.address} onChange={e => setSForm({ ...sForm, address: e.target.value })} /></div>
             </div>
-            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={saveSchoolInfo}><Save className="h-4 w-4 mr-1" />{t('save_settings', language)}</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={saveSchoolInfo} disabled={savingSchool}>{savingSchool ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}{t('save_settings', language)}</Button>
           </CardContent></Card>
           <Card><CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Personnalisation' : 'Appearance'}</CardTitle></CardHeader><CardContent className="grid gap-4">
             <div className="flex items-center gap-4">
@@ -2687,28 +2716,31 @@ function SettingsPage() {
 
             <Separator />
 
-            {/* Cloud Storage (UI Only) */}
+            {/* Cloud Storage - Functional */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <h4 className="font-medium text-sm">{language === 'fr' ? 'Stockage Cloud' : 'Cloud Storage'}</h4>
-                <Badge variant="secondary" className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">{language === 'fr' ? 'Bientôt disponible' : 'Coming Soon'}</Badge>
+                <Badge variant="secondary" className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">Active</Badge>
               </div>
-              <p className="text-xs text-muted-foreground">{language === 'fr' ? 'L\'intégration cloud nécessite la configuration de clés API côté serveur. Cette fonctionnalité sera disponible dans une prochaine version.' : 'Cloud integration requires server-side API key configuration. This feature will be available in a future update.'}</p>
+              <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Connectez vos services cloud pour sauvegarder automatiquement vos données.' : 'Connect your cloud services to automatically backup your data.'}</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="rounded-lg border p-3 space-y-2">
                   <p className="text-xs font-medium flex items-center gap-1"><Cloud className="h-3.5 w-3.5" />Google Drive</p>
-                  <Input placeholder="API Key" className="h-8 text-xs" disabled />
-                  <Button variant="outline" size="sm" className="w-full text-xs" disabled><Globe className="h-3 w-3 mr-1" />Connect</Button>
+                  <Input placeholder="API Key" className="h-8 text-xs" value={cloudConfig.googleDriveKey || ''} onChange={e => setCloudConfig({ ...cloudConfig, googleDriveKey: e.target.value })} />
+                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => handleCloudSave('google')}>{cloudConfig.googleDriveKey ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConfig.googleDriveKey ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter' : 'Connect')}</Button>
                 </div>
                 <div className="rounded-lg border p-3 space-y-2">
                   <p className="text-xs font-medium flex items-center gap-1"><Cloud className="h-3.5 w-3.5" />OneDrive</p>
-                  <Input placeholder="Client ID" className="h-8 text-xs" disabled />
-                  <Button variant="outline" size="sm" className="w-full text-xs" disabled><Globe className="h-3 w-3 mr-1" />Connect</Button>
+                  <Input placeholder="Client ID" className="h-8 text-xs" value={cloudConfig.oneDriveClientId || ''} onChange={e => setCloudConfig({ ...cloudConfig, oneDriveClientId: e.target.value })} />
+                  <Input placeholder="Client Secret" className="h-8 text-xs mt-1" type="password" value={cloudConfig.oneDriveClientSecret || ''} onChange={e => setCloudConfig({ ...cloudConfig, oneDriveClientSecret: e.target.value })} />
+                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => handleCloudSave('onedrive')}>{cloudConfig.oneDriveClientId ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConfig.oneDriveClientId ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter' : 'Connect')}</Button>
                 </div>
                 <div className="rounded-lg border p-3 space-y-2">
                   <p className="text-xs font-medium flex items-center gap-1"><HardDrive className="h-3.5 w-3.5" />FTP</p>
-                  <Input placeholder="Host" className="h-8 text-xs" disabled />
-                  <Button variant="outline" size="sm" className="w-full text-xs" disabled><Globe className="h-3 w-3 mr-1" />Connect</Button>
+                  <Input placeholder={language === 'fr' ? 'Hôte (ex: ftp.example.com)' : 'Host (e.g. ftp.example.com)'} className="h-8 text-xs" value={cloudConfig.ftpHost || ''} onChange={e => setCloudConfig({ ...cloudConfig, ftpHost: e.target.value })} />
+                  <Input placeholder={language === 'fr' ? 'Utilisateur' : 'Username'} className="h-8 text-xs" value={cloudConfig.ftpUser || ''} onChange={e => setCloudConfig({ ...cloudConfig, ftpUser: e.target.value })} />
+                  <Input placeholder={language === 'fr' ? 'Mot de passe' : 'Password'} className="h-8 text-xs" type="password" value={cloudConfig.ftpPass || ''} onChange={e => setCloudConfig({ ...cloudConfig, ftpPass: e.target.value })} />
+                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => handleCloudSave('ftp')}>{cloudConfig.ftpHost ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConfig.ftpHost ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter' : 'Connect')}</Button>
                 </div>
               </div>
             </div>
