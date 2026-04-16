@@ -245,4 +245,28 @@ export interface CurriculumItem {
   createdAt: string;
 }
 
+export interface AuditLogEntry {
+  id: string;
+  action: string; // e.g. CREATE_STUDENT, UPDATE_ATTENDANCE, DELETE_INCIDENT, LOGIN, EXPORT_DATA, IMPORT_DATA, PURGE_CACHE
+  entityType: string; // e.g. student, class, attendance, grade, exam, schedule
+  entityId?: string;
+  entityName?: string;
+  userId: string;
+  userName: string;
+  details: string;
+  timestamp: string;
+  ip?: string;
+}
+
+export interface SavedSchedule {
+  id: string;
+  classId: string;
+  className: string;
+  month: string; // YYYY-MM
+  monthLabel: string; // e.g. "January 2025"
+  entries: ClassScheduleEntry[];
+  createdAt: string;
+  createdBy: string;
+}
+
 export type PageName = 'dashboard' | 'students' | 'classes' | 'modules' | 'attendance' | 'calendar' | 'schedule' | 'grades' | 'behavior' | 'tasks' | 'incidents' | 'messaging' | 'reports' | 'exams' | 'curriculum' | 'settings' | 'superadmin';

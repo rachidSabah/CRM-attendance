@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { setApiToken, api } from '@/lib/api';
 import { t } from '@/lib/i18n';
-import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem } from '@/lib/types';
+import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
 import * as pdfUtils from '@/lib/pdf';
 
@@ -38,7 +38,8 @@ import {
   Copy, Printer, Lock, ArrowLeft, Filter, MoreHorizontal, MessageCircle,
   Flame, Award, Zap, Globe, Database, Activity, ToggleLeft, CreditCard, IdCard,
   Palette, HardDrive, ChevronDown, Info, RotateCcw, Archive, Cloud, FolderOpen,
-  FileCheck, ListChecks, Target
+  FileCheck, ListChecks, Target, Smartphone, WifiOff, History, FileUp,
+  AlertOctagon
 } from 'lucide-react';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
@@ -1052,7 +1053,7 @@ function CalendarPage() {
 
 // ==================== SCHEDULE PAGE ====================
 function SchedulePage() {
-  const { classes, teachers, modules, schedules, schoolInfo, language, setSchedules } = useAppStore();
+  const { classes, teachers, modules, schedules, schoolInfo, language, setSchedules, savedSchedules, setSavedSchedules, addAuditLog, currentUser } = useAppStore();
   const [selectedClassId, setSelectedClassId] = useState('');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [editingDay, setEditingDay] = useState<string | null>(null); // YYYY-MM-DD
@@ -1264,6 +1265,58 @@ function SchedulePage() {
     );
   };
 
+  // Save current month's schedule for the selected class
+  const handleSaveSchedule = () => {
+    if (!selectedClassId || classSchedules.length === 0) {
+      toast.error(language === 'fr' ? 'Sélectionnez une classe avec des entrées' : 'Select a class with schedule entries');
+      return;
+    }
+    const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const existingIndex = savedSchedules.findIndex(s => s.classId === selectedClassId && s.month === monthPrefix);
+    const newSaved: SavedSchedule = {
+      id: genId(),
+      classId: selectedClassId,
+      className: selectedClass?.name || 'Unknown',
+      month: monthPrefix,
+      monthLabel: monthName,
+      entries: classSchedules,
+      createdAt: new Date().toISOString(),
+      createdBy: currentUser?.username || currentUser?.fullName || 'admin',
+    };
+    let updated: SavedSchedule[];
+    if (existingIndex >= 0) {
+      updated = [...savedSchedules];
+      updated[existingIndex] = newSaved;
+    } else {
+      updated = [...savedSchedules, newSaved];
+    }
+    setSavedSchedules(updated);
+    addAuditLog('SAVE_SCHEDULE', 'schedule', selectedClassId, selectedClass?.name, `Saved ${classSchedules.length} entries for ${selectedClass?.name} - ${monthName}`);
+    toast.success(language === 'fr' ? 'Programme sauvegardé !' : 'Schedule saved!');
+  };
+
+  // Load a saved schedule
+  const handleLoadSchedule = (saved: SavedSchedule) => {
+    const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+    // Remove existing schedules for this class/month and add the saved ones
+    const otherSchedules = schedules.filter(s => !(s.classId === saved.classId && s.date.startsWith(monthPrefix)));
+    const newEntries = saved.entries.map(e => ({ ...e, id: genId() }));
+    setSchedules([...otherSchedules, ...newEntries]);
+    setSelectedClassId(saved.classId);
+    addAuditLog('LOAD_SCHEDULE', 'schedule', saved.classId, saved.className, `Loaded ${saved.entries.length} entries for ${saved.className} - ${saved.monthLabel}`);
+    toast.success(language === 'fr' ? 'Programme chargé !' : 'Schedule loaded!');
+  };
+
+  // Delete a saved schedule
+  const handleDeleteSavedSchedule = (id: string) => {
+    const saved = savedSchedules.find(s => s.id === id);
+    setSavedSchedules(savedSchedules.filter(s => s.id !== id));
+    if (saved) {
+      addAuditLog('DELETE_SCHEDULE', 'schedule', saved.classId, saved.className, `Deleted saved schedule for ${saved.className} - ${saved.monthLabel}`);
+    }
+    toast.success(language === 'fr' ? 'Programme sauvegardé supprimé' : 'Saved schedule deleted');
+  };
+
   return (
     <div className="space-y-4">
       {/* Top Controls */}
@@ -1296,7 +1349,7 @@ function SchedulePage() {
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button size="sm" variant="outline" onClick={handleDownloadPDF} disabled={!selectedClassId || classSchedules.length === 0}>
             <FileDown className="h-4 w-4 mr-1" />
             {t('download_schedule_pdf', language)}
@@ -1304,6 +1357,10 @@ function SchedulePage() {
           <Button size="sm" variant="outline" onClick={handleDownloadAllPDF} disabled={schedules.length === 0}>
             <Download className="h-4 w-4 mr-1" />
             {language === 'fr' ? 'Tous les Emplois PDF' : 'All Schedules PDF'}
+          </Button>
+          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveSchedule} disabled={!selectedClassId || classSchedules.length === 0}>
+            <Save className="h-4 w-4 mr-1" />
+            {language === 'fr' ? 'Sauvegarder' : 'Save Schedule'}
           </Button>
         </div>
       </div>
@@ -1446,6 +1503,44 @@ function SchedulePage() {
                   })}
                 </TableBody>
               </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Saved Schedules Section */}
+      {savedSchedules.length > 0 && (
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Save className="h-4 w-4 text-emerald-600" />
+              {language === 'fr' ? 'Programmes Sauvegardés' : 'Saved Schedules'} ({savedSchedules.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-2">
+              {savedSchedules.map(saved => (
+                <div key={saved.id} className="flex items-center justify-between p-2.5 rounded-lg border hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg flex items-center justify-center text-emerald-600 shrink-0">
+                      <Calendar className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{saved.className}</p>
+                      <p className="text-xs text-muted-foreground">{saved.monthLabel} • {saved.entries.length} {language === 'fr' ? 'entrées' : 'entries'} • {new Date(saved.createdAt).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleLoadSchedule(saved)}>
+                      <Download className="h-3.5 w-3.5 mr-1" />
+                      {language === 'fr' ? 'Charger' : 'Load'}
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={() => handleDeleteSavedSchedule(saved.id)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -2673,6 +2768,7 @@ function SettingsPage() {
           <TabsTrigger value="employees">{t('employees_management', language)}</TabsTrigger>
           <TabsTrigger value="academic">{t('academic_year_management', language)}</TabsTrigger>
           <TabsTrigger value="data">{t('data_management', language)}</TabsTrigger>
+          <TabsTrigger value="import">{language === 'fr' ? 'Import de Données' : 'Data Import'}</TabsTrigger>
           <TabsTrigger value="admins">{t('admin_users', language)}</TabsTrigger>
           <TabsTrigger value="password">{t('change_password', language)}</TabsTrigger>
         </TabsList>
@@ -2898,6 +2994,13 @@ function SettingsPage() {
               </div>
             </div>
           </CardContent></Card>
+
+          {/* Purge Cache Section */}
+          <PurgeCacheSection />
+        </TabsContent>
+
+        <TabsContent value="import" className="space-y-4">
+          <ImportWizardSection />
         </TabsContent>
 
         <TabsContent value="admins" className="space-y-4">
@@ -3564,10 +3667,8 @@ function SuperAdminPage() {
         </TabsContent>
 
         <TabsContent value="audit" className="space-y-4">
-          <h3 className="font-semibold">{language === 'fr' ? 'Journal d\'audit' : 'Audit Log'}</h3>
-          <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{language === 'fr' ? 'Action' : 'Action'}</TableHead><TableHead>{language === 'fr' ? 'Utilisateur' : 'User'}</TableHead><TableHead>{language === 'fr' ? 'Détails' : 'Details'}</TableHead><TableHead>IP</TableHead><TableHead>{language === 'fr' ? 'Date' : 'Date'}</TableHead></TableRow></TableHeader><TableBody>
-            {mockAuditLogs.map(l => <TableRow key={l.id}><TableCell><Badge variant="outline">{l.action}</Badge></TableCell><TableCell className="font-medium">{l.user}</TableCell><TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{l.details}</TableCell><TableCell className="text-sm text-muted-foreground">{l.ip}</TableCell><TableCell className="text-sm text-muted-foreground">{new Date(l.timestamp).toLocaleString()}</TableCell></TableRow>)}
-          </TableBody></Table></div></CardContent></Card>
+          <h3 className="font-semibold flex items-center gap-2"><History className="h-4 w-4" />{language === 'fr' ? 'Journal d\'audit' : 'Audit Log'}</h3>
+          <AuditTrailSection />
         </TabsContent>
 
         <TabsContent value="health" className="space-y-4">
@@ -3578,6 +3679,495 @@ function SuperAdminPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+// ==================== PWA INSTALL PROMPT ====================
+function PWAInstallPrompt() {
+  const { language } = useAppStore();
+  const [deferredPrompt, setDeferredPrompt] = useState<Event | null>(null);
+  const [showBanner, setShowBanner] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowBanner(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+
+    const updateOnlineStatus = () => setIsOffline(!navigator.onLine);
+    updateOnlineStatus();
+    const onlineHandler = () => setIsOffline(false);
+    const offlineHandler = () => setIsOffline(true);
+    window.addEventListener('online', onlineHandler);
+    window.addEventListener('offline', offlineHandler);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('online', onlineHandler);
+      window.removeEventListener('offline', offlineHandler);
+    };
+  }, []);
+
+  const handleInstall = async () => {
+    if (!deferredPrompt) return;
+    (deferredPrompt as unknown as { prompt: () => Promise<void> }).prompt();
+    setDeferredPrompt(null);
+    setShowBanner(false);
+  };
+
+  if (!showBanner && !isOffline) return null;
+
+  return (
+    <>
+      {isOffline && (
+        <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 px-3 py-2 rounded-lg shadow-lg text-sm">
+          <WifiOff className="h-4 w-4" />
+          <Badge variant="secondary" className="text-[10px] bg-amber-200 dark:bg-amber-800 dark:text-amber-200">{language === 'fr' ? 'Hors ligne' : 'Offline Ready'}</Badge>
+        </div>
+      )}
+      {showBanner && !isOffline && (
+        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 z-50 bg-card border border-border rounded-lg shadow-lg p-3 flex items-center gap-3">
+          <div className="w-9 h-9 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg flex items-center justify-center text-emerald-600 shrink-0">
+            <Smartphone className="h-5 w-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">{t('install_app', language)}</p>
+            <p className="text-xs text-muted-foreground truncate">{t('install_prompt', language)}</p>
+          </div>
+          <div className="flex gap-1.5 shrink-0">
+            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-xs h-7 px-3" onClick={handleInstall}>{t('install', language) || 'Install'}</Button>
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowBanner(false)}><X className="h-3.5 w-3.5" /></Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ==================== AUDIT TRAIL SECTION ====================
+function AuditTrailSection() {
+  const { auditLog, language } = useAppStore();
+  const [actionFilter, setActionFilter] = useState('all');
+  const [userFilter, setUserFilter] = useState('all');
+  const [entityFilter, setEntityFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [page, setPage] = useState(0);
+  const PER_PAGE = 50;
+
+  const uniqueActions = useMemo(() => [...new Set(auditLog.map(l => l.action))].sort(), [auditLog]);
+  const uniqueUsers = useMemo(() => [...new Set(auditLog.map(l => l.user))].sort(), [auditLog]);
+  const uniqueEntities = useMemo(() => [...new Set(auditLog.map(l => l.entityType))].sort(), [auditLog]);
+
+  const filtered = useMemo(() => {
+    let logs = [...auditLog].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    if (actionFilter !== 'all') logs = logs.filter(l => l.action === actionFilter);
+    if (userFilter !== 'all') logs = logs.filter(l => l.user === userFilter);
+    if (entityFilter !== 'all') logs = logs.filter(l => l.entityType === entityFilter);
+    if (dateFrom) logs = logs.filter(l => l.timestamp >= dateFrom);
+    if (dateTo) logs = logs.filter(l => l.timestamp <= dateTo + 'T23:59:59');
+    return logs;
+  }, [auditLog, actionFilter, userFilter, entityFilter, dateFrom, dateTo]);
+
+  const totalPages = Math.ceil(filtered.length / PER_PAGE);
+  const paged = filtered.slice(page * PER_PAGE, (page + 1) * PER_PAGE);
+
+  const handleExportCSV = () => {
+    const header = `${t('timestamp', language)},${t('user', language)},${t('action', language)},${t('entity', language)},${t('details', language)}\n`;
+    const rows = filtered.map(l => `"${l.timestamp}","${l.user}","${l.action}","${l.entityType}","${l.details}"`).join('\n');
+    const blob = new Blob([header + rows], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `audit_trail_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    toast.success(language === 'fr' ? 'Journal exporté' : 'Audit log exported');
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div className="flex flex-wrap gap-2">
+          <Select value={actionFilter} onValueChange={v => { setActionFilter(v); setPage(0); }}>
+            <SelectTrigger className="w-40"><SelectValue placeholder={t('filter_by_action', language) || 'Filter by Action'} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{language === 'fr' ? 'Toutes les actions' : 'All Actions'}</SelectItem>
+              {uniqueActions.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={userFilter} onValueChange={v => { setUserFilter(v); setPage(0); }}>
+            <SelectTrigger className="w-40"><SelectValue placeholder={t('user', language)} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{language === 'fr' ? 'Tous les utilisateurs' : 'All Users'}</SelectItem>
+              {uniqueUsers.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={entityFilter} onValueChange={v => { setEntityFilter(v); setPage(0); }}>
+            <SelectTrigger className="w-36"><SelectValue placeholder={t('entity', language)} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{language === 'fr' ? 'Toutes les entités' : 'All Entities'}</SelectItem>
+              {uniqueEntities.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex gap-2 items-center">
+          <div className="flex gap-1">
+            <Input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }} className="w-32 h-8 text-xs" />
+            <span className="text-xs text-muted-foreground">→</span>
+            <Input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }} className="w-32 h-8 text-xs" />
+          </div>
+          <Button variant="outline" size="sm" onClick={handleExportCSV} className="gap-1">
+            <Download className="h-4 w-4" />CSV
+          </Button>
+        </div>
+      </div>
+
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-0">
+          {filtered.length === 0 ? (
+            <EmptyState message={t('no_data', language)} />
+          ) : (
+            <>
+              <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('timestamp', language)}</TableHead>
+                      <TableHead>{t('user', language)}</TableHead>
+                      <TableHead>{t('action', language)}</TableHead>
+                      <TableHead>{t('entity', language)}</TableHead>
+                      <TableHead>{t('details', language)}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paged.map(entry => (
+                      <TableRow key={entry.id}>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(entry.timestamp).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-US')}</TableCell>
+                        <TableCell className="font-medium text-sm">{entry.user}</TableCell>
+                        <TableCell><Badge variant="outline" className="text-[10px] font-mono">{entry.action}</Badge></TableCell>
+                        <TableCell className="text-sm">{entry.entityType}{entry.entityName ? `: ${entry.entityName}` : ''}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground max-w-[250px] truncate">{entry.details}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3 border-t">
+                <p className="text-xs text-muted-foreground">
+                  {filtered.length} {language === 'fr' ? 'entrées' : 'entries'} • {t('page', language)} {page + 1}/{totalPages || 1}
+                </p>
+                <div className="flex gap-1">
+                  <Button variant="outline" size="sm" className="h-7 px-2" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7 px-2" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ==================== IMPORT WIZARD SECTION ====================
+function ImportWizardSection() {
+  const { language, students, classes, modules, grades, attendance, setStudents, setGrades, setAttendance, addAuditLog, currentUser } = useAppStore();
+  const [importType, setImportType] = useState<'students' | 'grades' | 'attendance'>('students');
+  const [fileContent, setFileContent] = useState('');
+  const [preview, setPreview] = useState<Array<{ row: string[]; valid: boolean; error?: string }>>([]);
+  const [importing, setImporting] = useState(false);
+  const [imported, setImported] = useState(0);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      setFileContent(text);
+      const lines = text.split('\n').filter(l => l.trim());
+      if (lines.length < 2) {
+        setPreview([]);
+        return;
+      }
+      const header = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
+      const rows = lines.slice(1).map(line => {
+        const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+        let valid = true;
+        let error = '';
+
+        if (importType === 'students') {
+          if (cols.length < 2 || !cols[0] || !cols[1]) { valid = false; error = 'Name and Student ID required'; }
+        } else if (importType === 'grades') {
+          if (cols.length < 3 || !cols[0] || !cols[1]) { valid = false; error = 'Student ID, Module, and Grade required'; }
+        } else if (importType === 'attendance') {
+          if (cols.length < 3 || !cols[0] || !cols[1] || !cols[2]) { valid = false; error = 'Student ID, Date, and Status required'; }
+          if (valid && !['present', 'absent', 'late', 'excused'].includes(cols[2].toLowerCase())) {
+            valid = false;
+            error = 'Status must be present/absent/late/excused';
+          }
+        }
+
+        return { row: cols, valid, error };
+      });
+      setPreview(rows);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleDownloadTemplate = () => {
+    let csv = '';
+    if (importType === 'students') {
+      csv = 'FullName,StudentId,ClassId,Status,GuardianName,GuardianPhone,Email\nAhmed Benali,STU001,class1,active,Fatima Benali,+212600000000,ahmed@example.com\n';
+    } else if (importType === 'grades') {
+      csv = 'StudentId,ModuleId,Grade,Percentage,Date\nSTU001,module1,18/20,90,2025-01-15\n';
+    } else {
+      csv = 'StudentId,Date,Status,Notes\nSTU001,2025-01-15,present,\nSTU002,2025-01-15,absent,Sick leave\n';
+    }
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `template_${importType}.csv`;
+    a.click();
+    toast.success(language === 'fr' ? 'Modèle téléchargé' : 'Template downloaded');
+  };
+
+  const handleImport = () => {
+    if (preview.length === 0) return;
+    setImporting(true);
+    setImported(0);
+
+    setTimeout(() => {
+      const validRows = preview.filter(r => r.valid);
+      let count = 0;
+
+      if (importType === 'students') {
+        const newStudents: Student[] = validRows.map(r => ({
+          id: genId(),
+          fullName: r.row[0],
+          studentId: r.row[1],
+          classId: r.row[2] || '',
+          status: 'active' as const,
+          guardianName: r.row[4] || '',
+          guardianPhone: r.row[5] || '',
+          email: r.row[6] || '',
+          phone: '',
+          address: '',
+          notes: '',
+          group: '',
+          photo: '',
+          className: classes.find(c => c.id === r.row[2])?.name,
+          createdAt: new Date().toISOString(),
+        }));
+        setStudents([...students, ...newStudents]);
+        count = newStudents.length;
+      } else if (importType === 'grades') {
+        const newGrades: Grade[] = validRows.map(r => ({
+          id: genId(),
+          studentId: r.row[0],
+          moduleId: r.row[1],
+          grade: r.row[2] || '',
+          percentage: r.row[3] ? parseFloat(r.row[3]) : undefined,
+          date: r.row[4] || new Date().toISOString().split('T')[0],
+          createdAt: new Date().toISOString(),
+        }));
+        setGrades([...grades, ...newGrades]);
+        count = newGrades.length;
+      } else if (importType === 'attendance') {
+        const newAttendance: AttendanceRecord[] = validRows.map(r => ({
+          id: genId(),
+          studentId: r.row[0],
+          date: r.row[1],
+          status: r.row[2].toLowerCase() as AttendanceRecord['status'],
+          notes: r.row[3] || '',
+          createdAt: new Date().toISOString(),
+        }));
+        setAttendance([...attendance, ...newAttendance]);
+        count = newAttendance.length;
+      }
+
+      addAuditLog('IMPORT_DATA', importType, '', `${count} ${importType}`, `Imported ${count} ${importType} records via CSV`);
+      setImported(count);
+      setImporting(false);
+      toast.success(`${count} ${language === 'fr' ? 'enregistrements importés' : 'records imported'}`);
+    }, 500);
+  };
+
+  const invalidCount = preview.filter(r => !r.valid).length;
+  const validCount = preview.filter(r => r.valid).length;
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">{t('data_import', language) || 'Data Import'}</CardTitle>
+          <CardDescription>{language === 'fr' ? 'Importer des données depuis un fichier CSV' : 'Import data from a CSV file'}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1">
+              <Label className="mb-1.5 block text-sm">{language === 'fr' ? 'Type d\'import' : 'Import Type'}</Label>
+              <Select value={importType} onValueChange={v => { setImportType(v as typeof importType); setPreview([]); setFileContent(''); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="students">{t('students', language)}</SelectItem>
+                  <SelectItem value="grades">{t('grades', language)}</SelectItem>
+                  <SelectItem value="attendance">{t('attendance', language)}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="mb-1.5 block text-sm">{language === 'fr' ? 'Fichier CSV' : 'CSV File'}</Label>
+              <div className="flex gap-2">
+                <label className="cursor-pointer">
+                  <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
+                  <Button variant="outline" asChild><span><FileUp className="h-4 w-4 mr-1" />{t('upload', language) || 'Upload'}</span></Button>
+                </label>
+                <Button variant="outline" size="sm" onClick={handleDownloadTemplate} className="gap-1">
+                  <Download className="h-4 w-4" />{language === 'fr' ? 'Modèle' : 'Template'}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {fileContent && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 text-sm">
+                <Badge variant="secondary">{preview.length} {language === 'fr' ? 'lignes' : 'rows'}</Badge>
+                <span className="flex items-center gap-1 text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" />{validCount} {language === 'fr' ? 'valides' : 'valid'}</span>
+                {invalidCount > 0 && <span className="flex items-center gap-1 text-red-600"><XCircle className="h-3.5 w-3.5" />{invalidCount} {language === 'fr' ? 'invalides' : 'invalid'}</span>}
+              </div>
+
+              {imported > 0 && (
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3 text-sm text-emerald-800 dark:text-emerald-400">
+                  ✓ {imported} {language === 'fr' ? 'enregistrements importés avec succès' : 'records imported successfully'}
+                </div>
+              )}
+
+              {preview.length > 0 && (
+                <div className="max-h-64 overflow-y-auto rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-8">#</TableHead>
+                        {importType === 'students' && <>
+                          <TableHead>{t('name', language)}</TableHead><TableHead>ID</TableHead><TableHead>{t('classes', language)}</TableHead><TableHead>{t('status', language)}</TableHead>
+                        </>}
+                        {importType === 'grades' && <>
+                          <TableHead>Student ID</TableHead><TableHead>Module</TableHead><TableHead>{t('grades', language)}</TableHead><TableHead>%</TableHead>
+                        </>}
+                        {importType === 'attendance' && <>
+                          <TableHead>Student ID</TableHead><TableHead>{t('calendar', language)}</TableHead><TableHead>{t('status', language)}</TableHead><TableHead>{language === 'fr' ? 'Notes' : 'Notes'}</TableHead>
+                        </>}
+                        <TableHead className="w-20">{language === 'fr' ? 'Statut' : 'Status'}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {preview.slice(0, 20).map((r, i) => (
+                        <TableRow key={i} className={!r.valid ? 'bg-red-50 dark:bg-red-900/10' : ''}>
+                          <TableCell className="text-xs text-muted-foreground">{i + 1}</TableCell>
+                          {r.row.slice(0, 4).map((col, ci) => (
+                            <TableCell key={ci} className="text-sm">{col || '-'}</TableCell>
+                          ))}
+                          {r.row.length < 4 && Array.from({ length: 4 - r.row.length }).map((_, ci) => (
+                            <TableCell key={`empty-${ci}`} className="text-sm text-muted-foreground">-</TableCell>
+                          ))}
+                          <TableCell>
+                            {r.valid ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            ) : (
+                              <div className="flex items-center gap-1"><XCircle className="h-4 w-4 text-red-600" /><span className="text-[10px] text-red-600 max-w-[100px] truncate">{r.error}</span></div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {preview.length > 20 && (
+                        <TableRow><TableCell colSpan={6} className="text-center text-xs text-muted-foreground py-2">... {preview.length - 20} {language === 'fr' ? 'lignes supplémentaires' : 'more rows'}</TableCell></TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              {validCount > 0 && (
+                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleImport} disabled={importing}>
+                  {importing ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <FileUp className="h-4 w-4 mr-1" />}
+                  {importing ? (language === 'fr' ? 'Importation...' : 'Importing...') : `${language === 'fr' ? 'Importer' : 'Import'} ${validCount} ${language === 'fr' ? 'enregistrements' : 'records'}`}
+                </Button>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ==================== PURGE CACHE SECTION ====================
+function PurgeCacheSection() {
+  const { language, purgeCache, loadAllData, addAuditLog } = useAppStore();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [purging, setPurging] = useState(false);
+
+  const handlePurge = async () => {
+    setPurging(true);
+    try {
+      purgeCache();
+      addAuditLog('PURGE_CACHE', 'system', '', 'Cache', 'Purged local cache and reloaded data');
+      await loadAllData();
+      toast.success(language === 'fr' ? 'Cache purgé et données rechargées' : 'Cache purged and data reloaded');
+      setConfirmOpen(false);
+    } catch {
+      toast.error(language === 'fr' ? 'Erreur lors du purge' : 'Error purging cache');
+    } finally {
+      setPurging(false);
+    }
+  };
+
+  return (
+    <Card className="border-0 shadow-sm border-l-4 border-l-red-500">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <AlertOctagon className="h-5 w-5 text-red-600" />
+          <CardTitle className="text-base text-red-700 dark:text-red-400">{t('purge_cache', language) || 'Purge Cache'}</CardTitle>
+        </div>
+        <CardDescription>{t('purge_cache_desc', language) || 'Clear local cache and reload all data from the server. This may take a moment.'}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button variant="destructive" onClick={() => setConfirmOpen(true)} disabled={purging} className="gap-2">
+          {purging ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          {purging ? (language === 'fr' ? 'Purge en cours...' : 'Purging...') : (t('purge_cache', language) || 'Purge Cache')}
+        </Button>
+
+        <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-700 dark:text-red-400">
+                <AlertOctagon className="h-5 w-5" />
+                {t('purge_cache', language) || 'Purge Cache'}
+              </DialogTitle>
+              <DialogDescription>
+                {t('purge_cache_confirm', language) || 'Are you sure you want to purge the cache? All local data will be cleared and reloaded from the server.'}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setConfirmOpen(false)}>{t('cancel', language)}</Button>
+              <Button variant="destructive" onClick={handlePurge} disabled={purging}>
+                {purging ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1" />}
+                {t('confirm', language) || 'Confirm'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -3685,6 +4275,7 @@ export default function App() {
       <ExportDataDialog open={exportOpen} onOpenChange={setExportOpen} />
       <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       {profileStudent && <Student360Profile student={profileStudent} onClose={() => { setProfileStudent(null); useAppStore.setState({ profileViewStudent: null } as Partial<typeof useAppStore.getState>); }} />}
+      <PWAInstallPrompt />
     </div>
   );
 }

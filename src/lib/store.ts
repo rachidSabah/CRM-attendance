@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem } from './types';
+import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from './types';
 import { api, setApiToken, getApiToken } from './api';
 
 interface AppState {
@@ -30,6 +30,8 @@ interface AppState {
   exams: Exam[];
   examGrades: ExamGrade[];
   curriculum: CurriculumItem[];
+  auditLog: AuditLogEntry[];
+  savedSchedules: SavedSchedule[];
 
   // Settings
   language: 'en' | 'fr';
@@ -58,6 +60,10 @@ interface AppState {
   setExams: (exams: Exam[]) => void;
   setExamGrades: (examGrades: ExamGrade[]) => void;
   setCurriculum: (curriculum: CurriculumItem[]) => void;
+  addAuditLog: (action: string, entityType: string, entityId?: string, entityName?: string, details?: string) => void;
+  setAuditLog: (logs: AuditLogEntry[]) => void;
+  setSavedSchedules: (schedules: SavedSchedule[]) => void;
+  purgeCache: () => void;
   loadAllData: () => Promise<void>;
 }
 
@@ -190,6 +196,8 @@ export const useAppStore = create<AppState>((set) => ({
   exams: [],
   examGrades: [],
   curriculum: [],
+  auditLog: [],
+  savedSchedules: [],
   language: 'en',
   primaryColor: '#10b981',
 
@@ -250,6 +258,40 @@ export const useAppStore = create<AppState>((set) => ({
   setExams: (e) => { set({ exams: e }); localStorage.setItem('attendance_exams', JSON.stringify(e)); scheduleApiSync(); },
   setExamGrades: (eg) => { set({ examGrades: eg }); localStorage.setItem('attendance_exam_grades', JSON.stringify(eg)); scheduleApiSync(); },
   setCurriculum: (c) => { set({ curriculum: c }); localStorage.setItem('attendance_curriculum', JSON.stringify(c)); scheduleApiSync(); },
+  addAuditLog: (action, entityType, entityId, entityName, details) => {
+    const state = useAppStore.getState();
+    const user = state.currentUser;
+    const entry: AuditLogEntry = {
+      id: Date.now().toString(36) + Math.random().toString(36).substring(2, 9),
+      action,
+      entityType,
+      entityId,
+      entityName,
+      userId: user?.id || 'unknown',
+      userName: user?.username || user?.fullName || 'unknown',
+      details: details || `${action} on ${entityType}${entityName ? ': ' + entityName : ''}`,
+      timestamp: new Date().toISOString(),
+    };
+    const newLog = [entry, ...state.auditLog].slice(0, 2000); // Keep last 2000 entries
+    set({ auditLog: newLog });
+    localStorage.setItem('attendance_audit_log', JSON.stringify(newLog));
+    // Sync audit log periodically
+    try { api.post('/audit-log', entry).catch(() => {}); } catch {}
+  },
+  setAuditLog: (logs) => { set({ auditLog: logs }); localStorage.setItem('attendance_audit_log', JSON.stringify(logs)); },
+  setSavedSchedules: (s) => { set({ savedSchedules: s }); localStorage.setItem('attendance_saved_schedules', JSON.stringify(s)); scheduleApiSync(); },
+  purgeCache: () => {
+    const keep = ['attendance_auth', 'attendance_primary_color'];
+    const keys = Object.keys(localStorage);
+    keys.forEach(k => { if (!keep.includes(k)) localStorage.removeItem(k); });
+    set({
+      students: [], classes: [], modules: [], attendance: [], grades: [],
+      behavior: [], tasks: [], incidents: [], teachers: [], employees: [],
+      templates: [], academicYears: [], schoolInfo: {}, notifications: [],
+      admins: [], schedules: [], exams: [], examGrades: [], curriculum: [],
+      auditLog: [], savedSchedules: [],
+    });
+  },
   setPrimaryColor: (color) => { set({ primaryColor: color }); localStorage.setItem('attendance_primary_color', color); document.documentElement.style.setProperty('--app-primary-color', color); scheduleApiSync(); },
 
   loadAllData: async () => {
@@ -274,6 +316,8 @@ export const useAppStore = create<AppState>((set) => ({
       exams: loadLocal('attendance_exams'),
       examGrades: loadLocal('attendance_exam_grades'),
       curriculum: loadLocal('attendance_curriculum'),
+      auditLog: loadLocal('attendance_audit_log'),
+      savedSchedules: loadLocal('attendance_saved_schedules'),
     });
 
     // Apply primary color from cache
