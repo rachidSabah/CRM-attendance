@@ -93,8 +93,7 @@ const STATUS_COLORS: Record<string, string> = {
   positive: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
   negative: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
   scheduled: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-  in_progress: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
-  completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  exam_in_progress: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
   cancelled: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
   planned: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',
 };
@@ -533,7 +532,7 @@ function Header({ onMenuClick, onExportClick }: { onMenuClick: () => void; onExp
         <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenuClick}><Menu className="h-5 w-5" /></Button>
         <div className="flex-1 min-w-0"><h1 className="text-lg font-semibold truncate">{t(currentPage, language)}</h1></div>
         <Button variant="outline" size="sm" className="hidden sm:flex gap-2 text-muted-foreground" onClick={() => setSearchOpen(true)}><Search className="h-4 w-4" /><span className="text-xs">{t('search', language)}</span><kbd className="hidden md:inline-flex items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">Ctrl+K</kbd></Button>
-        <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => { useAppStore.setState({ language: language === 'en' ? 'fr' : 'en' }); toast.success(language === 'en' ? 'Langue: Français' : 'Language: English'); }}><Languages className="h-4 w-4" /><span className="hidden sm:inline">{language.toUpperCase()}</span></Button>
+        <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => { const newLang = language === 'en' ? 'fr' : 'en'; useAppStore.setState({ language: newLang }); localStorage.setItem('attendance_language', newLang); document.documentElement.lang = newLang; toast.success(language === 'en' ? 'Langue: Français' : 'Language: English'); }}><Languages className="h-4 w-4" /><span className="hidden sm:inline">{language.toUpperCase()}</span></Button>
         <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}</Button>
         <Button variant="outline" size="icon" onClick={onExportClick}><Download className="h-4 w-4" /></Button>
         <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground"><div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /><span>{language === 'fr' ? 'Dernière sync' : 'Last sync'}: {syncTime.toLocaleTimeString(language === 'fr' ? 'fr-FR' : 'en-US', { hour: '2-digit', minute: '2-digit' })}</span></div>
@@ -618,7 +617,7 @@ function DashboardPage() {
 
 // ==================== STUDENTS PAGE ====================
 function StudentsPage() {
-  const { students, classes, language, setStudents, setCurrentPage, academicYears } = useAppStore();
+  const { students, classes, language, setStudents, setCurrentPage, academicYears, schoolInfo } = useAppStore();
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -646,7 +645,7 @@ function StudentsPage() {
   };
   const handleDelete = (id: string) => { setStudents(students.filter(s => s.id !== id)); toast.success(language === 'fr' ? 'Étudiant supprimé' : 'Student deleted'); };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => setForm({ ...form, photo: ev.target?.result as string }); r.readAsDataURL(f); } };
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) { if (f.size > 512000) { toast.error(language === 'fr' ? 'Image trop volumineuse (max 500 Ko)' : 'Image too large (max 500KB)'); return; } const r = new FileReader(); r.onload = (ev) => setForm({ ...form, photo: ev.target?.result as string }); r.readAsDataURL(f); } };
 
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -685,7 +684,7 @@ function StudentsPage() {
           <Button variant="outline" size="sm" className={multiSelect ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-400' : ''} onClick={() => { setMultiSelect(!multiSelect); setSelectedIds(new Set()); }}><CheckCircle2 className="h-4 w-4 mr-1" />{language === 'fr' ? 'Sélection multiple' : 'Multi-select'}</Button>
           <label className="cursor-pointer"><input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} /><Button variant="outline" size="sm" className="border-orange-400 text-orange-600" asChild><span><Upload className="h-4 w-4 mr-1" />CSV</span></Button></label>
           <Button variant="outline" size="sm" onClick={() => { exportUtils.exportStudentsCSV(students, classes); toast.success('Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
-          <Button variant="outline" size="sm" onClick={() => window.print()}><Printer className="h-4 w-4 mr-1" />PDF</Button>
+          <Button variant="outline" size="sm" onClick={() => pdfUtils.exportStudentsPDF(students, classes, schoolInfo)}><Printer className="h-4 w-4 mr-1" />PDF</Button>
           <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={openAdd}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter' : 'Add'}</Button>
         </div>
       </div>
@@ -2171,7 +2170,7 @@ function MessagingPage() {
     const targets = classFilter !== 'all' ? filteredStudents : students.filter(s => s.status === 'active');
     const phones = targets.map(s => s.guardianPhone || s.phone).filter(Boolean);
     if (phones.length === 0) { toast.error(language === 'fr' ? 'Aucun numéro trouvé' : 'No phone numbers found'); return; }
-    phones.forEach(p => sendWhatsApp(p, message));
+    phones.forEach((p, i) => { setTimeout(() => sendWhatsApp(p, message), i * 500); });
   };
 
   const handleSaveTemplate = () => {
@@ -2251,7 +2250,7 @@ function MessagingPage() {
 
 // ==================== REPORTS PAGE ====================
 function ReportsPage() {
-  const { students, classes, attendance, grades, behavior, language } = useAppStore();
+  const { students, classes, attendance, grades, behavior, language, modules, tasks, incidents } = useAppStore();
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [reportType, setReportType] = useState('attendance');
@@ -2309,8 +2308,11 @@ function ReportsPage() {
 
   const handleExportReport = () => {
     if (reportType === 'attendance') exportUtils.exportAttendanceCSV(filteredAttendance, students, classes);
-    else if (reportType === 'grades') exportUtils.exportGradesCSV(grades, students, []);
+    else if (reportType === 'grades') exportUtils.exportGradesCSV(grades, students, modules);
     else if (reportType === 'behavior') exportUtils.exportBehaviorCSV(behavior, students);
+    else if (reportType === 'progress') { exportUtils.exportTasksCSV(tasks); toast.info(language === 'fr' ? 'Données de progression exportées' : 'Progress data exported'); return; }
+    else if (reportType === 'tasks') exportUtils.exportTasksCSV(tasks);
+    else if (reportType === 'incidents') exportUtils.exportIncidentsCSV(incidents, students);
     toast.success(language === 'fr' ? 'Rapport exporté' : 'Report exported');
   };
 
@@ -2562,12 +2564,34 @@ function SettingsPage() {
     localStorage.setItem('attendance_backup_freq', backupFrequency);
   }, [autoBackupEnabled, backupFrequency]);
 
+  const handleBackupRef = useRef(handleManualBackup);
+  useEffect(() => { handleBackupRef.current = handleManualBackup; }, [students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, schedules, exams, examGrades, curriculum, savedSchedules, academicYears, schoolInfo]);
+
   useEffect(() => {
     if (!autoBackupEnabled) return;
     const intervals: Record<string, number> = { '1h': 3600000, '6h': 21600000, '12h': 43200000, 'daily': 86400000 };
     const ms = intervals[backupFrequency] || 43200000;
     const timer = setInterval(() => {
-      handleManualBackup(true);
+      // Auto-backup saves to localStorage silently (no file download to avoid popup spam)
+      const state = useAppStore.getState();
+      const backupData = {
+        version: '1.1',
+        type: 'auto',
+        timestamp: new Date().toISOString(),
+        data: {
+          students: state.students, classes: state.classes, modules: state.modules,
+          attendance: state.attendance, grades: state.grades, behavior: state.behavior,
+          tasks: state.tasks, incidents: state.incidents, teachers: state.teachers,
+          employees: state.employees, schedules: state.schedules, exams: state.exams,
+          examGrades: state.examGrades, curriculum: state.curriculum,
+          savedSchedules: state.savedSchedules, templates: [], academicYears: state.academicYears,
+          schoolInfo: state.schoolInfo,
+        },
+      };
+      try {
+        localStorage.setItem('attendance_auto_backup_data', JSON.stringify(backupData));
+        console.log('[Auto-Backup] Saved to localStorage at', new Date().toLocaleTimeString());
+      } catch {}
     }, ms);
     return () => clearInterval(timer);
   }, [autoBackupEnabled, backupFrequency]);
@@ -2609,14 +2633,28 @@ function SettingsPage() {
   const handleExportAll = () => { exportUtils.exportAllCSV({ students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees }); toast.success(language === 'fr' ? 'Exporté!' : 'Exported!'); };
   const handleClearAll = () => {
     if (!confirm(t('clear_confirm', language))) return;
-    setStudents([]); setClasses([]); setModules([]); setAttendance([]); setGrades([]); setBehavior([]); setTasks([]); setIncidents([]); setTeachers([]); setEmployees([]); setTemplates([]); setAcademicYears([]); setSchedules([]); setExams([]); setExamGrades([]); setCurriculum([]); setSavedSchedules([]);
+    setStudents([]); setClasses([]); setModules([]); setAttendance([]); setGrades([]); setBehavior([]); setTasks([]); setIncidents([]); setTeachers([]); setEmployees([]); setTemplates([]); setAcademicYears([]); setSchedules([]); setExams([]); setExamGrades([]); setCurriculum([]); setSavedSchedules([]); setSchoolInfo({});
     addAuditLog('PURGE_CACHE', 'system', '', '', 'Cleared all data via Settings');
-    ['attendance_students', 'attendance_classes', 'attendance_modules', 'attendance_records', 'attendance_grades', 'attendance_behavior', 'attendance_tasks', 'attendance_incidents', 'attendance_teachers', 'attendance_employees', 'attendance_templates', 'attendance_academic_years', 'attendance_schedules', 'attendance_exams', 'attendance_exam_grades', 'attendance_curriculum', 'attendance_saved_schedules'].forEach(k => localStorage.removeItem(k));
+    ['attendance_students', 'attendance_classes', 'attendance_modules', 'attendance_records', 'attendance_grades', 'attendance_behavior', 'attendance_tasks', 'attendance_incidents', 'attendance_teachers', 'attendance_employees', 'attendance_templates', 'attendance_academic_years', 'attendance_schedules', 'attendance_exams', 'attendance_exam_grades', 'attendance_curriculum', 'attendance_saved_schedules', 'attendance_school_info'].forEach(k => localStorage.removeItem(k));
     toast.success(language === 'fr' ? 'Données supprimées' : 'Data cleared');
   };
 
   // Password
-  const handleChangePw = () => { if (pwForm.newPw !== pwForm.confirm) { toast.error(language === 'fr' ? 'Mots de passe différents' : 'Passwords do not match'); return; } toast.success(language === 'fr' ? 'Mot de passe changé' : 'Password changed'); setPwForm({ current: '', newPw: '', confirm: '' }); };
+  const handleChangePw = async () => {
+    if (!pwForm.newPw || pwForm.newPw.length < 4) {
+      toast.error(language === 'fr' ? 'Le mot de passe doit contenir au moins 4 caractères' : 'Password must be at least 4 characters');
+      return;
+    }
+    if (pwForm.newPw !== pwForm.confirm) { toast.error(language === 'fr' ? 'Mots de passe différents' : 'Passwords do not match'); return; }
+    try {
+      await api.put('/auth/change-password', { currentPassword: pwForm.current, newPassword: pwForm.newPw });
+      toast.success(language === 'fr' ? 'Mot de passe changé' : 'Password changed');
+      addAuditLog('CHANGE_PASSWORD', 'user', currentUser?.id, currentUser?.fullName, 'Password changed');
+    } catch (err) {
+      toast.error(language === 'fr' ? 'Échec du changement de mot de passe' : 'Failed to change password');
+    }
+    setPwForm({ current: '', newPw: '', confirm: '' });
+  };
 
   // Save school info
   const [savingSchool, setSavingSchool] = useState(false);
@@ -2635,6 +2673,7 @@ function SettingsPage() {
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (f) {
+      if (f.size > 512000) { toast.error(language === 'fr' ? 'Logo trop volumineux (max 500 Ko)' : 'Logo too large (max 500KB)'); return; }
       const r = new FileReader();
       r.onload = (ev) => setSForm({ ...sForm, logo: ev.target?.result as string });
       r.readAsDataURL(f);
@@ -2645,7 +2684,7 @@ function SettingsPage() {
   const handleManualBackup = (silent: boolean = false, incremental: boolean = false) => {
     const allData = {
       students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees,
-      schedules, exams, examGrades, curriculum, templates: [], academicYears, schoolInfo
+      schedules, exams, examGrades, curriculum, savedSchedules, templates: [], academicYears, schoolInfo
     };
 
     let backupData: Record<string, unknown>;
@@ -2660,7 +2699,7 @@ function SettingsPage() {
       const changedKeys: string[] = [];
       const entityMap: Record<string, unknown[]> = {
         students, classes, modules, attendance, grades, behavior, tasks, incidents,
-        teachers, employees, schedules, exams, examGrades, curriculum,
+        teachers, employees, schedules, exams, examGrades, curriculum, savedSchedules,
         templates: [], academicYears,
       };
 
@@ -2923,7 +2962,7 @@ function SettingsPage() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>{t('default_language', language)}</Label><Select value={lang} onValueChange={v => { setLang(v as 'en' | 'fr'); useAppStore.setState({ language: v as 'en' | 'fr' }); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="fr">Français</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>{t('default_language', language)}</Label><Select value={lang} onValueChange={v => { setLang(v as 'en' | 'fr'); useAppStore.setState({ language: v as 'en' | 'fr' }); localStorage.setItem('attendance_language', v); document.documentElement.lang = v; }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="fr">Français</SelectItem></SelectContent></Select></div>
               <div className="space-y-2"><Label>{t('timezone', language)}</Label><Select value={tz} onValueChange={setTz}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Africa/Casablanca">Africa/Casablanca</SelectItem><SelectItem value="Europe/Paris">Europe/Paris</SelectItem><SelectItem value="UTC">UTC</SelectItem></SelectContent></Select></div>
             </div>
           </CardContent></Card>
@@ -3193,7 +3232,7 @@ function SettingsPage() {
 
 // ==================== EXAMS PAGE ====================
 function ExamsPage() {
-  const { exams, examGrades, setExams, setExamGrades, modules, classes, students, language, currentUser } = useAppStore();
+  const { exams, examGrades, setExams, setExamGrades, modules, classes, students, language, currentUser, addAuditLog } = useAppStore();
   const [tab, setTab] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [gradeDialogOpen, setGradeDialogOpen] = useState(false);
@@ -3239,10 +3278,12 @@ function ExamsPage() {
     }
     if (editingExam) {
       setExams(exams.map(e => e.id === editingExam.id ? { ...e, ...form } : e));
+      addAuditLog('UPDATE_EXAM', 'exam', editingExam.id, form.title, `Updated exam: ${form.title}`);
       toast.success(language === 'fr' ? 'Examen modifié' : 'Exam updated');
     } else {
       const newExam: Exam = { ...form, id: genId(), createdAt: new Date().toISOString() } as Exam;
       setExams([...exams, newExam]);
+      addAuditLog('CREATE_EXAM', 'exam', newExam.id, form.title, `Created exam: ${form.title}`);
       toast.success(language === 'fr' ? 'Examen créé' : 'Exam created');
     }
     setDialogOpen(false);
@@ -3250,8 +3291,10 @@ function ExamsPage() {
 
   const handleDelete = (id: string) => {
     if (!confirm(language === 'fr' ? 'Supprimer cet examen ?' : 'Delete this exam?')) return;
+    const exam = exams.find(e => e.id === id);
     setExams(exams.filter(e => e.id !== id));
     setExamGrades(examGrades.filter(g => g.examId !== id));
+    addAuditLog('DELETE_EXAM', 'exam', id, exam?.title, `Deleted exam: ${exam?.title}`);
     toast.success(language === 'fr' ? 'Examen supprimé' : 'Exam deleted');
   };
 
@@ -3475,7 +3518,7 @@ function ExamsPage() {
 
 // ==================== CURRICULUM PAGE ====================
 function CurriculumPage() {
-  const { curriculum, setCurriculum, modules, language, academicYears } = useAppStore();
+  const { curriculum, setCurriculum, modules, language, academicYears, addAuditLog } = useAppStore();
   const [selectedModule, setSelectedModule] = useState('');
   const [selectedYear, setSelectedYear] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -3525,10 +3568,12 @@ function CurriculumPage() {
     }
     if (editingItem) {
       setCurriculum(curriculum.map(i => i.id === editingItem.id ? { ...i, ...form } : i));
+      addAuditLog('UPDATE_CURRICULUM', 'curriculum', editingItem.id, form.title, `Updated topic: ${form.title}`);
       toast.success(language === 'fr' ? 'Sujet modifié' : 'Topic updated');
     } else {
       const newItem: CurriculumItem = { ...form, id: genId(), createdAt: new Date().toISOString() } as CurriculumItem;
       setCurriculum([...curriculum, newItem]);
+      addAuditLog('CREATE_CURRICULUM', 'curriculum', newItem.id, form.title, `Created topic: ${form.title}`);
       toast.success(language === 'fr' ? 'Sujet ajouté' : 'Topic added');
     }
     setDialogOpen(false);
@@ -3536,7 +3581,9 @@ function CurriculumPage() {
 
   const handleDelete = (id: string) => {
     if (!confirm(language === 'fr' ? 'Supprimer ce sujet ?' : 'Delete this topic?')) return;
+    const item = curriculum.find(i => i.id === id);
     setCurriculum(curriculum.filter(i => i.id !== id));
+    addAuditLog('DELETE_CURRICULUM', 'curriculum', id, item?.title, `Deleted topic: ${item?.title}`);
     toast.success(language === 'fr' ? 'Sujet supprimé' : 'Topic deleted');
   };
 
@@ -3573,7 +3620,7 @@ function CurriculumPage() {
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
         <Card className="p-4 text-center"><p className="text-2xl font-bold text-emerald-600">{completedHours}</p><p className="text-xs text-muted-foreground">{t('curriculum_completed', language)}</p></Card>
-        <Card className="p-4 text-center"><p className="text-2xl font-bold text-amber-600">{totalHours - completedHours}</p><p className="text-xs text-muted-foreground">{t('curriculum_in_progress', language)}</p></Card>
+        <Card className="p-4 text-center"><p className="text-2xl font-bold text-amber-600">{totalHours - completedHours}</p><p className="text-xs text-muted-foreground">{language === 'fr' ? 'Heures restantes' : 'Remaining Hours'}</p></Card>
         <Card className="p-4 text-center"><p className="text-2xl font-bold text-blue-600">{totalHours}</p><p className="text-xs text-muted-foreground">{t('total_hours', language)}</p></Card>
       </div>
 
@@ -3924,13 +3971,13 @@ function AuditTrailSection() {
   const PER_PAGE = 50;
 
   const uniqueActions = useMemo(() => [...new Set(auditLog.map(l => l.action))].sort(), [auditLog]);
-  const uniqueUsers = useMemo(() => [...new Set(auditLog.map(l => l.user))].sort(), [auditLog]);
+  const uniqueUsers = useMemo(() => [...new Set(auditLog.map(l => l.userName))].sort(), [auditLog]);
   const uniqueEntities = useMemo(() => [...new Set(auditLog.map(l => l.entityType))].sort(), [auditLog]);
 
   const filtered = useMemo(() => {
     let logs = [...auditLog].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     if (actionFilter !== 'all') logs = logs.filter(l => l.action === actionFilter);
-    if (userFilter !== 'all') logs = logs.filter(l => l.user === userFilter);
+    if (userFilter !== 'all') logs = logs.filter(l => l.userName === userFilter);
     if (entityFilter !== 'all') logs = logs.filter(l => l.entityType === entityFilter);
     if (dateFrom) logs = logs.filter(l => l.timestamp >= dateFrom);
     if (dateTo) logs = logs.filter(l => l.timestamp <= dateTo + 'T23:59:59');
@@ -3942,7 +3989,7 @@ function AuditTrailSection() {
 
   const handleExportCSV = () => {
     const header = `${t('timestamp', language)},${t('user', language)},${t('action', language)},${t('entity', language)},${t('details', language)}\n`;
-    const rows = filtered.map(l => `"${l.timestamp}","${l.user}","${l.action}","${l.entityType}","${l.details}"`).join('\n');
+    const rows = filtered.map(l => `"${l.timestamp}","${l.userName}","${l.action}","${l.entityType}","${l.details}"`).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -4010,7 +4057,7 @@ function AuditTrailSection() {
                     {paged.map(entry => (
                       <TableRow key={entry.id}>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(entry.timestamp).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-US')}</TableCell>
-                        <TableCell className="font-medium text-sm">{entry.user}</TableCell>
+                        <TableCell className="font-medium text-sm">{entry.userName}</TableCell>
                         <TableCell><Badge variant="outline" className="text-[10px] font-mono">{entry.action}</Badge></TableCell>
                         <TableCell className="text-sm">{entry.entityType}{entry.entityName ? `: ${entry.entityName}` : ''}</TableCell>
                         <TableCell className="text-xs text-muted-foreground max-w-[250px] truncate">{entry.details}</TableCell>
@@ -4192,7 +4239,7 @@ function ImportWizardSection() {
               <Label className="mb-1.5 block text-sm">{language === 'fr' ? 'Fichier CSV' : 'CSV File'}</Label>
               <div className="flex gap-2">
                 <label className="cursor-pointer">
-                  <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
+                  <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileUpload} />
                   <Button variant="outline" asChild><span><FileUp className="h-4 w-4 mr-1" />{t('upload', language) || 'Upload'}</span></Button>
                 </label>
                 <Button variant="outline" size="sm" onClick={handleDownloadTemplate} className="gap-1">

@@ -296,6 +296,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   loadAllData: async () => {
     // Load local cache first for instant UI
+    const savedLang = (typeof window !== 'undefined' ? localStorage.getItem('attendance_language') : null) as 'en' | 'fr' | null;
     set({
       students: loadLocal('attendance_students'),
       classes: loadLocal('attendance_classes'),
@@ -318,11 +319,17 @@ export const useAppStore = create<AppState>((set) => ({
       curriculum: loadLocal('attendance_curriculum'),
       auditLog: loadLocal('attendance_audit_log'),
       savedSchedules: loadLocal('attendance_saved_schedules'),
+      language: savedLang || 'en',
     });
 
     // Apply primary color from cache
     const cachedColor = localStorage.getItem('attendance_primary_color') || '#10b981';
     document.documentElement.style.setProperty('--app-primary-color', cachedColor);
+
+    // Apply saved language
+    if (savedLang) {
+      document.documentElement.lang = savedLang;
+    }
 
     const token = getApiToken();
     if (!token) return;
@@ -502,6 +509,33 @@ export const useAppStore = create<AppState>((set) => ({
         if (ayRes?.success && Array.isArray(ayRes.data)) {
           set({ academicYears: ayRes.data });
           localStorage.setItem('attendance_academic_years', JSON.stringify(ayRes.data));
+        }
+      } catch {}
+
+      // Load exams
+      try {
+        const examsRes = await api.get('/exams');
+        if (examsRes?.success && Array.isArray(examsRes.data)) {
+          set({ exams: examsRes.data });
+          localStorage.setItem('attendance_exams', JSON.stringify(examsRes.data));
+        }
+      } catch {}
+
+      // Load exam grades
+      try {
+        const egRes = await api.get('/exam-grades');
+        if (egRes?.success && Array.isArray(egRes.data)) {
+          set({ examGrades: egRes.data });
+          localStorage.setItem('attendance_exam_grades', JSON.stringify(egRes.data));
+        }
+      } catch {}
+
+      // Load curriculum
+      try {
+        const currRes = await api.get('/curriculum');
+        if (currRes?.success && Array.isArray(currRes.data)) {
+          set({ curriculum: currRes.data });
+          localStorage.setItem('attendance_curriculum', JSON.stringify(currRes.data));
         }
       } catch {}
 

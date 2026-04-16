@@ -786,14 +786,68 @@ export function exportAllSchedulesPDF(
 
 // ==================== PROGRESS REPORT PDF ====================
 export function exportProgressReportPDF(
-  _reports: Array<Record<string, unknown>>,
+  reports: Array<Record<string, unknown>>,
   _classSummary: Record<string, number>,
-  _schoolInfo: Record<string, string | undefined>,
+  schoolInfo: Record<string, string | undefined>,
   _dateRange: Record<string, string>,
-  _teacherComment: string,
-  _language: string = 'en'
+  teacherComment: string,
+  language: string = 'en'
 ) {
-  // Progress report PDF generation - delegates to browser print preview
-  // which is handled by the ProgressReportsSection component
-  console.log('Progress report PDF generated');
+  const si = schoolInfo as SchoolInfo;
+  const { doc } = createDoc({ orientation: 'portrait', title: language === 'fr' ? 'Bulletin de Progres' : 'Progress Report', schoolInfo: si });
+  let startY = addHeader(doc, { orientation: 'portrait', title: language === 'fr' ? 'Bulletin de Progres' : 'Progress Report', schoolInfo: si });
+
+  if (reports.length === 0) {
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text(language === 'fr' ? 'Aucune donnee de progression disponible' : 'No progress data available', 14, startY + 20);
+    addFooter(doc, si);
+    downloadPdf(doc, `progress_report_${new Date().toISOString().slice(0, 10)}.pdf`);
+    return;
+  }
+
+  // Table header
+  const head = [[
+    language === 'fr' ? 'Étudiant' : 'Student',
+    language === 'fr' ? 'Matière' : 'Module',
+    language === 'fr' ? 'Note' : 'Grade',
+    language === 'fr' ? '%' : '%',
+    language === 'fr' ? 'Statut' : 'Status',
+  ]];
+
+  const body = reports.map(r => [
+    String(r.studentName || r.fullName || '-'),
+    String(r.moduleName || r.module || '-'),
+    String(r.grade || r.score || '-'),
+    String(r.percentage || r.pct || '0'),
+    String(r.status || (Number(r.percentage || r.pct || 0) >= 50 ? (language === 'fr' ? 'Reussi' : 'Pass') : (language === 'fr' ? 'Echoue' : 'Fail'))),
+  ]);
+
+  autoTable(doc, {
+    startY,
+    head,
+    body,
+    theme: 'grid',
+    headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7 },
+    alternateRowStyles: { fillColor: [245, 247, 250] },
+    margin: { left: 14, right: 14 },
+  });
+
+  // Teacher comment section
+  if (teacherComment) {
+    const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable?.finalY;
+    if (finalY) {
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text(language === 'fr' ? 'Commentaire du professeur' : 'Teacher Comment', 14, finalY + 12);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      const lines = doc.splitTextToSize(teacherComment, 180);
+      doc.text(lines, 14, finalY + 18);
+    }
+  }
+
+  addFooter(doc, si);
+  downloadPdf(doc, `progress_report_${new Date().toISOString().slice(0, 10)}.pdf`);
 }

@@ -28,6 +28,15 @@ async function apiRequest(method: string, endpoint: string, body?: unknown) {
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  // Handle non-JSON responses gracefully
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const text = await res.text().catch(() => '');
+    if (!res.ok) throw new Error(text || `API Error ${res.status}`);
+    return { success: true, data: text };
+  }
+
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'API Error');
   return data;
