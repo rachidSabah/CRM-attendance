@@ -2495,6 +2495,49 @@ function SettingsPage() {
   const [editAy, setEditAy] = useState<AcademicYear | null>(null);
   const [ayForm, setAyForm] = useState({ name: '', startDate: '', endDate: '', isCurrent: false });
 
+  // Promote Students state
+  const [promoteClass, setPromoteClass] = useState('__all__');
+  const [promoteFromYear, setPromoteFromYear] = useState('');
+  const [promoteToYear, setPromoteToYear] = useState('');
+  const [promoteStatus, setPromoteStatus] = useState('active');
+
+  const fromYearName = academicYears.find(ay => ay.id === promoteFromYear)?.name || '';
+  const toYearName = academicYears.find(ay => ay.id === promoteToYear)?.name || '';
+  const eligibleStudents = useMemo(() => {
+    return students.filter(s => {
+      if (promoteClass !== '__all__' && s.classId !== promoteClass) return false;
+      if (promoteFromYear && s.academicYear !== fromYearName) return false;
+      return true;
+    });
+  }, [students, promoteClass, promoteFromYear, fromYearName]);
+
+  const handleMassPromotion = () => {
+    if (!promoteFromYear || !promoteToYear || promoteFromYear === promoteToYear) return;
+    if (eligibleStudents.length === 0) { toast.warning(language === 'fr' ? 'Aucun étudiant éligible' : 'No eligible students'); return; }
+    const updated = students.map(s => {
+      if (eligibleStudents.includes(s)) {
+        return { ...s, academicYear: toYearName };
+      }
+      return s;
+    });
+    setStudents(updated);
+    addAuditLog('MASS_PROMOTE', 'student', '', '', `Promoted ${eligibleStudents.length} students from ${fromYearName} to ${toYearName}`);
+    toast.success(`${language === 'fr' ? 'Promotion terminée' : 'Promotion complete'}: ${eligibleStudents.length} ${language === 'fr' ? 'étudiants' : 'students'} ${fromYearName} → ${toYearName}`);
+  };
+
+  const handleChangeStatus = () => {
+    if (eligibleStudents.length === 0) return;
+    const updated = students.map(s => {
+      if (eligibleStudents.includes(s)) {
+        return { ...s, status: promoteStatus as Student['status'] };
+      }
+      return s;
+    });
+    setStudents(updated);
+    addAuditLog('CHANGE_STATUS', 'student', '', '', `Changed status of ${eligibleStudents.length} students to ${promoteStatus}`);
+    toast.success(`${language === 'fr' ? 'Statut mis à jour' : 'Status updated'}: ${eligibleStudents.length} ${language === 'fr' ? 'étudiants' : 'students'} → ${promoteStatus}`);
+  };
+
   // Password state
   const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' });
 
@@ -3017,6 +3060,24 @@ function SettingsPage() {
             </div>
             <DialogFooter><Button variant="outline" onClick={() => setAyDialog(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={saveAy}>{t('save', language)}</Button></DialogFooter>
           </DialogContent></Dialog>
+
+          {/* Promote Students Section */}
+          <Card><CardHeader><CardTitle className="text-base flex items-center gap-2"><TrendingUp className="h-4 w-4 text-emerald-600" />{language === 'fr' ? 'Promouvoir Étudiants' : 'Promote Students'}</CardTitle></CardHeader><CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Sélectionner Classe' : 'Select Class'}</Label><Select value={promoteClass} onValueChange={setPromoteClass}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__all__">{language === 'fr' ? 'Toutes les Classes' : 'All Classes'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'De l\'année' : 'From Year'}</Label><Select value={promoteFromYear} onValueChange={setPromoteFromYear}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Sélectionner' : 'Select'}</SelectItem>{academicYears.map(ay => <SelectItem key={ay.id} value={ay.id}>{ay.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Vers l\'année' : 'To Year'}</Label><Select value={promoteToYear} onValueChange={setPromoteToYear}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">{language === 'fr' ? 'Sélectionner' : 'Select'}</SelectItem>{academicYears.map(ay => <SelectItem key={ay.id} value={ay.id}>{ay.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Statut Étudiant' : 'Student Status'}</Label><Select value={promoteStatus} onValueChange={setPromoteStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">{language === 'fr' ? 'Actif' : 'Active'}</SelectItem><SelectItem value="inactive">{language === 'fr' ? 'Inactif' : 'Inactive'}</SelectItem><SelectItem value="graduated">{language === 'fr' ? 'Diplômé' : 'Graduated'}</SelectItem><SelectItem value="transferred">{language === 'fr' ? 'Transféré' : 'Transferred'}</SelectItem><SelectItem value="dropped">{language === 'fr' ? 'Abandon' : 'Dropped Out'}</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Info className="h-4 w-4" />
+              <span>{language === 'fr' ? `${eligibleStudents.length} étudiant(s) éligible(s) pour la promotion` : `${eligibleStudents.length} student(s) eligible for promotion`}</span>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleMassPromotion} disabled={!promoteFromYear || !promoteToYear || promoteFromYear === promoteToYear}><TrendingUp className="h-4 w-4 mr-1" />{language === 'fr' ? 'Promotion en Masse' : 'Mass Promotion'}</Button>
+              <Button variant="outline" className="text-amber-600 border-amber-300 hover:bg-amber-50" onClick={handleChangeStatus} disabled={eligibleStudents.length === 0}><RefreshCw className="h-4 w-4 mr-1" />{language === 'fr' ? 'Changer Statut' : 'Change Status'}</Button>
+            </div>
+          </CardContent></Card>
         </TabsContent>
 
         <TabsContent value="data" className="space-y-4">
@@ -3726,6 +3787,11 @@ function SuperAdminPage() {
   const [tForm, setTForm] = useState({ name: '', slug: '', students: 0, teachers: 0, status: 'active' });
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
+  // ===== Users CRUD state =====
+  const [userDialog, setUserDialog] = useState(false);
+  const [editUser, setEditUser] = useState<Record<string, unknown> | null>(null);
+  const [userForm, setUserForm] = useState({ fullName: '', username: '', email: '', password: '', role: 'admin', department: '', tenantId: '' });
+
   const saveTenants = (updated: typeof tenants) => {
     setTenants(updated);
     localStorage.setItem('attendance_tenants', JSON.stringify(updated));
@@ -3965,10 +4031,43 @@ function SuperAdminPage() {
         </TabsContent>
 
         <TabsContent value="users" className="space-y-4">
-          <h3 className="font-semibold">{language === 'fr' ? 'Tous les utilisateurs' : 'All Users'}</h3>
-          <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{t('name', language)}</TableHead><TableHead>Email</TableHead><TableHead>{t('role', language)}</TableHead><TableHead>{language === 'fr' ? 'École' : 'School'}</TableHead></TableRow></TableHeader><TableBody>
-            {admins.map((a, i) => <TableRow key={i}><TableCell className="font-medium">{String(a.fullName || a.name || a.username || '-')}</TableCell><TableCell className="text-sm">{String(a.email || '-')}</TableCell><TableCell><Badge variant="secondary">{String(a.role || '-')}</Badge></TableCell><TableCell className="text-sm text-muted-foreground">{String(a.tenantId || '-')}</TableCell></TableRow>)}
+          <div className="flex justify-between items-center"><h3 className="font-semibold">{language === 'fr' ? 'Tous les utilisateurs' : 'All Users'} ({admins.length})</h3><Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { setEditUser(null); setUserForm({ fullName: '', username: '', email: '', password: '', role: 'admin', department: '', tenantId: '' }); setUserDialog(true); }}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter utilisateur' : 'Add User'}</Button></div>
+          <Card><CardContent className="p-0"><div className="max-h-[500px] overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{t('name', language)}</TableHead><TableHead>{language === 'fr' ? 'Identifiant' : 'Username'}</TableHead><TableHead>Email</TableHead><TableHead>{t('role', language)}</TableHead><TableHead>{language === 'fr' ? 'Département' : 'Department'}</TableHead><TableHead>{language === 'fr' ? 'École' : 'School'}</TableHead><TableHead className="w-28">{t('actions', language)}</TableHead></TableRow></TableHeader><TableBody>
+            {admins.map((a, i) => <TableRow key={i}><TableCell className="font-medium">{String(a.fullName || a.name || '-')}</TableCell><TableCell className="text-sm">{String(a.username || '-')}</TableCell><TableCell className="text-sm">{String(a.email || '-')}</TableCell><TableCell><Badge variant="secondary">{String(a.role || '-')}</Badge></TableCell><TableCell className="text-sm text-muted-foreground">{String(a.department || '-')}</TableCell><TableCell className="text-sm text-muted-foreground">{String(a.tenantId || '-')}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditUser(a); setUserForm({ fullName: String(a.fullName || a.name || ''), username: String(a.username || ''), email: String(a.email || ''), password: '', role: String(a.role || 'admin'), department: String(a.department || ''), tenantId: String(a.tenantId || '') }); setUserDialog(true); }}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => { if (confirm(language === 'fr' ? 'Supprimer cet utilisateur ?' : 'Delete this user?')) { setAdmins(admins.filter((_, idx) => idx !== i)); addAuditLog('DELETE_USER', 'user', '', String(a.fullName || a.username), `Deleted user: ${a.fullName || a.username}`); toast.success(language === 'fr' ? 'Utilisateur supprimé' : 'User deleted'); } }}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell></TableRow>)}
           </TableBody></Table></div></CardContent></Card>
+
+          {/* Add/Edit User Dialog */}
+          <Dialog open={userDialog} onOpenChange={setUserDialog}><DialogContent><DialogHeader><DialogTitle>{editUser ? (language === 'fr' ? 'Modifier utilisateur' : 'Edit User') : (language === 'fr' ? 'Ajouter utilisateur' : 'Add User')}</DialogTitle><DialogDescription>{editUser ? (language === 'fr' ? 'Modifier les informations de l\'utilisateur' : 'Update user information') : (language === 'fr' ? 'Créer un nouveau compte utilisateur' : 'Create a new user account')}</DialogDescription></DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>{language === 'fr' ? 'Nom complet' : 'Full Name'} *</Label><Input value={userForm.fullName} onChange={e => setUserForm({ ...userForm, fullName: e.target.value })} /></div>
+                <div className="space-y-2"><Label>{language === 'fr' ? 'Identifiant' : 'Username'} *</Label><Input value={userForm.username} onChange={e => setUserForm({ ...userForm, username: e.target.value })} /></div>
+              </div>
+              <div className="space-y-2"><Label>Email</Label><Input type="email" value={userForm.email} onChange={e => setUserForm({ ...userForm, email: e.target.value })} /></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Mot de passe' : 'Password'} {editUser ? `(${language === 'fr' ? 'laisser vide pour ne pas changer' : 'leave blank to keep current'})` : '*'}</Label><Input type="password" value={userForm.password} onChange={e => setUserForm({ ...userForm, password: e.target.value })} placeholder={editUser ? '••••••••' : ''} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>{t('role', language)} *</Label><Select value={userForm.role} onValueChange={v => setUserForm({ ...userForm, role: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
+                  <SelectItem value="super_admin">{language === 'fr' ? 'Super Administrateur' : 'Super Admin'}</SelectItem>
+                  <SelectItem value="admin">{language === 'fr' ? 'Administrateur' : 'Admin'}</SelectItem>
+                  <SelectItem value="scholar">{language === 'fr' ? 'Scolaire' : 'Scholar'}</SelectItem>
+                  <SelectItem value="teacher">{language === 'fr' ? 'Enseignant' : 'Teacher'}</SelectItem>
+                  <SelectItem value="coop">{language === 'fr' ? 'Coop' : 'Coop'}</SelectItem>
+                  <SelectItem value="department">{language === 'fr' ? 'Département' : 'Department'}</SelectItem>
+                  <SelectItem value="administration">{language === 'fr' ? 'Administration' : 'Administration'}</SelectItem>
+                </SelectContent></Select></div>
+                <div className="space-y-2"><Label>{language === 'fr' ? 'Département' : 'Department'}</Label><Input value={userForm.department} onChange={e => setUserForm({ ...userForm, department: e.target.value })} placeholder={language === 'fr' ? 'Ex: Informatique' : 'e.g. IT'} /></div>
+              </div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'École (Tenant)' : 'School (Tenant)'}</Label><Input value={userForm.tenantId} onChange={e => setUserForm({ ...userForm, tenantId: e.target.value })} placeholder={language === 'fr' ? 'Ex: infohas-academy' : 'e.g. infohas-academy'} /></div>
+            </div>
+            <DialogFooter><Button variant="outline" onClick={() => setUserDialog(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => {
+              if (!userForm.fullName || !userForm.username) { toast.error(language === 'fr' ? 'Nom et identifiant requis' : 'Name and username required'); return; }
+              if (!editUser && !userForm.password) { toast.error(language === 'fr' ? 'Le mot de passe est requis' : 'Password is required'); return; }
+              const userData = { ...userForm, id: editUser ? (editUser as Record<string, unknown>).id : genId(), fullName: userForm.fullName, name: userForm.fullName, username: userForm.username, role: userForm.role, department: userForm.department, tenantId: userForm.tenantId };
+              if (editUser) { const idx = admins.indexOf(editUser); const updated = [...admins]; updated[idx] = { ...updated[idx], ...userData }; if (!userForm.password) delete (userData as Record<string, unknown>).password; else (userData as Record<string, unknown>).password = userForm.password; setAdmins(updated); addAuditLog('UPDATE_USER', 'user', String((editUser as Record<string, unknown>).id), userForm.fullName, `Updated user: ${userForm.username}`); toast.success(language === 'fr' ? 'Utilisateur mis à jour' : 'User updated'); }
+              else { setAdmins([...admins, userData]); addAuditLog('CREATE_USER', 'user', String(userData.id), userForm.fullName, `Created user: ${userForm.username} (${userForm.role})`); toast.success(language === 'fr' ? 'Utilisateur ajouté' : 'User added'); }
+              setUserDialog(false);
+            }}>{editUser ? <><Save className="h-4 w-4 mr-1" />{t('save', language)}</> : <><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter' : 'Add'}</>}</Button></DialogFooter>
+          </DialogContent></Dialog>
         </TabsContent>
 
         <TabsContent value="audit" className="space-y-4">
