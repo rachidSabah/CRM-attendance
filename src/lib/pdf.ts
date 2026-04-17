@@ -106,8 +106,8 @@ function downloadPdf(doc: jsPDF, filename: string) {
 // ==================== EXPORT FUNCTIONS ====================
 
 export function exportStudentsPDF(students: Student[], classes: Class[], schoolInfo: SchoolInfo) {
-  const { doc } = createDoc({ orientation: 'portrait', title: 'Students List', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'portrait', title: 'Students List', schoolInfo });
+  const { doc } = createDoc({ orientation: 'landscape', title: 'Students List', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'landscape', title: 'Students List', schoolInfo });
 
   const tableData = students.map(s => {
     const cls = classes.find(c => c.id === s.classId);
@@ -149,8 +149,8 @@ export function exportStudentsPDF(students: Student[], classes: Class[], schoolI
 }
 
 export function exportAttendancePDF(records: AttendanceRecord[], students: Student[], classes: Class[], schoolInfo: SchoolInfo, dateFrom?: string, dateTo?: string) {
-  const { doc } = createDoc({ orientation: 'portrait', title: 'Attendance Report', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'portrait', title: 'Attendance Report', schoolInfo });
+  const { doc } = createDoc({ orientation: 'landscape', title: 'Attendance Report', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'landscape', title: 'Attendance Report', schoolInfo });
 
   let filtered = [...records];
   if (dateFrom) filtered = filtered.filter(r => r.date >= dateFrom);
@@ -209,8 +209,8 @@ export function exportAttendancePDF(records: AttendanceRecord[], students: Stude
 }
 
 export function exportGradesPDF(grades: Grade[], students: Student[], modules: Module[], schoolInfo: SchoolInfo) {
-  const { doc } = createDoc({ orientation: 'portrait', title: 'Grades Report', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'portrait', title: 'Grades Report', schoolInfo });
+  const { doc } = createDoc({ orientation: 'landscape', title: 'Grades Report', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'landscape', title: 'Grades Report', schoolInfo });
 
   const tableData = grades.map(g => {
     const s = students.find(st => st.id === g.studentId);
@@ -241,8 +241,8 @@ export function exportGradesPDF(grades: Grade[], students: Student[], modules: M
 }
 
 export function exportBehaviorPDF(records: BehaviorRecord[], students: Student[], schoolInfo: SchoolInfo) {
-  const { doc } = createDoc({ orientation: 'portrait', title: 'Behavior Report', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'portrait', title: 'Behavior Report', schoolInfo });
+  const { doc } = createDoc({ orientation: 'landscape', title: 'Behavior Report', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'landscape', title: 'Behavior Report', schoolInfo });
 
   const tableData = records.map(r => {
     const s = students.find(st => st.id === r.studentId);
@@ -273,8 +273,8 @@ export function exportBehaviorPDF(records: BehaviorRecord[], students: Student[]
 }
 
 export function exportIncidentsPDF(incidents: Incident[], students: Student[], schoolInfo: SchoolInfo) {
-  const { doc } = createDoc({ orientation: 'portrait', title: 'Incidents Report', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'portrait', title: 'Incidents Report', schoolInfo });
+  const { doc } = createDoc({ orientation: 'landscape', title: 'Incidents Report', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'landscape', title: 'Incidents Report', schoolInfo });
 
   const tableData = incidents.map(i => {
     const s = students.find(st => st.id === i.studentId);
@@ -306,8 +306,8 @@ export function exportIncidentsPDF(incidents: Incident[], students: Student[], s
 }
 
 export function exportTasksPDF(tasks: Task[], schoolInfo: SchoolInfo) {
-  const { doc } = createDoc({ orientation: 'portrait', title: 'Tasks Report', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'portrait', title: 'Tasks Report', schoolInfo });
+  const { doc } = createDoc({ orientation: 'landscape', title: 'Tasks Report', schoolInfo });
+  let startY = addHeader(doc, { orientation: 'landscape', title: 'Tasks Report', schoolInfo });
 
   const tableData = tasks.map(t => [
     t.ticketNumber || '-',
@@ -401,8 +401,8 @@ export function exportFullReportPDF(
   },
   schoolInfo: SchoolInfo
 ) {
-  const { doc } = createDoc({ orientation: 'portrait', title: 'Comprehensive School Report', schoolInfo });
-  let yPos = addHeader(doc, { orientation: 'portrait', title: 'Comprehensive School Report', schoolInfo });
+  const { doc } = createDoc({ orientation: 'landscape', title: 'Comprehensive School Report', schoolInfo });
+  let yPos = addHeader(doc, { orientation: 'landscape', title: 'Comprehensive School Report', schoolInfo });
   const pageWidth = doc.internal.pageSize.getWidth();
 
   // ---- OVERVIEW STATS ----
@@ -545,8 +545,8 @@ export function exportSchedulePDF(
   monthLabel: string,
   schoolInfo: SchoolInfo
 ) {
-  // A4 Portrait
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  // A4 Landscape
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
@@ -674,7 +674,7 @@ export function exportAllSchedulesPDF(
   modules: { id: string; name: string }[],
   schoolInfo: SchoolInfo
 ) {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
@@ -794,8 +794,8 @@ export function exportProgressReportPDF(
   language: string = 'en'
 ) {
   const si = schoolInfo as SchoolInfo;
-  const { doc } = createDoc({ orientation: 'portrait', title: language === 'fr' ? 'Bulletin de Progres' : 'Progress Report', schoolInfo: si });
-  let startY = addHeader(doc, { orientation: 'portrait', title: language === 'fr' ? 'Bulletin de Progres' : 'Progress Report', schoolInfo: si });
+  const { doc } = createDoc({ orientation: 'landscape', title: language === 'fr' ? 'Bulletin de Progres' : 'Progress Report', schoolInfo: si });
+  let startY = addHeader(doc, { orientation: 'landscape', title: language === 'fr' ? 'Bulletin de Progres' : 'Progress Report', schoolInfo: si });
 
   if (reports.length === 0) {
     doc.setFontSize(12);
