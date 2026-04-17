@@ -210,24 +210,26 @@ export const useAppStore = create<AppState>((set) => ({
       if (slug) loginData.slug = slug;
       const result = await api.post('/auth/login', loginData);
       if (result && result.success) {
-        setApiToken(result.token);
-        const user: User = {
-          id: result.user.id,
-          username: result.user.username,
-          fullName: result.user.fullName || result.user.username,
-          email: result.user.email,
-          role: result.user.role,
-          tenantId: result.user.tenant_id,
-          is_super_admin: result.user.is_super_admin,
+        const token = result.token as string;
+        const user = result.user as Record<string, unknown>;
+        setApiToken(token);
+        const currentUser: User = {
+          id: String(user.id || ''),
+          username: String(user.username || ''),
+          fullName: String(user.fullName || user.username || ''),
+          email: String(user.email || ''),
+          role: (String(user.role || 'user') as User['role']),
+          tenantId: String(user.tenant_id || ''),
+          is_super_admin: Boolean(user.is_super_admin),
         };
-        if (result.user.is_super_admin) user.role = 'super_admin';
-        set({ currentUser: user, isAuthenticated: true });
+        if (user.is_super_admin) currentUser.role = 'super_admin';
+        set({ currentUser, isAuthenticated: true });
         localStorage.setItem('attendance_auth', JSON.stringify({
-          userId: user.id,
-          userRole: user.role,
-          token: result.token,
-          tenantId: user.tenantId,
-          isSuperAdmin: user.is_super_admin || false,
+          userId: currentUser.id,
+          userRole: currentUser.role,
+          token,
+          tenantId: currentUser.tenantId,
+          isSuperAdmin: currentUser.is_super_admin || false,
         }));
         return true;
       }
@@ -356,9 +358,10 @@ export const useAppStore = create<AppState>((set) => ({
       try {
         const themeRes = await api.get('/settings/theme');
         if (themeRes && themeRes.primaryColor) {
-          set({ primaryColor: themeRes.primaryColor });
-          localStorage.setItem('attendance_primary_color', themeRes.primaryColor);
-          document.documentElement.style.setProperty('--app-primary-color', themeRes.primaryColor);
+          const color = String(themeRes.primaryColor);
+          set({ primaryColor: color });
+          localStorage.setItem('attendance_primary_color', color);
+          document.documentElement.style.setProperty('--app-primary-color', color);
         }
       } catch {}
 

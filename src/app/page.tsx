@@ -845,25 +845,28 @@ function AttendancePage() {
     setOverrides(p => ({ ...p, [sid]: status }));
     if (status === 'absent' || status === 'late') {
       const s = students.find(st => st.id === sid);
-      if (s?.guardianPhone) setTimeout(() => { sendAbsenceWhatsApp(sid); toast.success(`WhatsApp opened for ${s.guardianName || 'guardian'}`); }, 500);
+      if (s?.guardianPhone) setTimeout(() => { sendAbsenceWhatsApp(sid, status); toast.success(`WhatsApp opened for ${s.guardianName || 'guardian'}`); }, 500);
     }
   };
   const handleMarkAll = (status: AttendanceRecord['status']) => {
     const m: Record<string, AttendanceRecord['status']> = {}; filteredStudents.forEach(s => { m[s.id] = status; }); setOverrides(m);
-    if (status === 'absent' || status === 'late') { filteredStudents.filter(s => s.guardianPhone).forEach((s, i) => setTimeout(() => sendAbsenceWhatsApp(s.id), (i + 1) * 1000)); }
+    if (status === 'absent' || status === 'late') { filteredStudents.filter(s => s.guardianPhone).forEach((s, i) => setTimeout(() => sendAbsenceWhatsApp(s.id, status), (i + 1) * 1000)); }
   };
   const handleSave = () => {
     setSaving(true);
+    // Preserve records for students NOT in current filter
+    const filteredStudentIds = new Set(filteredStudents.map(s => s.id));
+    const otherDayRecords = attendance.filter(r => r.date === selectedDate && !filteredStudentIds.has(r.studentId));
     const updated = attendance.filter(r => r.date !== selectedDate);
     const newR: AttendanceRecord[] = [];
     filteredStudents.forEach(s => { const st = localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) updated.push({ ...ex, status: st }); else newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); });
-    setAttendance([...updated, ...newR]); toast.success('Attendance saved!'); setTimeout(() => setSaving(false), 500);
+    setAttendance([...updated, ...otherDayRecords, ...newR]); toast.success('Attendance saved!'); setTimeout(() => setSaving(false), 500);
   };
   const counts = { present: Object.values(localRecords).filter(s => s === 'present').length, absent: Object.values(localRecords).filter(s => s === 'absent').length, late: Object.values(localRecords).filter(s => s === 'late').length, excused: Object.values(localRecords).filter(s => s === 'excused').length, unmarked: filteredStudents.length - Object.keys(localRecords).filter(id => filteredStudents.some(s => s.id === id)).length };
 
-  const sendAbsenceWhatsApp = (sid: string) => {
+  const sendAbsenceWhatsApp = (sid: string, forceStatus?: AttendanceRecord['status']) => {
     const s = students.find(st => st.id === sid); if (!s?.guardianPhone) return;
-    const st = localRecords[sid]; let tmpl = templates.find(t => { const n = t.name.toLowerCase(); if (st === 'late') return n.includes('late'); return n.includes('absence'); });
+    const st = forceStatus || localRecords[sid]; let tmpl = templates.find(t => { const n = t.name.toLowerCase(); if (st === 'late') return n.includes('late'); return n.includes('absence'); });
     if (!tmpl) tmpl = st === 'late' ? { id: '', name: 'Late', category: 'late', content: 'Hello {guardian_name}, {student_name} arrived late today ({date}).', createdAt: '' } : { id: '', name: 'Absence', category: 'absence', content: 'Dear {guardian_name}, {student_name} was marked absent today ({date}). Please contact us.', createdAt: '' };
     const msg = tmpl.content.replace(/{student_name}/g, s.fullName).replace(/{guardian_name}/g, s.guardianName || 'Guardian').replace(/{date}/g, new Date().toLocaleDateString()).replace(/{school_name}/g, schoolInfo?.name || 'School').replace(/{class}/g, classes.find(c => c.id === s.classId)?.name || 'class');
     window.open(`https://wa.me/${formatWhatsAppPhone(s.guardianPhone)}?text=${encodeURIComponent(msg)}`, '_blank');
@@ -874,16 +877,19 @@ function AttendancePage() {
   };
   const handleQuickSave = () => {
     setSaving(true);
+    // Preserve records for students NOT in current filter
+    const filteredStudentIds = new Set(filteredStudents.map(s => s.id));
+    const otherDayRecords = attendance.filter(r => r.date === selectedDate && !filteredStudentIds.has(r.studentId));
     const updated = attendance.filter(r => r.date !== selectedDate);
     const newR: AttendanceRecord[] = [];
     filteredStudents.forEach(s => { const st = quickBulk[s.id] || localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) updated.push({ ...ex, status: st }); else newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); });
-    setAttendance([...updated, ...newR]); toast.success('Attendance saved!'); setQuickBulk({}); setTimeout(() => setSaving(false), 500);
+    setAttendance([...updated, ...otherDayRecords, ...newR]); toast.success('Attendance saved!'); setQuickBulk({}); setTimeout(() => setSaving(false), 500);
   };
 
   const quickCounts = useMemo(() => {
     const src = quickBulk; if (Object.keys(src).length > 0) return { present: Object.values(src).filter(s => s === 'present').length, absent: Object.values(src).filter(s => s === 'absent').length, late: Object.values(src).filter(s => s === 'late').length, excused: Object.values(src).filter(s => s === 'excused').length, unmarked: filteredStudents.length - Object.keys(src).length };
     return counts;
-  }, [quickBulk, filteredStudents]);
+  }, [quickBulk, filteredStudents, counts]);
 
   return (
     <div className="space-y-4">
@@ -1080,7 +1086,7 @@ function SchedulePage() {
 
   // Generate all 24 hour options for From/To time selection
   const TIME_OPTIONS = useMemo(() => {
-    const options = [];
+    const options: { value: string; label: string }[] = [];
     for (let h = 0; h < 24; h++) {
       const hh = `${String(h).padStart(2, '0')}:00`;
       options.push({ value: hh, label: hh });
@@ -1143,10 +1149,10 @@ function SchedulePage() {
       const conflictClass = classes.find(c => c.id === conflicting[0].classId);
       const conflictTeacher = teachers.find(tc => tc.id === conflicting[0].teacherId);
       if (conflicting[0].roomId === roomId) {
-        return `${language === 'fr' ? 'Conflit' : 'Conflict'}: ${conflictClass?.name || language === 'fr' ? 'Autre groupe' : 'Other group'} ${language === 'fr' ? 'a déjà cette salle réservée' : 'already booked this room'} (${roomId}) ${language === 'fr' ? 'à ce créneau' : 'at this time slot'}.`;
+        return `${language === 'fr' ? 'Conflit' : 'Conflict'}: ${conflictClass?.name || (language === 'fr' ? 'Autre groupe' : 'Other group')} ${language === 'fr' ? 'a déjà cette salle réservée' : 'already booked this room'} (${roomId}) ${language === 'fr' ? 'à ce créneau' : 'at this time slot'}.`;
       }
       if (conflicting[0].teacherId === teacherId) {
-        return `${language === 'fr' ? 'Conflit' : 'Conflict'}: ${conflictTeacher?.name || language === 'fr' ? 'Enseignant' : 'Teacher'} ${language === 'fr' ? 'est déjà assigné à' : 'is already assigned to'} ${conflictClass?.name || language === 'fr' ? 'un autre groupe' : 'another group'} ${language === 'fr' ? 'à ce créneau' : 'at this time slot'}.`;
+        return `${language === 'fr' ? 'Conflit' : 'Conflict'}: ${conflictTeacher?.name || (language === 'fr' ? 'Enseignant' : 'Teacher')} ${language === 'fr' ? 'est déjà assigné à' : 'is already assigned to'} ${conflictClass?.name || (language === 'fr' ? 'un autre groupe' : 'another group')} ${language === 'fr' ? 'à ce créneau' : 'at this time slot'}.`;
       }
     }
     return null;
@@ -2640,7 +2646,7 @@ function ProgressReportsSection() {
         <div className="space-y-2"><Label>{t('teacher_comment', language)}</Label><Textarea value={teacherComment} onChange={e => setTeacherComment(e.target.value)} rows={2} placeholder={language === 'fr' ? 'Ajouter un commentaire...' : 'Add a teacher comment...'} /></div>
         <div className="flex gap-2">
           <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => setShowPreview(true)}><Eye className="h-4 w-4 mr-1" />{t('preview_report', language)}</Button>
-          <Button variant="outline" onClick={() => { pdfUtils.exportProgressReportPDF(studentReports, classSummary, schoolInfo || {}, dateRange, teacherComment, language); toast.success(t('report_generated', language)); }}><Download className="h-4 w-4 mr-1" />{t('download_pdf', language)}</Button>
+          <Button variant="outline" onClick={() => { pdfUtils.exportProgressReportPDF(studentReports, classSummary, schoolInfo as unknown as Record<string, string | undefined>, dateRange, teacherComment, language); toast.success(t('report_generated', language)); }}><Download className="h-4 w-4 mr-1" />{t('download_pdf', language)}</Button>
         </div>
       </CardContent></Card>
 
@@ -3584,7 +3590,8 @@ function ExamsPage() {
       const pct = gradingExam.maxScore > 0 ? Math.round((score / gradingExam.maxScore) * 1000) / 10 : 0;
       const existing = updated.find(g => g.examId === gradingExam!.id && g.studentId === s.id);
       if (existing) {
-        Object.assign(existing, { score, maxScore: gradingExam.maxScore, percentage: pct, gradedAt: new Date().toISOString() });
+        const idx = updated.indexOf(existing);
+        updated[idx] = { ...existing, score, maxScore: gradingExam.maxScore, percentage: pct, gradedAt: new Date().toISOString() };
       } else {
         updated.push({ id: genId(), examId: gradingExam!.id, studentId: s.id, score, maxScore: gradingExam.maxScore, percentage: pct, gradedBy: currentUser?.username || '', gradedAt: new Date().toISOString(), createdAt: new Date().toISOString() });
       }
@@ -4120,7 +4127,7 @@ function SuperAdminPage() {
   const activeStudents = students.filter(s => s.status === 'active').length;
   const totalUsers = students.length + teachers.length + employees.length + admins.length;
   const totalDataRecords = students.length + classes.length + modules.length + attendance.length + grades.length + behavior.length + tasks.length + incidents.length;
-  const storageEstimate = typeof navigator !== 'undefined' && navigator.storage?.estimate ? null : null;
+  const storageEstimate = typeof navigator !== 'undefined' && typeof navigator.storage !== 'undefined' && typeof navigator.storage.estimate === 'function' ? true : false;
   const [storageUsed, setStorageUsed] = useState('N/A');
 
   useEffect(() => {
@@ -4586,7 +4593,7 @@ function ImportWizardSection() {
           fullName: r.row[0],
           studentId: r.row[1],
           classId: r.row[2] || '',
-          status: 'active' as const,
+          status: (['active', 'abandoned', 'terminated', 'graduated'].includes((r.row[3] || '').toLowerCase()) ? (r.row[3] || '').toLowerCase() : 'active') as Student['status'],
           guardianName: r.row[4] || '',
           guardianPhone: r.row[5] || '',
           email: r.row[6] || '',
@@ -4601,7 +4608,8 @@ function ImportWizardSection() {
         setStudents([...students, ...newStudents]);
         count = newStudents.length;
       } else if (importType === 'grades') {
-        const newGrades: Grade[] = validRows.map(r => ({
+        const existingGrades = new Set(grades.map(g => `${g.studentId}_${g.moduleId}_${g.date}`));
+        const newGrades: Grade[] = validRows.filter(r => !existingGrades.has(`${r.row[0]}_${r.row[1]}_${r.row[4] || new Date().toISOString().split('T')[0]}`)).map(r => ({
           id: genId(),
           studentId: r.row[0],
           moduleId: r.row[1],
@@ -4613,7 +4621,8 @@ function ImportWizardSection() {
         setGrades([...grades, ...newGrades]);
         count = newGrades.length;
       } else if (importType === 'attendance') {
-        const newAttendance: AttendanceRecord[] = validRows.map(r => ({
+        const existingAtt = new Set(attendance.map(a => `${a.studentId}_${a.date}`));
+        const newAttendance: AttendanceRecord[] = validRows.filter(r => !existingAtt.has(`${r.row[0]}_${r.row[1]}`)).map(r => ({
           id: genId(),
           studentId: r.row[0],
           date: r.row[1],

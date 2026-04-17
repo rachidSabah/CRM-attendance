@@ -234,7 +234,6 @@ const translations: Record<string, Record<string, string>> = {
     no_results_found: 'No results found',
     report: 'Report',
     upload: 'Upload',
-    curriculum_in_progress: 'In Progress',
   },
   fr: {
     dashboard: 'Tableau de bord', students: 'Étudiants', classes: 'Classes',
@@ -471,7 +470,6 @@ const translations: Record<string, Record<string, string>> = {
     no_results_found: 'Aucun résultat trouvé',
     report: 'Rapport',
     upload: 'Télécharger',
-    curriculum_in_progress: 'En Cours',
   },
 };
 
