@@ -40,7 +40,7 @@ import {
   Flame, Award, Zap, Globe, Database, Activity, ToggleLeft, CreditCard, IdCard,
   Palette, HardDrive, ChevronDown, Info, RotateCcw, Archive, Cloud, FolderOpen,
   FileCheck, ListChecks, Target, Smartphone, WifiOff, History, FileUp,
-  AlertOctagon
+  AlertOctagon, Paperclip
 } from 'lucide-react';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
@@ -1929,6 +1929,30 @@ function BehaviorPage() {
 }
 
 // ==================== TASKS PAGE ====================
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function getFileIcon(type: string): string {
+  if (type.includes('pdf')) return '📄';
+  if (type.includes('sheet') || type.includes('excel') || type.includes('csv')) return '📊';
+  if (type.includes('word') || type.includes('document')) return '📝';
+  if (type.includes('image')) return '🖼️';
+  return '📎';
+}
+
 function TasksPage() {
   const { tasks, language, setTasks, currentUser, teachers, employees } = useAppStore();
   const [statusFilter, setStatusFilter] = useState('all');
@@ -1941,6 +1965,8 @@ function TasksPage() {
   const [commentText, setCommentText] = useState('');
   const [sendEmailNotif, setSendEmailNotif] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
+  const [formAttachments, setFormAttachments] = useState<{ name: string; type: string; size: number; dataUrl: string }[]>([]);
+  const [uploadProgress, setUploadProgress] = useState('');
 
   // Build list of assignable people (teachers + employees) with emails for dropdown
   const assigneeList = useMemo(() => {
@@ -1963,6 +1989,87 @@ function TasksPage() {
     }
   };
 
+  // File attachment handling
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB per file
+  const ACCEPTED_TYPES = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/msword',
+    'text/csv',
+    'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+  ];
+  const ACCEPTED_EXTENSIONS = '.pdf,.xlsx,.xls,.docx,.doc,.csv,.png,.jpg,.jpeg,.gif,.webp';
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const newAttachments: { name: string; type: string; size: number; dataUrl: string }[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      // Validate type
+      if (!ACCEPTED_TYPES.includes(file.type) && !ACCEPTED_EXTENSIONS.includes('.' + file.name.split('.').pop()?.toLowerCase())) {
+        toast.error(`${language === 'fr' ? 'Type non supporté' : 'Unsupported type'}: ${file.name}`);
+        continue;
+      }
+
+      // Validate size
+      if (file.size > MAX_FILE_SIZE) {
+        toast.error(`${language === 'fr' ? 'Fichier trop volumineux' : 'File too large'}: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB > 10MB)`);
+        continue;
+      }
+
+      // Check duplicate
+      if (formAttachments.some(a => a.name === file.name && a.size === file.size)) {
+        toast.warning(`${language === 'fr' ? 'Fichier déjà ajouté' : 'File already added'}: ${file.name}`);
+        continue;
+      }
+
+      setUploadProgress(file.name);
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        newAttachments.push({ name: file.name, type: file.type, size: file.size, dataUrl });
+      } catch {
+        toast.error(`${language === 'fr' ? 'Erreur de lecture' : 'Read error'}: ${file.name}`);
+      }
+    }
+
+    if (newAttachments.length > 0) {
+      setFormAttachments(prev => [...prev, ...newAttachments]);
+      toast.success(`${language === 'fr' ? `${newAttachments.length} fichier(s) ajouté(s)` : `${newAttachments.length} file(s) added`}`);
+    }
+    setUploadProgress('');
+    e.target.value = ''; // Reset input
+  };
+
+  const removeFormAttachment = (index: number) => {
+    setFormAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const downloadAttachment = (dataUrl: string, filename: string) => {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const removeTaskAttachment = (taskId: string, index: number) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const updated = [...(task.attachments || [])];
+    updated.splice(index, 1);
+    setTasks(tasks.map(t => t.id === taskId ? { ...t, attachments: updated } : t));
+    if (selectedTask?.id === taskId) {
+      setSelectedTask({ ...selectedTask, attachments: updated });
+    }
+    toast.success(language === 'fr' ? 'Pièce jointe supprimée' : 'Attachment removed');
+  };
+
   const filtered = useMemo(() => {
     let t = [...tasks];
     if (statusFilter !== 'all') t = t.filter(tk => tk.status === statusFilter);
@@ -1974,10 +2081,9 @@ function TasksPage() {
     all: tasks.length, pending: tasks.filter(t => t.status === 'pending').length, in_progress: tasks.filter(t => t.status === 'in_progress').length, completed: tasks.filter(t => t.status === 'completed').length, overdue: tasks.filter(t => t.status === 'overdue').length,
   }), [tasks]);
 
-  const openAdd = () => { setEditTask(null); setForm({ title: '', description: '', assignedTo: '', assignedToEmail: '', priority: 'medium', status: 'pending', category: '', dueDate: '', progress: '0' }); setSendEmailNotif(false); setDialogOpen(true); };
+  const openAdd = () => { setEditTask(null); setForm({ title: '', description: '', assignedTo: '', assignedToEmail: '', priority: 'medium', status: 'pending', category: '', dueDate: '', progress: '0' }); setSendEmailNotif(false); setFormAttachments([]); setDialogOpen(true); };
   const openEdit = (tk: Task) => {
     setEditTask(tk);
-    // Find email from teacher/employee list based on assignedTo name
     const match = assigneeList.find(a => a.name === tk.assignedTo);
     setForm({
       title: tk.title, description: tk.description || '', assignedTo: tk.assignedTo || '',
@@ -1986,6 +2092,10 @@ function TasksPage() {
       dueDate: tk.dueDate || '', progress: String(tk.progress || 0)
     });
     setSendEmailNotif(false);
+    // Load existing attachments as-is (they're stored as JSON strings)
+    setFormAttachments((tk.attachments || []).map((a: string) => {
+      try { return typeof a === 'string' ? JSON.parse(a) : a; } catch { return null; }
+    }).filter(Boolean));
     setDialogOpen(true);
   };
   const openDetail = (tk: Task) => { setSelectedTask(tk); setCommentText(''); setDetailOpen(true); };
@@ -2013,12 +2123,15 @@ function TasksPage() {
       setEmailSending(false);
     }
 
+    // Serialize attachments for storage
+    const serializedAttachments = formAttachments.map(a => JSON.stringify({ name: a.name, type: a.type, size: a.size, dataUrl: a.dataUrl }));
+
     if (editTask) {
-      setTasks(tasks.map(t => t.id === editTask.id ? { ...t, title: form.title, description: form.description, assignedTo: form.assignedTo, assignedToEmail: form.assignedToEmail || undefined, priority: form.priority, status: form.status, category: form.category, dueDate: form.dueDate, progress: Number(form.progress) || 0, completedAt: form.status === 'completed' ? new Date().toISOString() : t.completedAt, emailSent: emailResult?.success || t.emailSent } : t));
+      setTasks(tasks.map(t => t.id === editTask.id ? { ...t, title: form.title, description: form.description, assignedTo: form.assignedTo, assignedToEmail: form.assignedToEmail || undefined, priority: form.priority, status: form.status, category: form.category, dueDate: form.dueDate, progress: Number(form.progress) || 0, completedAt: form.status === 'completed' ? new Date().toISOString() : t.completedAt, emailSent: emailResult?.success || t.emailSent, attachments: serializedAttachments } : t));
       toast.success(language === 'fr' ? 'Tâche mise à jour' : 'Task updated');
     } else {
       ticket = 'TK-' + genId().substring(0, 6).toUpperCase();
-      setTasks([...tasks, { id: genId(), title: form.title, description: form.description, assignedTo: form.assignedTo, assignedToEmail: form.assignedToEmail || undefined, assignedBy: currentUser?.fullName, priority: form.priority, status: form.status, category: form.category, dueDate: form.dueDate, progress: Number(form.progress) || 0, ticketNumber: ticket, comments: [], emailSent: emailResult?.success || false, createdAt: new Date().toISOString() }]);
+      setTasks([...tasks, { id: genId(), title: form.title, description: form.description, assignedTo: form.assignedTo, assignedToEmail: form.assignedToEmail || undefined, assignedBy: currentUser?.fullName, priority: form.priority, status: form.status, category: form.category, dueDate: form.dueDate, progress: Number(form.progress) || 0, ticketNumber: ticket, comments: [], emailSent: emailResult?.success || false, attachments: serializedAttachments, createdAt: new Date().toISOString() }]);
       toast.success(language === 'fr' ? 'Tâche créée' : 'Task created');
     }
     setDialogOpen(false);
@@ -2076,6 +2189,7 @@ function TasksPage() {
                       {tk.dueDate && <span>📅 {tk.dueDate}</span>}
                       {tk.comments && tk.comments.length > 0 && <span>💬 {tk.comments.length}</span>}
                       {tk.emailSent && <span className="text-emerald-600 flex items-center gap-0.5" title={language === 'fr' ? 'Email envoyé' : 'Email sent'}><Mail className="h-3 w-3" />✓</span>}
+                      {tk.attachments && tk.attachments.length > 0 && <span className="text-blue-600 flex items-center gap-0.5" title={`${tk.attachments.length} ${language === 'fr' ? 'pièce(s) jointe(s)' : 'attachment(s)'}`}><Paperclip className="h-3 w-3" />{tk.attachments.length}</span>}
                     </div>
                     {(tk.progress || 0) > 0 && <div className="mt-2"><Progress value={tk.progress || 0} className="h-1.5" /></div>}
                   </div>
@@ -2102,6 +2216,34 @@ function TasksPage() {
               <div><span className="text-muted-foreground">{language === 'fr' ? 'Progression' : 'Progress'}:</span> <span className="font-medium ml-1">{selectedTask.progress || 0}%</span></div>
             </div>
             {(selectedTask.progress || 0) > 0 && <Progress value={selectedTask.progress || 0} />}
+            {/* Attachments */}
+            {selectedTask.attachments && selectedTask.attachments.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Paperclip className="h-4 w-4" />{language === 'fr' ? 'Pièces jointes' : 'Attachments'} ({selectedTask.attachments.length})</h4>
+                <div className="space-y-1.5">
+                  {selectedTask.attachments.map((a, idx) => {
+                    let parsed: { name: string; type: string; size: number; dataUrl: string } | null = null;
+                    try { parsed = typeof a === 'string' ? JSON.parse(a) : a; } catch { parsed = null; }
+                    if (!parsed) return null;
+                    return (
+                      <div key={idx} className="flex items-center justify-between gap-2 rounded-lg bg-muted/50 p-2.5 group">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span className="text-lg shrink-0">{getFileIcon(parsed.type)}</span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{parsed.name}</p>
+                            <p className="text-[10px] text-muted-foreground">{formatFileSize(parsed.size)}</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-1 shrink-0 opacity-70 group-hover:opacity-100 transition-opacity">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => downloadAttachment(parsed!.dataUrl, parsed!.name)}><FileDown className="h-3.5 w-3.5" /></Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => removeTaskAttachment(selectedTask.id, idx)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <Separator />
             <div>
               <h4 className="text-sm font-semibold mb-2">{t('comments', language)} ({selectedTask.comments?.length || 0})</h4>
@@ -2171,6 +2313,36 @@ function TasksPage() {
             <div className="space-y-2"><Label>{language === 'fr' ? 'Progression' : 'Progress'} %</Label><Input type="number" min="0" max="100" value={form.progress} onChange={e => setForm({ ...form, progress: e.target.value })} /></div>
           </div>
           <div className="space-y-2"><Label>{language === 'fr' ? 'Échéance' : 'Due Date'}</Label><Input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} /></div>
+          {/* Attachments upload section */}
+          <div className="rounded-lg border p-3 space-y-3 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium flex items-center gap-1.5"><Paperclip className="h-4 w-4" />{language === 'fr' ? 'Pièces jointes' : 'Attachments'}</Label>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => document.getElementById('task-attachment-input')?.click()}>
+                <Upload className="h-3.5 w-3.5 mr-1" />{language === 'fr' ? 'Ajouter' : 'Add'}
+              </Button>
+              <input id="task-attachment-input" type="file" multiple className="hidden" accept={ACCEPTED_EXTENSIONS} onChange={handleFileUpload} />
+            </div>
+            {uploadProgress && <p className="text-xs text-muted-foreground flex items-center gap-1"><RefreshCw className="h-3 w-3 animate-spin" />{language === 'fr' ? 'Lecture de' : 'Reading'} {uploadProgress}...</p>}
+            {formAttachments.length === 0 && !uploadProgress ? (
+              <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Aucune pièce jointe. Cliquez sur Ajouter pour joindre des fichiers.' : 'No attachments. Click Add to attach files.'}</p>
+            ) : (
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {formAttachments.map((att, idx) => (
+                  <div key={idx} className="flex items-center justify-between gap-2 rounded bg-background border p-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="text-base shrink-0">{getFileIcon(att.type)}</span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate">{att.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{formatFileSize(att.size)}</p>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-red-500" onClick={() => removeFormAttachment(idx)}><X className="h-3 w-3" /></Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[10px] text-muted-foreground">{language === 'fr' ? 'Formats acceptés : PDF, Excel, Word, CSV, Images — Max 10 Mo par fichier' : 'Accepted formats: PDF, Excel, Word, CSV, Images — Max 10MB per file'}</p>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button>
