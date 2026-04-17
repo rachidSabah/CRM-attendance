@@ -545,8 +545,8 @@ export function exportSchedulePDF(
   monthLabel: string,
   schoolInfo: SchoolInfo
 ) {
-  // A4 Landscape
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  // A4 Portrait
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
@@ -568,35 +568,33 @@ export function exportSchedulePDF(
       } else {
         imgData = logoStr;
       }
-      doc.addImage(imgData, imgFormat, 14, yPos, 15, 15);
+      doc.addImage(imgData, imgFormat, 14, yPos, 12, 12);
     } catch {}
   }
-  const textX = schoolInfo.logo ? 32 : 14;
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text(schoolInfo.name || 'INFOHAS', textX, yPos + 6);
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  if (schoolInfo.field) {
-    doc.text(schoolInfo.field, textX, yPos + 12);
-  }
+  const textX = schoolInfo.logo ? 28 : 14;
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.text(`Schedule - ${targetClass.name}`, pageWidth - 14, yPos + 6, { align: 'right' });
+  doc.text(schoolInfo.name || 'INFOHAS', textX, yPos + 5);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text(monthLabel, pageWidth - 14, yPos + 12, { align: 'right' });
-  yPos = 28;
+  if (schoolInfo.field) {
+    doc.text(schoolInfo.field, textX, yPos + 10);
+  }
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Schedule - ${targetClass.name}`, pageWidth - 14, yPos + 5, { align: 'right' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.text(monthLabel, pageWidth - 14, yPos + 10, { align: 'right' });
+  yPos = 24;
   doc.setDrawColor(200, 200, 200);
   doc.setLineWidth(0.3);
   doc.line(14, yPos, pageWidth - 14, yPos);
-  yPos += 4;
+  yPos += 3;
 
   // ---- GROUP SCHEDULE DATA BY DATE ----
   const sorted = [...scheduleEntries].sort((a, b) => a.date.localeCompare(b.date));
 
-  // Group entries by week (Mon-Sun) to fit A4 portrait vertically
-  // Each day row will show: Date | Time | Teacher | Room | Module
   const tableHead = [['Date', 'Time', 'Teacher', 'Room', 'Module']];
   const tableBody = sorted.map(entry => {
     const teacher = teachers.find(tc => tc.id === entry.teacherId);
@@ -617,28 +615,27 @@ export function exportSchedulePDF(
     doc.setFontSize(10);
     doc.text('No schedule entries for this period.', 14, yPos + 10);
   } else {
-    // Calculate optimal font size based on number of rows to fit vertically
-    // A4 portrait usable height from yPos(32) to footer(282) = ~250mm
-    // header row ~8mm, each body row ~6-7mm
-    const availableHeight = pageHeight - yPos - 20; // 20mm for footer
-    const estimatedRowHeight = 6.5;
+    // Calculate optimal font size to fit all rows on one page in portrait
+    // A4 portrait: usable width ~182mm, usable height from yPos(27) to footer(282) = ~255mm
+    const availableHeight = pageHeight - yPos - 20;
+    const estimatedRowHeight = 5.5;
     const maxRowsPerPage = Math.floor(availableHeight / estimatedRowHeight);
-    const fontSize = tableBody.length > maxRowsPerPage * 3 ? 6 : tableBody.length > maxRowsPerPage ? 6.5 : 7;
+    const fontSize = tableBody.length > maxRowsPerPage * 2 ? 5 : tableBody.length > maxRowsPerPage ? 5.5 : 6;
 
     autoTable(doc, {
       startY: yPos,
       head: tableHead,
       body: tableBody,
       theme: 'grid',
-      headStyles: { fillColor: [16, 185, 129], fontSize: 7.5, fontStyle: 'bold', halign: 'center' },
-      bodyStyles: { fontSize: fontSize, valign: 'middle' },
+      headStyles: { fillColor: [16, 185, 129], fontSize: 6.5, fontStyle: 'bold', halign: 'center', cellPadding: 1.5 },
+      bodyStyles: { fontSize: fontSize, valign: 'middle', cellPadding: 1.2 },
       alternateRowStyles: { fillColor: [245, 247, 250] },
-      margin: { left: 14, right: 14 },
+      margin: { left: 12, right: 12 },
       columnStyles: {
-        0: { cellWidth: 30 },
-        1: { cellWidth: 28, halign: 'center' },
+        0: { cellWidth: 28 },
+        1: { cellWidth: 20, halign: 'center' },
         2: { cellWidth: 35 },
-        3: { cellWidth: 25, halign: 'center' },
+        3: { cellWidth: 18, halign: 'center' },
         4: { cellWidth: 'auto' },
       },
       didDrawPage: (data) => {
@@ -646,7 +643,7 @@ export function exportSchedulePDF(
         const pg = doc.getNumberOfPages();
         const ph = doc.internal.pageSize.getHeight();
         const pw = doc.internal.pageSize.getWidth();
-        doc.setFontSize(7);
+        doc.setFontSize(6);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(150, 150, 150);
         const footerParts = [

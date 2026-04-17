@@ -2170,6 +2170,7 @@ function MessagingPage() {
   const [templateName, setTemplateName] = useState('');
   const [templateCategory, setTemplateCategory] = useState('');
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
 
   const filteredStudents = useMemo(() => {
     let s = [...students].filter(st => st.status === 'active');
@@ -2208,11 +2209,25 @@ function MessagingPage() {
     phones.forEach((p, i) => { setTimeout(() => sendWhatsApp(p, message), i * 500); });
   };
 
+  const openEditTemplate = (tp: typeof templates[0]) => {
+    setEditingTemplateId(tp.id);
+    setTemplateName(tp.name);
+    setTemplateCategory(tp.category || '');
+    setMessage(tp.content);
+    setSaveDialogOpen(true);
+  };
+
   const handleSaveTemplate = () => {
     if (!templateName || !message) return;
-    setTemplates([...templates, { id: genId(), name: templateName, content: message, category: templateCategory || 'general', createdAt: new Date().toISOString() }]);
+    if (editingTemplateId) {
+      setTemplates(templates.map(tp => tp.id === editingTemplateId ? { ...tp, name: templateName, content: message, category: templateCategory || 'general' } : tp));
+      toast.success(language === 'fr' ? 'Modèle mis à jour' : 'Template updated');
+    } else {
+      setTemplates([...templates, { id: genId(), name: templateName, content: message, category: templateCategory || 'general', createdAt: new Date().toISOString() }]);
+      toast.success(language === 'fr' ? 'Modèle sauvegardé' : 'Template saved');
+    }
+    setEditingTemplateId(null);
     setSaveDialogOpen(false);
-    toast.success(language === 'fr' ? 'Modèle sauvegardé' : 'Template saved');
   };
 
   const applyTemplate = (content: string) => { setMessage(content); setMode('individual'); };
@@ -2238,12 +2253,12 @@ function MessagingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {templates.map(tp => (
               <Card key={tp.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => applyTemplate(tp.content)}>
-                <CardContent className="p-4"><div className="flex items-start justify-between"><div><h4 className="font-semibold text-sm">{tp.name}</h4>{tp.category && <Badge variant="outline" className="mt-1 text-xs">{tp.category}</Badge>}<p className="text-sm text-muted-foreground mt-2 line-clamp-3">{tp.content}</p></div><Button variant="ghost" size="sm" className="shrink-0"><Send className="h-4 w-4" /></Button></div></CardContent>
+                <CardContent className="p-4"><div className="flex items-start justify-between"><div><h4 className="font-semibold text-sm">{tp.name}</h4>{tp.category && <Badge variant="outline" className="mt-1 text-xs">{tp.category}</Badge>}<p className="text-sm text-muted-foreground mt-2 line-clamp-3">{tp.content}</p></div><div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditTemplate(tp)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyTemplate(tp.content)}><Send className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => { setTemplates(templates.filter(t => t.id !== tp.id)); toast.success(language === 'fr' ? 'Modèle supprimé' : 'Template deleted'); }}><Trash2 className="h-3.5 w-3.5" /></Button></div></div></CardContent>
               </Card>
             ))}
           </div>
           {templates.length === 0 && <EmptyState message={language === 'fr' ? 'Aucun modèle sauvegardé' : 'No saved templates'} />}
-          <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}><DialogContent><DialogHeader><DialogTitle>{language === 'fr' ? 'Sauvegarder comme modèle' : 'Save as Template'}</DialogTitle></DialogHeader>
+          <Dialog open={saveDialogOpen} onOpenChange={(open) => { if (!open) { setSaveDialogOpen(false); setEditingTemplateId(null); } else { setSaveDialogOpen(true); } }}><DialogContent><DialogHeader><DialogTitle>{editingTemplateId ? (language === 'fr' ? 'Modifier le modèle' : 'Edit Template') : (language === 'fr' ? 'Sauvegarder comme modèle' : 'Save as Template')}</DialogTitle></DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="space-y-2"><Label>{language === 'fr' ? 'Nom du modèle' : 'Template Name'}</Label><Input value={templateName} onChange={e => setTemplateName(e.target.value)} /></div>
               <div className="space-y-2"><Label>{language === 'fr' ? 'Catégorie' : 'Category'}</Label><Input value={templateCategory} onChange={e => setTemplateCategory(e.target.value)} placeholder="general, absence, ..." /></div>
