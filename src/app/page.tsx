@@ -2477,6 +2477,8 @@ function ProgressReportsSection() {
 
 // ==================== SETTINGS PAGE ====================
 function SettingsPage() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
   const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser, setStudents, setClasses, setModules, setAttendance, setGrades, setBehavior, setTasks, setIncidents, setTemplates, primaryColor, setPrimaryColor, schedules, setSchedules, exams, setExams, examGrades, setExamGrades, curriculum, setCurriculum, savedSchedules, setSavedSchedules, addAuditLog } = useAppStore();
   const [activeTab, setActiveTab] = useState('general');
 
@@ -2603,6 +2605,7 @@ function SettingsPage() {
 
   // Auto-backup effect
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     localStorage.setItem('attendance_auto_backup', String(autoBackupEnabled));
     localStorage.setItem('attendance_backup_freq', backupFrequency);
   }, [autoBackupEnabled, backupFrequency]);
@@ -2950,6 +2953,10 @@ function SettingsPage() {
     { label: t('teachers_management', language), count: teachers.length },
     { label: t('employees_management', language), count: employees.length },
   ];
+
+  if (!mounted) {
+    return <div className="space-y-4 p-6"><Skeleton className="h-10 w-full" /><Skeleton className="h-64 w-full" /><Skeleton className="h-48 w-full" /></div>;
+  }
 
   return (
     <div className="space-y-4">
