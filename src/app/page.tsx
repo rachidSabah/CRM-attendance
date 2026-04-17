@@ -9,7 +9,7 @@ import { t } from '@/lib/i18n';
 import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
 import * as pdfUtils from '@/lib/pdf';
-import { sendTaskAssignmentEmail, saveBrevoConfig, loadBrevoConfig } from '@/lib/email';
+import { sendTaskAssignmentEmail, saveBrevoConfig, loadBrevoConfig, sendEmail } from '@/lib/email';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,26 +47,26 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Respo
 
 const CHART_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899'];
 
-type NavItem = { id: PageName; labelKey: string; icon: React.ReactNode; superAdminOnly?: boolean; };
+type NavItem = { id: PageName; labelKey: string; icon: React.ReactNode; superAdminOnly?: boolean; allowedRoles?: User['role'][]; };
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard', labelKey: 'dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
-  { id: 'students', labelKey: 'students', icon: <Users className="h-5 w-5" /> },
-  { id: 'classes', labelKey: 'classes', icon: <GraduationCap className="h-5 w-5" /> },
-  { id: 'modules', labelKey: 'modules', icon: <BookOpen className="h-5 w-5" /> },
-  { id: 'attendance', labelKey: 'attendance', icon: <ClipboardCheck className="h-5 w-5" /> },
-  { id: 'calendar', labelKey: 'calendar', icon: <Calendar className="h-5 w-5" /> },
-  { id: 'schedule', labelKey: 'schedule', icon: <Clock className="h-5 w-5" /> },
-  { id: 'grades', labelKey: 'grades', icon: <FileText className="h-5 w-5" /> },
-  { id: 'behavior', labelKey: 'behavior', icon: <SmilePlus className="h-5 w-5" /> },
-  { id: 'tasks', labelKey: 'tasks', icon: <ListTodo className="h-5 w-5" /> },
-  { id: 'incidents', labelKey: 'incidents', icon: <AlertTriangle className="h-5 w-5" /> },
-  { id: 'messaging', labelKey: 'messaging', icon: <MessageSquare className="h-5 w-5" /> },
-  { id: 'exams', labelKey: 'exams', icon: <FileCheck className="h-5 w-5" /> },
-  { id: 'curriculum', labelKey: 'curriculum', icon: <ListChecks className="h-5 w-5" /> },
-  { id: 'reports', labelKey: 'reports', icon: <BarChart3 className="h-5 w-5" /> },
-  { id: 'settings', labelKey: 'settings', icon: <Settings className="h-5 w-5" /> },
-  { id: 'superadmin', labelKey: 'super_admin', icon: <Shield className="h-5 w-5" />, superAdminOnly: true },
+  { id: 'dashboard', labelKey: 'dashboard', icon: <LayoutDashboard className="h-5 w-5" />, allowedRoles: ['admin', 'teacher', 'employee', 'super_admin'] },
+  { id: 'students', labelKey: 'students', icon: <Users className="h-5 w-5" />, allowedRoles: ['admin', 'teacher', 'super_admin'] },
+  { id: 'classes', labelKey: 'classes', icon: <GraduationCap className="h-5 w-5" />, allowedRoles: ['admin', 'super_admin'] },
+  { id: 'modules', labelKey: 'modules', icon: <BookOpen className="h-5 w-5" />, allowedRoles: ['admin', 'super_admin'] },
+  { id: 'attendance', labelKey: 'attendance', icon: <ClipboardCheck className="h-5 w-5" />, allowedRoles: ['admin', 'teacher', 'super_admin'] },
+  { id: 'calendar', labelKey: 'calendar', icon: <Calendar className="h-5 w-5" />, allowedRoles: ['admin', 'teacher', 'employee', 'super_admin'] },
+  { id: 'schedule', labelKey: 'schedule', icon: <Clock className="h-5 w-5" />, allowedRoles: ['admin', 'teacher', 'super_admin'] },
+  { id: 'grades', labelKey: 'grades', icon: <FileText className="h-5 w-5" />, allowedRoles: ['admin', 'teacher', 'super_admin'] },
+  { id: 'behavior', labelKey: 'behavior', icon: <SmilePlus className="h-5 w-5" />, allowedRoles: ['admin', 'teacher', 'super_admin'] },
+  { id: 'tasks', labelKey: 'tasks', icon: <ListTodo className="h-5 w-5" />, allowedRoles: ['admin', 'teacher', 'employee', 'super_admin'] },
+  { id: 'incidents', labelKey: 'incidents', icon: <AlertTriangle className="h-5 w-5" />, allowedRoles: ['admin', 'super_admin'] },
+  { id: 'messaging', labelKey: 'messaging', icon: <MessageSquare className="h-5 w-5" />, allowedRoles: ['admin', 'super_admin'] },
+  { id: 'exams', labelKey: 'exams', icon: <FileCheck className="h-5 w-5" />, allowedRoles: ['admin', 'teacher', 'super_admin'] },
+  { id: 'curriculum', labelKey: 'curriculum', icon: <ListChecks className="h-5 w-5" />, allowedRoles: ['admin', 'super_admin'] },
+  { id: 'reports', labelKey: 'reports', icon: <BarChart3 className="h-5 w-5" />, allowedRoles: ['admin', 'teacher', 'super_admin'] },
+  { id: 'settings', labelKey: 'settings', icon: <Settings className="h-5 w-5" />, allowedRoles: ['admin', 'super_admin'] },
+  { id: 'superadmin', labelKey: 'super_admin', icon: <Shield className="h-5 w-5" />, superAdminOnly: true, allowedRoles: ['super_admin'] },
 ];
 
 const STATUS_COLORS: Record<string, string> = {
@@ -472,7 +472,11 @@ function LoginScreen() {
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { currentUser, currentPage, setCurrentPage, logout, language } = useAppStore();
   const schoolInfo = useAppStore(s => s.schoolInfo);
-  const filteredNav = NAV_ITEMS.filter(item => !item.superAdminOnly || currentUser?.role === 'super_admin');
+  const filteredNav = NAV_ITEMS.filter(item => {
+    if (item.superAdminOnly && currentUser?.role !== 'super_admin') return false;
+    if (item.allowedRoles && currentUser?.role && !item.allowedRoles.includes(currentUser.role)) return false;
+    return true;
+  });
   const roleLabel = currentUser?.role === 'super_admin' ? 'SUPER_ADMIN' : currentUser?.role === 'admin' ? 'ADMIN' : currentUser?.role === 'teacher' ? 'TEACHER' : 'EMPLOYEE';
 
   return (
@@ -563,7 +567,7 @@ function Header({ onMenuClick, onExportClick }: { onMenuClick: () => void; onExp
 
 // ==================== DASHBOARD PAGE ====================
 function DashboardPage() {
-  const { students, classes, attendance, language, setCurrentPage } = useAppStore();
+  const { students, classes, attendance, language, setCurrentPage, tasks, grades } = useAppStore();
   const [loading, setLoading] = useState(true);
   useEffect(() => { const t = setTimeout(() => setLoading(false), 500); return () => clearTimeout(t); }, []);
 
@@ -578,6 +582,57 @@ function DashboardPage() {
     for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const ds = d.toISOString().split('T')[0]; const dr = attendance.filter(r => r.date === ds); days.push({ date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'short' }), present: dr.filter(r => r.status === 'present').length, absent: dr.filter(r => r.status === 'absent').length, late: dr.filter(r => r.status === 'late').length }); }
     return days;
   }, [attendance, language]);
+
+  // 30-day attendance trend line chart
+  const last30Days = useMemo(() => {
+    const days: Array<{ date: string; rate: number }> = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const ds = d.toISOString().split('T')[0];
+      const dr = attendance.filter(r => r.date === ds);
+      const rate = dr.length > 0 ? Math.round((dr.filter(r => r.status === 'present').length / dr.length) * 100) : 0;
+      days.push({ date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { month: 'short', day: 'numeric' }), rate });
+    }
+    return days;
+  }, [attendance, language]);
+
+  // Task summary
+  const taskSummary = useMemo(() => ({
+    pending: tasks.filter(t => t.status === 'pending').length,
+    in_progress: tasks.filter(t => t.status === 'in_progress').length,
+    completed: tasks.filter(t => t.status === 'completed').length,
+    overdue: tasks.filter(t => t.status === 'overdue').length,
+  }), [tasks]);
+
+  // Recent tasks (last 5)
+  const recentTasks = useMemo(() => [...tasks].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 5), [tasks]);
+
+  // Class enrollment pie chart
+  const classEnrollment = useMemo(() => {
+    return classes.map(c => ({
+      name: c.name,
+      value: students.filter(s => s.classId === c.id && s.status === 'active').length,
+    })).filter(d => d.value > 0);
+  }, [classes, students]);
+
+  // Grade distribution
+  const gradeDistribution = useMemo(() => {
+    const ranges = [
+      { range: '0-10', min: 0, max: 10 },
+      { range: '10-12', min: 10, max: 12 },
+      { range: '12-14', min: 12, max: 14 },
+      { range: '14-16', min: 14, max: 16 },
+      { range: '16-20', min: 16, max: 20 },
+    ];
+    return ranges.map(r => ({
+      range: r.range,
+      count: grades.filter(g => {
+        if (g.percentage == null) return false;
+        const pct = g.percentage as number;
+        return pct >= r.min && pct < (r.range === '16-20' ? 21 : r.max);
+      }).length,
+    }));
+  }, [grades]);
 
   const pieData = [{ name: t('present', language), value: presentCount, color: '#10b981' }, { name: t('absent', language), value: absentCount, color: '#ef4444' }, { name: t('late', language), value: lateCount, color: '#f59e0b' }].filter(d => d.value > 0);
   const recentRecords = attendance.slice(-10).reverse();
@@ -601,17 +656,72 @@ function DashboardPage() {
           {[{ label: t('add_student', language), icon: <UserPlus className="h-5 w-5" />, page: 'students' as PageName }, { label: t('mark_attendance', language), icon: <ClipboardCheck className="h-5 w-5" />, page: 'attendance' as PageName }, { label: t('today_report', language), icon: <FileText className="h-5 w-5" />, page: 'reports' as PageName }, { label: t('view_calendar', language), icon: <Calendar className="h-5 w-5" />, page: 'calendar' as PageName }].map((a, i) => <Button key={i} variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setCurrentPage(a.page)}>{a.icon}<span className="text-xs">{a.label}</span></Button>)}
         </div>
       </CardContent></Card>
+
+      {/* Task Summary + Recent Tasks */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        <Card className="border-0 shadow-sm"><CardHeader className="pb-3"><CardTitle className="text-base">{t('tasks', language)} — {language === 'fr' ? 'Résumé' : 'Summary'}</CardTitle></CardHeader><CardContent>
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              { label: t('pending', language), val: taskSummary.pending, color: 'text-gray-600 bg-gray-100 dark:bg-gray-900/30' },
+              { label: t('in_progress', language), val: taskSummary.in_progress, color: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30' },
+              { label: t('completed', language), val: taskSummary.completed, color: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30' },
+              { label: t('overdue', language), val: taskSummary.overdue, color: 'text-red-600 bg-red-100 dark:bg-red-900/30' },
+            ].map((s, i) => (
+              <div key={i} className={`rounded-lg p-3 text-center ${s.color}`}><p className="text-xl font-bold">{s.val}</p><p className="text-[10px] opacity-70">{s.label}</p></div>
+            ))}
+          </div>
+          {recentTasks.length > 0 && (
+            <div className="mt-4 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground">{language === 'fr' ? 'Tâches récentes' : 'Recent Tasks'}</p>
+              {recentTasks.map(tk => (
+                <div key={tk.id} className="flex items-center gap-2 text-sm p-1.5 rounded hover:bg-muted/50">
+                  <StatusBadge status={tk.priority} />
+                  <span className="flex-1 truncate">{tk.title}</span>
+                  <StatusBadge status={tk.status} />
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent></Card>
+
+        {/* Class Enrollment Pie Chart */}
+        <Card className="border-0 shadow-sm"><CardHeader className="pb-3"><CardTitle className="text-base">{language === 'fr' ? 'Inscription par Classe' : 'Class Enrollment'}</CardTitle></CardHeader><CardContent>
+          <div className="h-64">
+            {classEnrollment.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart><Pie data={classEnrollment} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>{classEnrollment.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}</Pie><ReTooltip /></PieChart>
+              </ResponsiveContainer>
+            ) : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>}
+          </div>
+        </CardContent></Card>
+      </div>
+
+      {/* 30-day Attendance Trend Line Chart */}
+      <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-base">{language === 'fr' ? 'Tendance de présence (30 jours)' : 'Attendance Trend (30 days)'}</CardTitle></CardHeader><CardContent>
+        <div className="h-64"><ResponsiveContainer width="100%" height="100%"><LineChart data={last30Days}><CartesianGrid strokeDasharray="3 3" className="opacity-30" /><XAxis dataKey="date" tick={{ fontSize: 10 }} interval={4} /><YAxis tick={{ fontSize: 12 }} domain={[0, 100]} unit="%" /><ReTooltip /><Line type="monotone" dataKey="rate" stroke="#10b981" strokeWidth={2} dot={false} name={language === 'fr' ? 'Taux de présence' : 'Attendance Rate'} /></LineChart></ResponsiveContainer></div>
+      </CardContent></Card>
+
       <div className="grid lg:grid-cols-2 gap-6">
         <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-base">{language === 'fr' ? 'Présence (7 jours)' : 'Attendance (7 days)'}</CardTitle></CardHeader><CardContent><div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={last7Days}><CartesianGrid strokeDasharray="3 3" className="opacity-30" /><XAxis dataKey="date" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} /><ReTooltip /><Legend /><Bar dataKey="present" fill="#10b981" name={t('present', language)} radius={[4, 4, 0, 0]} /><Bar dataKey="absent" fill="#ef4444" name={t('absent', language)} radius={[4, 4, 0, 0]} /><Bar dataKey="late" fill="#f59e0b" name={t('late', language)} radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></CardContent></Card>
-        <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-base">{language === 'fr' ? "Distribution d'Aujourd'hui" : "Today's Distribution"}</CardTitle></CardHeader><CardContent><div className="h-64">{pieData.length > 0 ? <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>{pieData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}</Pie><ReTooltip /></PieChart></ResponsiveContainer> : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>}</div></CardContent></Card>
+
+        {/* Grade Distribution Bar Chart */}
+        <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-base">{language === 'fr' ? 'Distribution des Notes' : 'Grade Distribution'}</CardTitle></CardHeader><CardContent>
+          <div className="h-64">{grades.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%"><BarChart data={gradeDistribution}><CartesianGrid strokeDasharray="3 3" className="opacity-30" /><XAxis dataKey="range" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} /><ReTooltip /><Bar dataKey="count" fill="#8b5cf6" name={language === 'fr' ? 'Étudiants' : 'Students'} radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>
+          ) : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>}</div>
+        </CardContent></Card>
       </div>
-      <Card className="border-0 shadow-sm"><CardHeader className="pb-3"><CardTitle className="text-base">{t('recent_activity', language)}</CardTitle></CardHeader><CardContent>
-        {recentRecords.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
-          <div className="max-h-96 overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow><TableHead>{t('students', language)}</TableHead><TableHead>{t('calendar', language)}</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
-            {recentRecords.map(r => { const s = students.find(st => st.id === r.studentId); return <TableRow key={r.id}><TableCell className="font-medium">{s?.fullName || 'Unknown'}</TableCell><TableCell>{r.date}</TableCell><TableCell><StatusBadge status={r.status} /></TableCell></TableRow>; })}
-          </TableBody></Table></div>
-        )}
-      </CardContent></Card>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-base">{language === "fr" ? "Distribution d'Aujourd'hui" : "Today's Distribution"}</CardTitle></CardHeader><CardContent><div className="h-64">{pieData.length > 0 ? <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>{pieData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}</Pie><ReTooltip /></PieChart></ResponsiveContainer> : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>}</div></CardContent></Card>
+        <Card className="border-0 shadow-sm"><CardHeader className="pb-3"><CardTitle className="text-base">{t('recent_activity', language)}</CardTitle></CardHeader><CardContent>
+          {recentRecords.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+            <div className="max-h-64 overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow><TableHead>{t('students', language)}</TableHead><TableHead>{t('calendar', language)}</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+              {recentRecords.map(r => { const s = students.find(st => st.id === r.studentId); return <TableRow key={r.id}><TableCell className="font-medium">{s?.fullName || 'Unknown'}</TableCell><TableCell>{r.date}</TableCell><TableCell><StatusBadge status={r.status} /></TableCell></TableRow>; })}
+            </TableBody></Table></div>
+          )}
+        </CardContent></Card>
+      </div>
     </div>
   );
 }
@@ -625,7 +735,7 @@ function StudentsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [profileStudent, setProfileStudent] = useState<Student | null>(null);
-  const [form, setForm] = useState({ fullName: '', studentId: '', classId: '', status: 'active' as Student['status'], guardianName: '', guardianPhone: '', phone: '', email: '', address: '', notes: '', group: '', photo: '' as string });
+  const [form, setForm] = useState({ fullName: '', studentId: '', classId: '', status: 'active' as Student['status'], guardianName: '', guardianPhone: '', guardianEmail: '', phone: '', email: '', address: '', notes: '', group: '', photo: '' as string });
   const [sortBy, setSortBy] = useState('name_asc');
   const [multiSelect, setMultiSelect] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -636,8 +746,8 @@ function StudentsPage() {
     return ms && (classFilter === 'all' || s.classId === classFilter) && (statusFilter === 'all' || s.status === statusFilter);
   }).sort((a, b) => { if (sortBy === 'name_asc') return a.fullName.localeCompare(b.fullName); if (sortBy === 'name_desc') return b.fullName.localeCompare(a.fullName); if (sortBy === 'id') return a.studentId.localeCompare(b.studentId); if (sortBy === 'date') return (b.createdAt || '').localeCompare(a.createdAt || ''); return 0; });
 
-  const openAdd = () => { setEditing(null); setForm({ fullName: '', studentId: '', classId: '', status: 'active', guardianName: '', guardianPhone: '', phone: '', email: '', address: '', notes: '', group: '', photo: '' }); setDialogOpen(true); };
-  const openEdit = (s: Student) => { setEditing(s); setForm({ fullName: s.fullName, studentId: s.studentId, classId: s.classId, status: s.status, guardianName: s.guardianName || '', guardianPhone: s.guardianPhone || '', phone: s.phone || '', email: s.email || '', address: s.address || '', notes: s.notes || '', group: s.group || '', photo: s.photo || '' }); setDialogOpen(true); };
+  const openAdd = () => { setEditing(null); setForm({ fullName: '', studentId: '', classId: '', status: 'active', guardianName: '', guardianPhone: '', guardianEmail: '', phone: '', email: '', address: '', notes: '', group: '', photo: '' }); setDialogOpen(true); };
+  const openEdit = (s: Student) => { setEditing(s); setForm({ fullName: s.fullName, studentId: s.studentId, classId: s.classId, status: s.status, guardianName: s.guardianName || '', guardianPhone: s.guardianPhone || '', guardianEmail: s.guardianEmail || '', phone: s.phone || '', email: s.email || '', address: s.address || '', notes: s.notes || '', group: s.group || '', photo: s.photo || '' }); setDialogOpen(true); };
   const handleSave = () => {
     if (!form.fullName || !form.studentId) { toast.error('Name and Student ID are required'); return; }
     if (editing) { setStudents(students.map(s => s.id === editing.id ? { ...s, ...form, className: classes.find(c => c.id === form.classId)?.name } : s)); toast.success(language === 'fr' ? 'Étudiant modifié' : 'Student updated'); }
@@ -733,6 +843,10 @@ function StudentsPage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2"><Label>{t('guardian', language)}</Label><Input value={form.guardianName} onChange={e => setForm({ ...form, guardianName: e.target.value })} /></div>
             <div className="space-y-2"><Label>{t('phone', language)}</Label><Input value={form.guardianPhone} onChange={e => setForm({ ...form, guardianPhone: e.target.value })} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2"><Label>{language === 'fr' ? 'Email Tuteur' : 'Guardian Email'}</Label><Input type="email" value={form.guardianEmail} onChange={e => setForm({ ...form, guardianEmail: e.target.value })} /></div>
+            <div className="space-y-2"><Label>{t('phone', language)}</Label><Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2"><Label>Email</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
@@ -837,6 +951,7 @@ function AttendancePage() {
   const [saving, setSaving] = useState(false);
   const [quickMode, setQuickMode] = useState(false);
   const [quickBulk, setQuickBulk] = useState<Record<string, AttendanceRecord['status']>>({});
+  const [emailNotifEnabled, setEmailNotifEnabled] = useState(() => { try { return typeof window !== 'undefined' && localStorage.getItem('attendance_email_notif') === 'true'; } catch { return false; } });
 
   const filteredStudents = students.filter(s => s.status === 'active' && (!selectedClass || selectedClass === 'all' || s.classId === selectedClass));
   const baseRecords = useMemo(() => { const m: Record<string, AttendanceRecord['status']> = {}; attendance.filter(r => r.date === selectedDate).forEach(r => { m[r.studentId] = r.status; }); return m; }, [selectedDate, attendance]);
@@ -860,9 +975,23 @@ function AttendancePage() {
     const otherDayRecords = attendance.filter(r => r.date === selectedDate && !filteredStudentIds.has(r.studentId));
     const updated = attendance.filter(r => r.date !== selectedDate);
     const newR: AttendanceRecord[] = [];
-    filteredStudents.forEach(s => { const st = localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) updated.push({ ...ex, status: st }); else newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); });
+    const newAbsences: Array<{ student: Student; status: AttendanceRecord['status'] }> = [];
+    filteredStudents.forEach(s => { const st = localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) { updated.push({ ...ex, status: st }); } else { newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); } if ((st === 'absent' || st === 'late') && (!ex || ex.status !== st)) { newAbsences.push({ student: s, status: st }); } });
     setAttendance([...updated, ...otherDayRecords, ...newR]); toast.success('Attendance saved!'); setTimeout(() => setSaving(false), 500);
+    // Send email notifications for new absences/late
+    if (emailNotifEnabled && newAbsences.length > 0) { sendAbsenceEmails(newAbsences); }
+    // Push notification for admin: attendance summary
+    if (newAbsences.length > 0 && getPushNotifPref()) {
+      const absentCount = newAbsences.filter(a => a.status === 'absent').length;
+      const lateCount = newAbsences.filter(a => a.status === 'late').length;
+      showBrowserNotification(
+        language === 'fr' ? `📊 Présence sauvegardée — ${selectedDate}` : `📊 Attendance saved — ${selectedDate}`,
+        `${absentCount} ${absentCount === 1 ? (language === 'fr' ? 'absent' : 'absent') : (language === 'fr' ? 'absents' : 'absents')}, ${lateCount} ${lateCount === 1 ? (language === 'fr' ? 'en retard' : 'late') : (language === 'fr' ? 'en retard' : 'late')}`,
+        { tag: `attendance-${selectedDate}` }
+      );
+    }
   };
+
   const counts = { present: Object.values(localRecords).filter(s => s === 'present').length, absent: Object.values(localRecords).filter(s => s === 'absent').length, late: Object.values(localRecords).filter(s => s === 'late').length, excused: Object.values(localRecords).filter(s => s === 'excused').length, unmarked: filteredStudents.length - Object.keys(localRecords).filter(id => filteredStudents.some(s => s.id === id)).length };
 
   const sendAbsenceWhatsApp = (sid: string, forceStatus?: AttendanceRecord['status']) => {
@@ -871,6 +1000,72 @@ function AttendancePage() {
     if (!tmpl) tmpl = st === 'late' ? { id: '', name: 'Late', category: 'late', content: 'Hello {guardian_name}, {student_name} arrived late today ({date}).', createdAt: '' } : { id: '', name: 'Absence', category: 'absence', content: 'Dear {guardian_name}, {student_name} was marked absent today ({date}). Please contact us.', createdAt: '' };
     const msg = tmpl.content.replace(/{student_name}/g, s.fullName).replace(/{guardian_name}/g, s.guardianName || 'Guardian').replace(/{date}/g, new Date().toLocaleDateString()).replace(/{school_name}/g, schoolInfo?.name || 'School').replace(/{class}/g, classes.find(c => c.id === s.classId)?.name || 'class');
     window.open(`https://wa.me/${formatWhatsAppPhone(s.guardianPhone)}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  // Email notification for absences
+  const sendAbsenceEmails = async (absences: Array<{ student: Student; status: AttendanceRecord['status'] }>) => {
+    for (const abs of absences) {
+      const s = abs.student;
+      const email = s.guardianEmail || s.email;
+      if (!email || !email.includes('@')) continue;
+      const isLate = abs.status === 'late';
+      const isFr = language === 'fr';
+      const subject = isLate
+        ? (isFr ? `[CRM] Retard: ${s.fullName} — ${selectedDate}` : `[CRM] Late Arrival: ${s.fullName} — ${selectedDate}`)
+        : (isFr ? `[CRM] Absence: ${s.fullName} — ${selectedDate}` : `[CRM] Absence: ${s.fullName} — ${selectedDate}`);
+      const className = classes.find(c => c.id === s.classId)?.name || '-';
+      const htmlContent = `
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9}
+.container{max-width:560px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08)}
+.header{background:linear-gradient(135deg,${isLate ? '#f59e0b' : '#ef4444'},${isLate ? '#fbbf24' : '#f87171'});padding:28px 32px;color:white}
+.header h1{margin:0;font-size:20px;font-weight:700}
+.header p{margin:6px 0 0;font-size:13px;opacity:0.9}
+.body{padding:28px 32px;color:#334155;font-size:15px;line-height:1.6}
+.body .greeting{font-size:16px;font-weight:600;margin-bottom:16px}
+.info-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:14px}
+.info-row:last-child{border-bottom:none}
+.info-label{color:#64748b}
+.info-value{font-weight:600;color:#1e293b}
+.footer{padding:20px 32px;background:#f8fafc;text-align:center;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0}
+</style></head><body>
+<div class="container">
+  <div class="header">
+    <h1>${isLate ? (isFr ? '🔔 Retard Signalé' : '🔔 Late Arrival Notification') : (isFr ? '🚨 Absence Signalée' : '🚨 Absence Notification')}</h1>
+    <p>${schoolInfo?.name || 'School'} — ${isFr ? 'Système de Gestion' : 'Management System'}</p>
+  </div>
+  <div class="body">
+    <p class="greeting">${s.guardianName ? (isFr ? `Bonjour ${s.guardianName},` : `Dear ${s.guardianName},`) : (isFr ? 'Bonjour,' : 'Hello,')}</p>
+    <p>${isLate
+      ? (isFr ? `Nous vous informons que <strong>${s.fullName}</strong> est arrivé(e) en retard le <strong>${selectedDate}</strong>.`
+        : `We inform you that <strong>${s.fullName}</strong> arrived late on <strong>${selectedDate}</strong>.`)
+      : (isFr ? `Nous vous informons que <strong>${s.fullName}</strong> a été marqué(e) absent(e) le <strong>${selectedDate}</strong>.`
+        : `We inform you that <strong>${s.fullName}</strong> was marked absent on <strong>${selectedDate}</strong>.`)
+    }</p>
+    <div style="margin:20px 0">
+      <div class="info-row"><span class="info-label">${isFr ? 'Étudiant(e)' : 'Student'}</span><span class="info-value">${s.fullName}</span></div>
+      <div class="info-row"><span class="info-label">${isFr ? 'ID Étudiant' : 'Student ID'}</span><span class="info-value">${s.studentId}</span></div>
+      <div class="info-row"><span class="info-label">${isFr ? 'Classe' : 'Class'}</span><span class="info-value">${className}</span></div>
+      <div class="info-row"><span class="info-label">${isFr ? 'Statut' : 'Status'}</span><span class="info-value">${isLate ? (isFr ? 'En Retard' : 'Late') : (isFr ? 'Absent(e)' : 'Absent')}</span></div>
+      <div class="info-row"><span class="info-label">${isFr ? 'Date' : 'Date'}</span><span class="info-value">${selectedDate}</span></div>
+    </div>
+    <p style="font-size:13px;color:#64748b">${isFr ? 'Veuillez contacter l\'administration si vous avez des questions.' : 'Please contact the administration if you have any questions.'}</p>
+  </div>
+  <div class="footer">
+    <p>${isFr ? 'Cet email a été envoyé automatiquement par le système CRM Attendance.' : 'This email was sent automatically by the CRM Attendance system.'}</p>
+    <p style="margin-top:4px">&copy; ${new Date().getFullYear()} ${schoolInfo?.name || 'CRM Attendance'}</p>
+  </div>
+</div></body></html>`;
+      try {
+        await sendEmail({ to: email, toName: s.guardianName || undefined, subject, htmlContent });
+        console.log(`[Attendance] Email sent to ${email} for ${s.fullName}`);
+      } catch (err) {
+        console.error(`[Attendance] Failed to send email to ${email}:`, err);
+      }
+    }
+    if (absences.length > 0) {
+      toast.success(`${absences.length} ${isFr ? 'notification(s) envoyée(s)' : 'notification(s) sent'}`);
+    }
   };
   const handleQuickBulk = (status: AttendanceRecord['status']) => {
     const m: Record<string, AttendanceRecord['status']> = {}; filteredStudents.forEach(s => { m[s.id] = status; }); setQuickBulk({ ...m });
@@ -883,8 +1078,11 @@ function AttendancePage() {
     const otherDayRecords = attendance.filter(r => r.date === selectedDate && !filteredStudentIds.has(r.studentId));
     const updated = attendance.filter(r => r.date !== selectedDate);
     const newR: AttendanceRecord[] = [];
-    filteredStudents.forEach(s => { const st = quickBulk[s.id] || localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) updated.push({ ...ex, status: st }); else newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); });
+    const newAbsences: Array<{ student: Student; status: AttendanceRecord['status'] }> = [];
+    filteredStudents.forEach(s => { const st = quickBulk[s.id] || localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) { updated.push({ ...ex, status: st }); } else { newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); } if ((st === 'absent' || st === 'late') && (!ex || ex.status !== st)) { newAbsences.push({ student: s, status: st }); } });
     setAttendance([...updated, ...otherDayRecords, ...newR]); toast.success('Attendance saved!'); setQuickBulk({}); setTimeout(() => setSaving(false), 500);
+    // Send email notifications for new absences/late
+    if (emailNotifEnabled && newAbsences.length > 0) { sendAbsenceEmails(newAbsences); }
   };
 
   const quickCounts = useMemo(() => {
@@ -906,6 +1104,10 @@ function AttendancePage() {
           {quickMode && <Button variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleQuickBulk('present')}>✅ {t('present', language)} All</Button>}
           {quickMode && <Button variant="outline" size="sm" className="border-red-400 text-red-600" onClick={() => handleQuickBulk('absent')}>❌ {t('absent', language)} All</Button>}
           <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => quickMode ? handleQuickSave() : handleSave()} disabled={saving}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
+          <div className="flex items-center gap-2 ml-auto">
+            <Switch checked={emailNotifEnabled} onCheckedChange={v => { setEmailNotifEnabled(v); if (typeof window !== 'undefined') localStorage.setItem('attendance_email_notif', String(v)); }} />
+            <span className="text-xs text-muted-foreground hidden sm:inline">{language === 'fr' ? 'Notif. email absence' : 'Email notif on absence'}</span>
+          </div>
         </div>
       </div>
 
@@ -2072,10 +2274,14 @@ function TasksPage() {
 
   const filtered = useMemo(() => {
     let t = [...tasks];
+    // Teachers only see their own tasks
+    if (currentUser?.role === 'teacher' && currentUser.fullName) {
+      t = t.filter(tk => tk.assignedTo === currentUser.fullName);
+    }
     if (statusFilter !== 'all') t = t.filter(tk => tk.status === statusFilter);
     if (priorityFilter !== 'all') t = t.filter(tk => tk.priority === priorityFilter);
     return t.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-  }, [tasks, statusFilter, priorityFilter]);
+  }, [tasks, statusFilter, priorityFilter, currentUser?.role, currentUser?.fullName]);
 
   const counts = useMemo(() => ({
     all: tasks.length, pending: tasks.filter(t => t.status === 'pending').length, in_progress: tasks.filter(t => t.status === 'in_progress').length, completed: tasks.filter(t => t.status === 'completed').length, overdue: tasks.filter(t => t.status === 'overdue').length,
@@ -2142,6 +2348,15 @@ function TasksPage() {
       } else {
         toast.error(`${language === 'fr' ? "Erreur d'envoi d'email" : 'Email send error'}: ${emailResult.error || 'Unknown'}`);
       }
+    }
+
+    // Push notification for new task assignment
+    if (!editTask && form.assignedTo && currentUser?.fullName && form.assignedTo !== currentUser.fullName && getPushNotifPref()) {
+      showBrowserNotification(
+        language === 'fr' ? `📋 Nouvelle tâche: ${form.title}` : `📋 New task: ${form.title}`,
+        language === 'fr' ? `Assignée par ${currentUser.fullName} — Priorité: ${form.priority}` : `Assigned by ${currentUser.fullName} — Priority: ${form.priority}`,
+        { tag: `task-${ticket}` }
+      );
     }
   };
 
@@ -3536,6 +3751,7 @@ function SettingsPage() {
           <TabsTrigger value="admins">{t('admin_users', language)}</TabsTrigger>
           <TabsTrigger value="password">{t('change_password', language)}</TabsTrigger>
           <TabsTrigger value="email" className="flex items-center gap-1.5"><Mail className="h-4 w-4" />{language === 'fr' ? 'Email (Brevo)' : 'Email (Brevo)'}</TabsTrigger>
+          <TabsTrigger value="notifications" className="flex items-center gap-1.5"><Bell className="h-4 w-4" />{language === 'fr' ? 'Notifications' : 'Notifications'}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -3927,8 +4143,110 @@ function SettingsPage() {
             </div>
           </CardContent></Card>
         </TabsContent>
+        {/* Push Notifications Tab */}
+        <TabsContent value="notifications" className="space-y-4">
+          <NotificationSettingsSection />
+        </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function NotificationSettingsSection() {
+  const { language, currentUser } = useAppStore();
+  const [pushEnabled, setPushEnabled] = useState(getPushNotifPref);
+  const [notifPermission, setNotifPermission] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'unknown';
+    if (!('Notification' in window)) return 'unsupported';
+    return Notification.permission;
+  });
+  const [testSending, setTestSending] = useState(false);
+
+  const handleTogglePush = async () => {
+    if (!pushEnabled) {
+      // Enabling - request permission first
+      const granted = await requestNotificationPermission();
+      setNotifPermission(typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unknown');
+      if (!granted) {
+        toast.error(language === 'fr' ? 'Permission de notification refusée' : 'Notification permission denied');
+        return;
+      }
+      setPushEnabled(true);
+      setPushNotifPref(true);
+      toast.success(language === 'fr' ? 'Notifications activées' : 'Push notifications enabled');
+    } else {
+      setPushEnabled(false);
+      setPushNotifPref(false);
+      toast.success(language === 'fr' ? 'Notifications désactivées' : 'Push notifications disabled');
+    }
+  };
+
+  const handleTestNotification = () => {
+    setTestSending(true);
+    setTimeout(() => {
+      showBrowserNotification(
+        language === 'fr' ? '🔔 Test de Notification' : '🔔 Test Notification',
+        language === 'fr' ? 'Les notifications push fonctionnent correctement !' : 'Push notifications are working correctly!',
+        { tag: 'test-push-notif' }
+      );
+      setTestSending(false);
+      toast.success(language === 'fr' ? 'Notification de test envoyée' : 'Test notification sent');
+    }, 500);
+  };
+
+  const isSupported = typeof window !== 'undefined' && 'Notification' in window;
+
+  return (
+    <Card className="border-0 shadow-sm"><CardHeader><CardTitle className="text-base flex items-center gap-2"><Bell className="h-5 w-5 text-emerald-600" />{language === 'fr' ? 'Notifications Push' : 'Push Notifications'}</CardTitle><CardDescription>{language === 'fr' ? 'Recevez des notifications dans votre navigateur pour les événements importants.' : 'Receive browser notifications for important events.'}</CardDescription></CardHeader><CardContent className="space-y-5">
+      {/* Support status */}
+      {!isSupported && (
+        <div className="flex items-center gap-3 p-3 rounded-lg border bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800">
+          <AlertOctagon className="h-5 w-5 text-amber-600 shrink-0" />
+          <span className="text-sm text-amber-700 dark:text-amber-400">{language === 'fr' ? 'Votre navigateur ne supporte pas les notifications push.' : 'Your browser does not support push notifications.'}</span>
+        </div>
+      )}
+
+      {/* Current permission */}
+      {isSupported && (
+        <div className={`flex items-center gap-3 p-3 rounded-lg border ${notifPermission === 'granted' ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : notifPermission === 'denied' ? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800' : 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800'}`}>
+          {notifPermission === 'granted' ? <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" /> : notifPermission === 'denied' ? <XCircle className="h-5 w-5 text-red-600 shrink-0" /> : <AlertOctagon className="h-5 w-5 text-amber-600 shrink-0" />}
+          <div className="text-sm">
+            {notifPermission === 'granted'
+              ? <span className="text-emerald-700 dark:text-emerald-400 font-medium">{language === 'fr' ? 'Notifications autorisées' : 'Notifications allowed'}</span>
+              : notifPermission === 'denied'
+              ? <span className="text-red-700 dark:text-red-400 font-medium">{language === 'fr' ? 'Notifications bloquées. Vérifiez les paramètres de votre navigateur.' : 'Notifications blocked. Check your browser settings.'}</span>
+              : <span className="text-amber-700 dark:text-amber-400 font-medium">{language === 'fr' ? 'Notifications non encore configurées' : 'Notifications not yet configured'}</span>
+            }
+          </div>
+        </div>
+      )}
+
+      {/* Toggle */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium">{language === 'fr' ? 'Activer les notifications push' : 'Enable push notifications'}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{language === 'fr' ? 'Tâches assignées, résumé de présence' : 'Task assignments, attendance summary'}</p>
+        </div>
+        <Switch checked={pushEnabled} onCheckedChange={handleTogglePush} disabled={!isSupported} />
+      </div>
+
+      {/* Test button */}
+      {isSupported && notifPermission === 'granted' && (
+        <Button variant="outline" onClick={handleTestNotification} disabled={testSending || !pushEnabled}>
+          {testSending ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Bell className="h-4 w-4 mr-1" />}
+          {testSending ? (language === 'fr' ? 'Envoi...' : 'Sending...') : (language === 'fr' ? 'Envoyer une notification test' : 'Send Test Notification')}
+        </Button>
+      )}
+
+      {/* Info */}
+      <div className="rounded-lg border p-4 bg-muted/30 space-y-2">
+        <h4 className="text-sm font-semibold flex items-center gap-1.5"><Info className="h-4 w-4" />{language === 'fr' ? 'Quand les notifications sont envoyées' : 'When notifications are sent'}</h4>
+        <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+          <li>{language === 'fr' ? 'Une tâche vous est assignée (si vous êtes le destinataire)' : 'A task is assigned to you (if you are the assignee)'}</li>
+          <li>{language === 'fr' ? 'Après la sauvegarde de présence (si vous êtes admin, résumé)' : 'After attendance save (admin only, summary of absences/late)'}</li>
+        </ul>
+      </div>
+    </CardContent></Card>
   );
 }
 
@@ -4936,55 +5254,92 @@ function AuditTrailSection() {
 
 // ==================== IMPORT WIZARD SECTION ====================
 function ImportWizardSection() {
-  const { language, students, classes, modules, grades, attendance, setStudents, setGrades, setAttendance, addAuditLog, currentUser } = useAppStore();
-  const [importType, setImportType] = useState<'students' | 'grades' | 'attendance'>('students');
+  const { language, students, classes, modules, grades, attendance, setStudents, setGrades, setAttendance, setClasses, addAuditLog, currentUser } = useAppStore();
+  const [importType, setImportType] = useState<'students' | 'classes' | 'grades' | 'attendance'>('students');
   const [fileContent, setFileContent] = useState('');
   const [preview, setPreview] = useState<Array<{ row: string[]; valid: boolean; error?: string }>>([]);
   const [importing, setImporting] = useState(false);
   const [imported, setImported] = useState(0);
+  const [fileName, setFileName] = useState('');
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const parseExcelFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      setFileContent(text);
-      const lines = text.split('\n').filter(l => l.trim());
-      if (lines.length < 2) {
-        setPreview([]);
-        return;
-      }
-      const header = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
-      const rows = lines.slice(1).map(line => {
-        const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-        let valid = true;
-        let error = '';
+    setFileName(file.name);
 
-        if (importType === 'students') {
-          if (cols.length < 2 || !cols[0] || !cols[1]) { valid = false; error = 'Name and Student ID required'; }
-        } else if (importType === 'grades') {
-          if (cols.length < 3 || !cols[0] || !cols[1]) { valid = false; error = 'Student ID, Module, and Grade required'; }
-        } else if (importType === 'attendance') {
-          if (cols.length < 3 || !cols[0] || !cols[1] || !cols[2]) { valid = false; error = 'Student ID, Date, and Status required'; }
-          if (valid && !['present', 'absent', 'late', 'excused'].includes(cols[2].toLowerCase())) {
-            valid = false;
-            error = 'Status must be present/absent/late/excused';
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext === 'xlsx' || ext === 'xls') {
+      try {
+        const XLSX = await import('xlsx');
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
+        if (jsonData.length < 2) { setPreview([]); return; }
+        const header = jsonData[0].map(h => String(h || '').trim().toLowerCase());
+        const rows = jsonData.slice(1).map(cols => {
+          const normalizedCols = cols.map(c => String(c || '').trim());
+          let valid = true;
+          let error = '';
+          if (importType === 'students') {
+            const nameIdx = header.indexOf('fullname');
+            const idIdx = header.indexOf('studentid');
+            if ((nameIdx >= 0 ? !normalizedCols[nameIdx] : !normalizedCols[0]) || (idIdx >= 0 ? !normalizedCols[idIdx] : !normalizedCols[1])) { valid = false; error = 'Name and Student ID required'; }
+          } else if (importType === 'classes') {
+            if (!normalizedCols[0]) { valid = false; error = 'Class name is required'; }
+          } else if (importType === 'grades') {
+            if (cols.length < 3 || !normalizedCols[0] || !normalizedCols[1]) { valid = false; error = 'Student ID, Module, and Grade required'; }
+          } else if (importType === 'attendance') {
+            if (cols.length < 3 || !normalizedCols[0] || !normalizedCols[1] || !normalizedCols[2]) { valid = false; error = 'Student ID, Date, and Status required'; }
+            if (valid && !['present', 'absent', 'late', 'excused'].includes(normalizedCols[2].toLowerCase())) { valid = false; error = 'Status must be present/absent/late/excused'; }
           }
-        }
-
-        return { row: cols, valid, error };
-      });
-      setPreview(rows);
-    };
-    reader.readAsText(file);
+          return { row: normalizedCols, valid, error };
+        }).filter(r => r.row.some(c => c !== ''));
+        setPreview(rows);
+        setFileContent(`xlsx:${rows.length} rows`);
+      } catch (err) {
+        console.error('Excel parse error:', err);
+        toast.error(language === 'fr' ? 'Erreur de lecture du fichier Excel' : 'Error reading Excel file');
+      }
+    } else {
+      // CSV fallback
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target?.result as string;
+        setFileContent(text);
+        const lines = text.split('\n').filter(l => l.trim());
+        if (lines.length < 2) { setPreview([]); return; }
+        const header = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
+        const rows = lines.slice(1).map(line => {
+          const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+          let valid = true;
+          let error = '';
+          if (importType === 'students') {
+            if (cols.length < 2 || !cols[0] || !cols[1]) { valid = false; error = 'Name and Student ID required'; }
+          } else if (importType === 'classes') {
+            if (!cols[0]) { valid = false; error = 'Class name is required'; }
+          } else if (importType === 'grades') {
+            if (cols.length < 3 || !cols[0] || !cols[1]) { valid = false; error = 'Student ID, Module, and Grade required'; }
+          } else if (importType === 'attendance') {
+            if (cols.length < 3 || !cols[0] || !cols[1] || !cols[2]) { valid = false; error = 'Student ID, Date, and Status required'; }
+            if (valid && !['present', 'absent', 'late', 'excused'].includes(cols[2].toLowerCase())) { valid = false; error = 'Status must be present/absent/late/excused'; }
+          }
+          return { row: cols, valid, error };
+        });
+        setPreview(rows);
+      };
+      reader.readAsText(file);
+    }
     e.target.value = '';
   };
 
   const handleDownloadTemplate = () => {
     let csv = '';
     if (importType === 'students') {
-      csv = 'FullName,StudentId,ClassId,Status,GuardianName,GuardianPhone,Email\nAhmed Benali,STU001,class1,active,Fatima Benali,+212600000000,ahmed@example.com\n';
+      csv = 'FullName,StudentId,ClassId,AcademicYear,Status,GuardianName,GuardianPhone,GuardianEmail,Email,Phone,Address,Group\nAhmed Benali,STU001,class1,2024-2025,active,Fatima Benali,+212600000000,fatima@email.com,ahmed@email.com,+212611111111,Address 1,GroupA\n';
+    } else if (importType === 'classes') {
+      csv = 'Name,Description,Teacher,Room,Capacity,AcademicYear\nClass A,Computer Science,Mr. Smith,Room 101,30,2024-2025\n';
     } else if (importType === 'grades') {
       csv = 'StudentId,ModuleId,Grade,Percentage,Date\nSTU001,module1,18/20,90,2025-01-15\n';
     } else {
@@ -5008,25 +5363,59 @@ function ImportWizardSection() {
       let count = 0;
 
       if (importType === 'students') {
-        const newStudents: Student[] = validRows.map(r => ({
-          id: genId(),
-          fullName: r.row[0],
-          studentId: r.row[1],
-          classId: r.row[2] || '',
-          status: (['active', 'abandoned', 'terminated', 'graduated'].includes((r.row[3] || '').toLowerCase()) ? (r.row[3] || '').toLowerCase() : 'active') as Student['status'],
-          guardianName: r.row[4] || '',
-          guardianPhone: r.row[5] || '',
-          email: r.row[6] || '',
-          phone: '',
-          address: '',
-          notes: '',
-          group: '',
-          photo: '',
-          className: classes.find(c => c.id === r.row[2])?.name,
-          createdAt: new Date().toISOString(),
-        }));
+        const existingIds = new Set(students.map(s => s.studentId));
+        const newStudents: Student[] = [];
+        let skipped = 0;
+        validRows.forEach(r => {
+          const sid = r.row[1] || '';
+          if (existingIds.has(sid)) { skipped++; return; }
+          existingIds.add(sid);
+          newStudents.push({
+            id: genId(),
+            fullName: r.row[0],
+            studentId: sid,
+            classId: r.row[2] || '',
+            academicYear: r.row[3] || '',
+            status: (['active', 'abandoned', 'terminated', 'graduated'].includes((r.row[4] || '').toLowerCase()) ? (r.row[4] || '').toLowerCase() : 'active') as Student['status'],
+            guardianName: r.row[5] || '',
+            guardianPhone: r.row[6] || '',
+            guardianEmail: r.row[7] || '',
+            email: r.row[8] || '',
+            phone: r.row[9] || '',
+            address: r.row[10] || '',
+            group: r.row[11] || '',
+            notes: '',
+            photo: '',
+            className: classes.find(c => c.id === (r.row[2] || ''))?.name,
+            createdAt: new Date().toISOString(),
+          });
+        });
         setStudents([...students, ...newStudents]);
         count = newStudents.length;
+        if (skipped > 0) toast.info(`${skipped} ${language === 'fr' ? 'doublons ignorés' : 'duplicates skipped'}`);
+      } else if (importType === 'classes') {
+        const existingNames = new Set(classes.map(c => c.name.toLowerCase()));
+        const newClasses: Class[] = [];
+        let skipped = 0;
+        validRows.forEach(r => {
+          const cname = r.row[0];
+          if (!cname) return;
+          if (existingNames.has(cname.toLowerCase())) { skipped++; return; }
+          existingNames.add(cname.toLowerCase());
+          newClasses.push({
+            id: genId(),
+            name: cname,
+            description: r.row[1] || '',
+            teacher: r.row[2] || '',
+            room: r.row[3] || '',
+            capacity: parseInt(r.row[4]) || 30,
+            academicYear: r.row[5] || '',
+            createdAt: new Date().toISOString(),
+          });
+        });
+        setClasses([...classes, ...newClasses]);
+        count = newClasses.length;
+        if (skipped > 0) toast.info(`${skipped} ${language === 'fr' ? 'doublons ignorés' : 'duplicates skipped'}`);
       } else if (importType === 'grades') {
         const existingGrades = new Set(grades.map(g => `${g.studentId}_${g.moduleId}_${g.date}`));
         const newGrades: Grade[] = validRows.filter(r => !existingGrades.has(`${r.row[0]}_${r.row[1]}_${r.row[4] || new Date().toISOString().split('T')[0]}`)).map(r => ({
@@ -5079,16 +5468,17 @@ function ImportWizardSection() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="students">{t('students', language)}</SelectItem>
+                  <SelectItem value="classes">{t('classes', language)}</SelectItem>
                   <SelectItem value="grades">{t('grades', language)}</SelectItem>
                   <SelectItem value="attendance">{t('attendance', language)}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label className="mb-1.5 block text-sm">{language === 'fr' ? 'Fichier CSV' : 'CSV File'}</Label>
+              <Label className="mb-1.5 block text-sm">{language === 'fr' ? 'Fichier' : 'File'}</Label>
               <div className="flex gap-2">
                 <label className="cursor-pointer">
-                  <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileUpload} />
+                  <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={parseExcelFile} />
                   <Button variant="outline" asChild><span><FileUp className="h-4 w-4 mr-1" />{t('upload', language) || 'Upload'}</span></Button>
                 </label>
                 <Button variant="outline" size="sm" onClick={handleDownloadTemplate} className="gap-1">
@@ -5101,6 +5491,7 @@ function ImportWizardSection() {
           {fileContent && (
             <div className="space-y-2">
               <div className="flex items-center gap-3 text-sm">
+                {fileName && <Badge variant="outline">{fileName}</Badge>}
                 <Badge variant="secondary">{preview.length} {language === 'fr' ? 'lignes' : 'rows'}</Badge>
                 <span className="flex items-center gap-1 text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" />{validCount} {language === 'fr' ? 'valides' : 'valid'}</span>
                 {invalidCount > 0 && <span className="flex items-center gap-1 text-red-600"><XCircle className="h-3.5 w-3.5" />{invalidCount} {language === 'fr' ? 'invalides' : 'invalid'}</span>}
@@ -5119,7 +5510,10 @@ function ImportWizardSection() {
                       <TableRow>
                         <TableHead className="w-8">#</TableHead>
                         {importType === 'students' && <>
-                          <TableHead>{t('name', language)}</TableHead><TableHead>ID</TableHead><TableHead>{t('classes', language)}</TableHead><TableHead>{t('status', language)}</TableHead>
+                          <TableHead>{t('name', language)}</TableHead><TableHead>ID</TableHead><TableHead>{t('classes', language)}</TableHead><TableHead>{t('status', language)}</TableHead><TableHead>{language === 'fr' ? 'Tuteur' : 'Guardian'}</TableHead>
+                        </>}
+                        {importType === 'classes' && <>
+                          <TableHead>{language === 'fr' ? 'Nom' : 'Name'}</TableHead><TableHead>{language === 'fr' ? 'Enseignant' : 'Teacher'}</TableHead><TableHead>{language === 'fr' ? 'Salle' : 'Room'}</TableHead><TableHead>{language === 'fr' ? 'Capacité' : 'Capacity'}</TableHead>
                         </>}
                         {importType === 'grades' && <>
                           <TableHead>Student ID</TableHead><TableHead>Module</TableHead><TableHead>{t('grades', language)}</TableHead><TableHead>%</TableHead>
@@ -5134,10 +5528,10 @@ function ImportWizardSection() {
                       {preview.slice(0, 20).map((r, i) => (
                         <TableRow key={i} className={!r.valid ? 'bg-red-50 dark:bg-red-900/10' : ''}>
                           <TableCell className="text-xs text-muted-foreground">{i + 1}</TableCell>
-                          {r.row.slice(0, 4).map((col, ci) => (
+                          {r.row.slice(0, importType === 'students' ? 5 : 4).map((col, ci) => (
                             <TableCell key={ci} className="text-sm">{col || '-'}</TableCell>
                           ))}
-                          {r.row.length < 4 && Array.from({ length: 4 - r.row.length }).map((_, ci) => (
+                          {r.row.length < (importType === 'students' ? 5 : 4) && Array.from({ length: (importType === 'students' ? 5 : 4) - r.row.length }).map((_, ci) => (
                             <TableCell key={`empty-${ci}`} className="text-sm text-muted-foreground">-</TableCell>
                           ))}
                           <TableCell>
@@ -5150,7 +5544,7 @@ function ImportWizardSection() {
                         </TableRow>
                       ))}
                       {preview.length > 20 && (
-                        <TableRow><TableCell colSpan={6} className="text-center text-xs text-muted-foreground py-2">... {preview.length - 20} {language === 'fr' ? 'lignes supplémentaires' : 'more rows'}</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-2">... {preview.length - 20} {language === 'fr' ? 'lignes supplémentaires' : 'more rows'}</TableCell></TableRow>
                       )}
                     </TableBody>
                   </Table>
@@ -5232,6 +5626,32 @@ function PurgeCacheSection() {
   );
 }
 
+// ==================== PUSH NOTIFICATION UTILITIES ====================
+function requestNotificationPermission(): Promise<boolean> {
+  if (typeof window === 'undefined') return Promise.resolve(false);
+  if (!('Notification' in window)) return Promise.resolve(false);
+  if (Notification.permission === 'granted') return Promise.resolve(true);
+  if (Notification.permission === 'denied') return Promise.resolve(false);
+  return Notification.requestPermission().then(perm => perm === 'granted');
+}
+
+function showBrowserNotification(title: string, body: string, data?: Record<string, unknown>): void {
+  if (typeof window === 'undefined') return;
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  try {
+    new Notification(title, { body, icon: '/favicon.ico', tag: data?.tag as string, data });
+  } catch {}
+}
+
+function getPushNotifPref(): boolean {
+  try { return typeof window !== 'undefined' && localStorage.getItem('attendance_push_notif') === 'true'; } catch { return false; }
+}
+
+function setPushNotifPref(v: boolean): void {
+  try { if (typeof window !== 'undefined') localStorage.setItem('attendance_push_notif', String(v)); } catch {}
+}
+
 // ==================== MAIN APP COMPONENT ====================
 export default function App() {
   const { isAuthenticated, currentUser, currentPage, loadAllData, language } = useAppStore();
@@ -5302,6 +5722,20 @@ export default function App() {
   }
 
   const renderPage = () => {
+    // Check role-based permissions
+    const navItem = NAV_ITEMS.find(n => n.id === currentPage);
+    if (navItem && navItem.allowedRoles && currentUser?.role && !navItem.allowedRoles.includes(currentUser.role)) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20">
+          <Shield className="h-16 w-16 text-muted-foreground mb-4" />
+          <h2 className="text-xl font-bold mb-2">{language === 'fr' ? 'Accès Refusé' : 'Permission Denied'}</h2>
+          <p className="text-muted-foreground mb-4">{language === 'fr' ? 'Vous n\'avez pas la permission d\'accéder à cette page.' : 'You do not have permission to access this page.'}</p>
+          <Button variant="outline" onClick={() => useAppStore.getState().setCurrentPage('dashboard')}>
+            <ArrowLeft className="h-4 w-4 mr-2" />{language === 'fr' ? 'Retour au Tableau de Bord' : 'Back to Dashboard'}
+          </Button>
+        </div>
+      );
+    }
     switch (currentPage) {
       case 'dashboard': return <DashboardPage />;
       case 'students': return <StudentsPage />;

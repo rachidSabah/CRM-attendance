@@ -21,6 +21,7 @@ export interface Student {
   status: 'active' | 'abandoned' | 'terminated' | 'graduated';
   guardianName?: string;
   guardianPhone?: string;
+  guardianEmail?: string;
   phone?: string;
   email?: string;
   address?: string;
