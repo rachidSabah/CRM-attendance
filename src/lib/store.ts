@@ -360,121 +360,145 @@ export const useAppStore = create<AppState>((set) => ({
         }
       } catch {}
 
-      const studentsRes = await api.get('/students');
-      if (studentsRes?.success && Array.isArray(studentsRes.data)) {
-        const normalized = studentsRes.data.map((s: Record<string, unknown>) => ({
-          id: String(s.id || ''),
-          fullName: String(s.fullName || s.first_name || s.email || 'Unknown'),
-          studentId: String(s.studentId || s.student_id || ''),
-          classId: String(s.classId || s.class || ''),
-          className: String(s.className || s.class || ''),
-          academicYear: String(s.academicYear || s.academic_year || ''),
-          status: (s.status as Student['status']) || 'active',
-          guardianName: String(s.guardianName || s.guardian_name || ''),
-          guardianPhone: String(s.guardianPhone || s.guardian_phone || s.phone || ''),
-          phone: String(s.phone || ''),
-          email: String(s.email || ''),
-          address: String(s.address || ''),
-          notes: String(s.notes || ''),
-          photo: (s.photo as string) || null,
-          group: String(s.group || s.group_name || ''),
-          createdAt: String(s.createdAt || s.created_at || s.enrollment_date || new Date().toISOString()),
-        }));
-        set({ students: normalized });
-        localStorage.setItem('attendance_students', JSON.stringify(normalized));
-      }
+      // Load students
+      try {
+        const studentsRes = await api.get('/students');
+        if (studentsRes?.success && Array.isArray(studentsRes.data)) {
+          const normalized = studentsRes.data.map((s: Record<string, unknown>) => ({
+            id: String(s.id || ''),
+            fullName: String(s.fullName || s.first_name || s.email || 'Unknown'),
+            studentId: String(s.studentId || s.student_id || ''),
+            classId: String(s.classId || s.class || ''),
+            className: String(s.className || s.class || ''),
+            academicYear: String(s.academicYear || s.academic_year || ''),
+            status: (s.status as Student['status']) || 'active',
+            guardianName: String(s.guardianName || s.guardian_name || ''),
+            guardianPhone: String(s.guardianPhone || s.guardian_phone || s.phone || ''),
+            phone: String(s.phone || ''),
+            email: String(s.email || ''),
+            address: String(s.address || ''),
+            notes: String(s.notes || ''),
+            photo: (s.photo as string) || null,
+            group: String(s.group || s.group_name || ''),
+            createdAt: String(s.createdAt || s.created_at || s.enrollment_date || new Date().toISOString()),
+          }));
+          set({ students: normalized });
+          localStorage.setItem('attendance_students', JSON.stringify(normalized));
+        }
+      } catch {}
 
-      const classesRes = await api.get('/classes');
-      if (classesRes?.success && Array.isArray(classesRes.data)) {
-        const normalized = classesRes.data.map((c: Record<string, unknown>) => ({
-          id: String(c.id),
-          name: String(c.name || c.className || ''),
-          description: String(c.description || c.department || ''),
-          teacher: String(c.teacher || c.teacher_id || ''),
-          room: String(c.room || c.schedule || ''),
-          capacity: Number(c.capacity) || 30,
-          academicYear: String(c.academicYear || c.academic_year || ''),
-          createdAt: String(c.createdAt || c.created_at || new Date().toISOString()),
-        }));
-        set({ classes: normalized });
-        localStorage.setItem('attendance_classes', JSON.stringify(normalized));
-      }
+      // Load classes
+      try {
+        const classesRes = await api.get('/classes');
+        if (classesRes?.success && Array.isArray(classesRes.data)) {
+          const normalized = classesRes.data.map((c: Record<string, unknown>) => ({
+            id: String(c.id),
+            name: String(c.name || c.className || ''),
+            description: String(c.description || c.department || ''),
+            teacher: String(c.teacher || c.teacher_id || ''),
+            room: String(c.room || c.schedule || ''),
+            capacity: Number(c.capacity) || 30,
+            academicYear: String(c.academicYear || c.academic_year || ''),
+            createdAt: String(c.createdAt || c.created_at || new Date().toISOString()),
+          }));
+          set({ classes: normalized });
+          localStorage.setItem('attendance_classes', JSON.stringify(normalized));
+        }
+      } catch {}
 
-      const attendanceRes = await api.get('/attendance');
-      if (attendanceRes?.success && Array.isArray(attendanceRes.data)) {
-        const normalized = attendanceRes.data.map((a: Record<string, unknown>) => ({
-          id: String(a.id),
-          studentId: String(a.studentId || a.student_id || ''),
-          date: String(a.date || ''),
-          status: (a.status as AttendanceRecord['status']) || 'present',
-          notes: String(a.notes || ''),
-          createdAt: String(a.createdAt || a.created_at || new Date().toISOString()),
-        }));
-        set({ attendance: normalized });
-        localStorage.setItem('attendance_records', JSON.stringify(normalized));
-      }
+      // Load attendance
+      try {
+        const attendanceRes = await api.get('/attendance');
+        if (attendanceRes?.success && Array.isArray(attendanceRes.data)) {
+          const normalized = attendanceRes.data.map((a: Record<string, unknown>) => ({
+            id: String(a.id),
+            studentId: String(a.studentId || a.student_id || ''),
+            date: String(a.date || ''),
+            status: (a.status as AttendanceRecord['status']) || 'present',
+            notes: String(a.notes || ''),
+            createdAt: String(a.createdAt || a.created_at || new Date().toISOString()),
+          }));
+          set({ attendance: normalized });
+          localStorage.setItem('attendance_records', JSON.stringify(normalized));
+        }
+      } catch {}
 
-      const modulesRes = await api.get('/modules');
-      if (modulesRes?.success && Array.isArray(modulesRes.data)) {
-        set({ modules: modulesRes.data });
-        localStorage.setItem('attendance_modules', JSON.stringify(modulesRes.data));
-      }
+      // Load modules
+      try {
+        const modulesRes = await api.get('/modules');
+        if (modulesRes?.success && Array.isArray(modulesRes.data)) {
+          set({ modules: modulesRes.data });
+          localStorage.setItem('attendance_modules', JSON.stringify(modulesRes.data));
+        }
+      } catch {}
 
-      const gradesRes = await api.get('/grades');
-      if (gradesRes?.success && Array.isArray(gradesRes.data)) {
-        set({ grades: gradesRes.data });
-        localStorage.setItem('attendance_grades', JSON.stringify(gradesRes.data));
-      }
+      // Load grades
+      try {
+        const gradesRes = await api.get('/grades');
+        if (gradesRes?.success && Array.isArray(gradesRes.data)) {
+          set({ grades: gradesRes.data });
+          localStorage.setItem('attendance_grades', JSON.stringify(gradesRes.data));
+        }
+      } catch {}
 
-      const behaviorRes = await api.get('/behavior');
-      if (behaviorRes?.success && Array.isArray(behaviorRes.data)) {
-        set({ behavior: behaviorRes.data });
-        localStorage.setItem('attendance_behavior', JSON.stringify(behaviorRes.data));
-      }
+      // Load behavior
+      try {
+        const behaviorRes = await api.get('/behavior');
+        if (behaviorRes?.success && Array.isArray(behaviorRes.data)) {
+          set({ behavior: behaviorRes.data });
+          localStorage.setItem('attendance_behavior', JSON.stringify(behaviorRes.data));
+        }
+      } catch {}
 
-      const tasksRes = await api.get('/tasks');
-      if (tasksRes?.success && Array.isArray(tasksRes.data)) {
-        const normalized = tasksRes.data.map((t: Record<string, unknown>) => ({
-          id: String(t.id),
-          title: String(t.title || ''),
-          description: String(t.description || ''),
-          assignedTo: String(t.assignedTo || t.assigned_to || ''),
-          assignedBy: String(t.assignedBy || t.assigned_by || ''),
-          priority: (t.priority as Task['priority']) || 'medium',
-          status: (t.status as Task['status']) || 'pending',
-          category: String(t.category || ''),
-          dueDate: String(t.dueDate || t.due_date || ''),
-          progress: Number(t.progress) || 0,
-          ticketNumber: String(t.ticketNumber || 'TK-' + String(t.id || '').substring(0, 6).toUpperCase()),
-          completionReport: String(t.completionReport || ''),
-          attachments: (t.attachments as string[]) || [],
-          comments: (t.comments as Task['comments']) || [],
-          createdAt: String(t.createdAt || t.created_at || new Date().toISOString()),
-          completedAt: (t.completedAt as string) || null,
-        }));
-        set({ tasks: normalized });
-        localStorage.setItem('attendance_tasks', JSON.stringify(normalized));
-      }
+      // Load tasks
+      try {
+        const tasksRes = await api.get('/tasks');
+        if (tasksRes?.success && Array.isArray(tasksRes.data)) {
+          const normalized = tasksRes.data.map((t: Record<string, unknown>) => ({
+            id: String(t.id),
+            title: String(t.title || ''),
+            description: String(t.description || ''),
+            assignedTo: String(t.assignedTo || t.assigned_to || ''),
+            assignedBy: String(t.assignedBy || t.assigned_by || ''),
+            priority: (t.priority as Task['priority']) || 'medium',
+            status: (t.status as Task['status']) || 'pending',
+            category: String(t.category || ''),
+            dueDate: String(t.dueDate || t.due_date || ''),
+            progress: Number(t.progress) || 0,
+            ticketNumber: String(t.ticketNumber || 'TK-' + String(t.id || '').substring(0, 6).toUpperCase()),
+            completionReport: String(t.completionReport || ''),
+            attachments: (t.attachments as string[]) || [],
+            comments: (t.comments as Task['comments']) || [],
+            createdAt: String(t.createdAt || t.created_at || new Date().toISOString()),
+            completedAt: (t.completedAt as string) || null,
+          }));
+          set({ tasks: normalized });
+          localStorage.setItem('attendance_tasks', JSON.stringify(normalized));
+        }
+      } catch {}
 
-      const incidentsRes = await api.get('/incidents');
-      if (incidentsRes?.success && Array.isArray(incidentsRes.data)) {
-        const normalized = incidentsRes.data.map((i: Record<string, unknown>) => ({
-          id: String(i.id),
-          studentId: String(i.studentId || i.student_id || ''),
-          incidentType: String(i.incidentType || i.type || ''),
-          description: String(i.description || ''),
-          actionTaken: String(i.actionTaken || i.action_taken || ''),
-          reportedBy: String(i.reportedBy || i.reported_by || ''),
-          date: String(i.date || i.incident_date || ''),
-          severity: (i.severity as Incident['severity']) || 'medium',
-          status: (i.status as Incident['status']) || 'open',
-          followUpNotes: String(i.followUpNotes || ''),
-          attachments: (i.attachments as string[]) || [],
-          createdAt: String(i.createdAt || i.created_at || new Date().toISOString()),
-        }));
-        set({ incidents: normalized });
-        localStorage.setItem('attendance_incidents', JSON.stringify(normalized));
-      }
+      // Load incidents
+      try {
+        const incidentsRes = await api.get('/incidents');
+        if (incidentsRes?.success && Array.isArray(incidentsRes.data)) {
+          const normalized = incidentsRes.data.map((i: Record<string, unknown>) => ({
+            id: String(i.id),
+            studentId: String(i.studentId || i.student_id || ''),
+            incidentType: String(i.incidentType || i.type || ''),
+            description: String(i.description || ''),
+            actionTaken: String(i.actionTaken || i.action_taken || ''),
+            reportedBy: String(i.reportedBy || i.reported_by || ''),
+            date: String(i.date || i.incident_date || ''),
+            severity: (i.severity as Incident['severity']) || 'medium',
+            status: (i.status as Incident['status']) || 'open',
+            followUpNotes: String(i.followUpNotes || ''),
+            attachments: (i.attachments as string[]) || [],
+            createdAt: String(i.createdAt || i.created_at || new Date().toISOString()),
+          }));
+          set({ incidents: normalized });
+          localStorage.setItem('attendance_incidents', JSON.stringify(normalized));
+        }
+      } catch {}
 
       // Load teachers
       try {
@@ -539,14 +563,18 @@ export const useAppStore = create<AppState>((set) => ({
         }
       } catch {}
 
-      const usersRes = await api.get('/users');
-      if (usersRes?.success && Array.isArray(usersRes.data)) {
-        localStorage.setItem('attendance_users', JSON.stringify(usersRes.data));
-      }
+      // Load users
+      try {
+        const usersRes = await api.get('/users');
+        if (usersRes?.success && Array.isArray(usersRes.data)) {
+          localStorage.setItem('attendance_users', JSON.stringify(usersRes.data));
+        }
+      } catch {}
 
-      console.log('[API] All data loaded from cloud successfully');
+      console.log('[API] Data loading complete');
     } catch (e) {
-      console.warn('[API] Failed to load from API, using local data:', e);
+      // Only log unexpected errors, not 404-related issues
+      console.warn('[API] Unexpected error during data load:', e);
     } finally {
       // Re-enable API sync after loading is complete
       _loadingFromApi = false;
