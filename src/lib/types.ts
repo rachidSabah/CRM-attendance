@@ -87,6 +87,7 @@ export interface Task {
   title: string;
   description?: string;
   assignedTo?: string;
+  assignedToEmail?: string;
   assignedBy?: string;
   priority: 'urgent' | 'high' | 'medium' | 'low';
   status: 'pending' | 'in_progress' | 'completed' | 'overdue';
@@ -97,6 +98,7 @@ export interface Task {
   completionReport?: string;
   attachments?: string[];
   comments?: TaskComment[];
+  emailSent?: boolean;
   createdAt: string;
   completedAt?: string | null;
 }

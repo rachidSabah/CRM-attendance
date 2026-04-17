@@ -9,6 +9,7 @@ import { t } from '@/lib/i18n';
 import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
 import * as pdfUtils from '@/lib/pdf';
+import { sendTaskAssignmentEmail } from '@/lib/email';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1929,15 +1930,38 @@ function BehaviorPage() {
 
 // ==================== TASKS PAGE ====================
 function TasksPage() {
-  const { tasks, language, setTasks, currentUser, teachers } = useAppStore();
+  const { tasks, language, setTasks, currentUser, teachers, employees } = useAppStore();
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [editTask, setEditTask] = useState<Task | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [form, setForm] = useState({ title: '', description: '', assignedTo: '', priority: 'medium' as Task['priority'], status: 'pending' as Task['status'], category: '', dueDate: '', progress: '0' });
+  const [form, setForm] = useState({ title: '', description: '', assignedTo: '', assignedToEmail: '', priority: 'medium' as Task['priority'], status: 'pending' as Task['status'], category: '', dueDate: '', progress: '0' });
   const [commentText, setCommentText] = useState('');
+  const [sendEmailNotif, setSendEmailNotif] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+
+  // Build list of assignable people (teachers + employees) with emails for dropdown
+  const assigneeList = useMemo(() => {
+    const list: { name: string; email: string; source: string }[] = [];
+    teachers.forEach(tc => {
+      if (tc.name) list.push({ name: tc.name, email: tc.email || '', source: 'teacher' });
+    });
+    employees.forEach(emp => {
+      if (emp.fullName) list.push({ name: emp.fullName, email: emp.email || '', source: 'employee' });
+    });
+    return list;
+  }, [teachers, employees]);
+
+  // Auto-fill email when assignee name changes
+  const handleAssigneeChange = (name: string) => {
+    setForm(prev => ({ ...prev, assignedTo: name }));
+    const match = assigneeList.find(a => a.name === name);
+    if (match?.email) {
+      setForm(prev => ({ ...prev, assignedToEmail: match.email }));
+    }
+  };
 
   const filtered = useMemo(() => {
     let t = [...tasks];
@@ -1950,21 +1974,62 @@ function TasksPage() {
     all: tasks.length, pending: tasks.filter(t => t.status === 'pending').length, in_progress: tasks.filter(t => t.status === 'in_progress').length, completed: tasks.filter(t => t.status === 'completed').length, overdue: tasks.filter(t => t.status === 'overdue').length,
   }), [tasks]);
 
-  const openAdd = () => { setEditTask(null); setForm({ title: '', description: '', assignedTo: '', priority: 'medium', status: 'pending', category: '', dueDate: '', progress: '0' }); setDialogOpen(true); };
-  const openEdit = (tk: Task) => { setEditTask(tk); setForm({ title: tk.title, description: tk.description || '', assignedTo: tk.assignedTo || '', priority: tk.priority, status: tk.status, category: tk.category || '', dueDate: tk.dueDate || '', progress: String(tk.progress || 0) }); setDialogOpen(true); };
+  const openAdd = () => { setEditTask(null); setForm({ title: '', description: '', assignedTo: '', assignedToEmail: '', priority: 'medium', status: 'pending', category: '', dueDate: '', progress: '0' }); setSendEmailNotif(false); setDialogOpen(true); };
+  const openEdit = (tk: Task) => {
+    setEditTask(tk);
+    // Find email from teacher/employee list based on assignedTo name
+    const match = assigneeList.find(a => a.name === tk.assignedTo);
+    setForm({
+      title: tk.title, description: tk.description || '', assignedTo: tk.assignedTo || '',
+      assignedToEmail: match?.email || '',
+      priority: tk.priority, status: tk.status, category: tk.category || '',
+      dueDate: tk.dueDate || '', progress: String(tk.progress || 0)
+    });
+    setSendEmailNotif(false);
+    setDialogOpen(true);
+  };
   const openDetail = (tk: Task) => { setSelectedTask(tk); setCommentText(''); setDetailOpen(true); };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.title) return;
+    let ticket = editTask?.ticketNumber || '';
+    let emailResult: { success: boolean; error?: string } | null = null;
+
+    // Send email notification BEFORE saving (so we know the result)
+    if (sendEmailNotif && form.assignedToEmail && form.assignedToEmail.includes('@')) {
+      setEmailSending(true);
+      emailResult = await sendTaskAssignmentEmail({
+        to: form.assignedToEmail,
+        toName: form.assignedTo || undefined,
+        taskTitle: form.title,
+        assignedBy: currentUser?.fullName,
+        priority: form.priority,
+        dueDate: form.dueDate || undefined,
+        description: form.description || undefined,
+        ticketNumber: editTask?.ticketNumber || ('TK-' + genId().substring(0, 6).toUpperCase()),
+        category: form.category || undefined,
+        language,
+      });
+      setEmailSending(false);
+    }
+
     if (editTask) {
-      setTasks(tasks.map(t => t.id === editTask.id ? { ...t, title: form.title, description: form.description, assignedTo: form.assignedTo, priority: form.priority, status: form.status, category: form.category, dueDate: form.dueDate, progress: Number(form.progress) || 0, completedAt: form.status === 'completed' ? new Date().toISOString() : t.completedAt } : t));
+      setTasks(tasks.map(t => t.id === editTask.id ? { ...t, title: form.title, description: form.description, assignedTo: form.assignedTo, assignedToEmail: form.assignedToEmail || undefined, priority: form.priority, status: form.status, category: form.category, dueDate: form.dueDate, progress: Number(form.progress) || 0, completedAt: form.status === 'completed' ? new Date().toISOString() : t.completedAt, emailSent: emailResult?.success || t.emailSent } : t));
       toast.success(language === 'fr' ? 'Tâche mise à jour' : 'Task updated');
     } else {
-      const ticket = 'TK-' + genId().substring(0, 6).toUpperCase();
-      setTasks([...tasks, { id: genId(), title: form.title, description: form.description, assignedTo: form.assignedTo, assignedBy: currentUser?.fullName, priority: form.priority, status: form.status, category: form.category, dueDate: form.dueDate, progress: Number(form.progress) || 0, ticketNumber: ticket, comments: [], createdAt: new Date().toISOString() }]);
+      ticket = 'TK-' + genId().substring(0, 6).toUpperCase();
+      setTasks([...tasks, { id: genId(), title: form.title, description: form.description, assignedTo: form.assignedTo, assignedToEmail: form.assignedToEmail || undefined, assignedBy: currentUser?.fullName, priority: form.priority, status: form.status, category: form.category, dueDate: form.dueDate, progress: Number(form.progress) || 0, ticketNumber: ticket, comments: [], emailSent: emailResult?.success || false, createdAt: new Date().toISOString() }]);
       toast.success(language === 'fr' ? 'Tâche créée' : 'Task created');
     }
     setDialogOpen(false);
+
+    if (emailResult) {
+      if (emailResult.success) {
+        toast.success(language === 'fr' ? 'Email de notification envoyé' : 'Notification email sent');
+      } else {
+        toast.error(`${language === 'fr' ? "Erreur d'envoi d'email" : 'Email send error'}: ${emailResult.error || 'Unknown'}`);
+      }
+    }
   };
 
   const handleDelete = (id: string) => { setTasks(tasks.filter(t => t.id !== id)); toast.success(language === 'fr' ? 'Tâche supprimée' : 'Task deleted'); };
@@ -2010,6 +2075,7 @@ function TasksPage() {
                       {tk.assignedTo && <span>👤 {tk.assignedTo}</span>}
                       {tk.dueDate && <span>📅 {tk.dueDate}</span>}
                       {tk.comments && tk.comments.length > 0 && <span>💬 {tk.comments.length}</span>}
+                      {tk.emailSent && <span className="text-emerald-600 flex items-center gap-0.5" title={language === 'fr' ? 'Email envoyé' : 'Email sent'}><Mail className="h-3 w-3" />✓</span>}
                     </div>
                     {(tk.progress || 0) > 0 && <div className="mt-2"><Progress value={tk.progress || 0} className="h-1.5" /></div>}
                   </div>
@@ -2049,13 +2115,55 @@ function TasksPage() {
           </div>
         </ScrollArea>}</DialogContent></Dialog>
       {/* Add/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent><DialogHeader><DialogTitle>{editTask ? t('edit', language) : t('add', language)} {t('tasks', language)}</DialogTitle></DialogHeader>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{editTask ? t('edit', language) : t('add', language)} {t('tasks', language)}</DialogTitle></DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="space-y-2"><Label>{language === 'fr' ? 'Titre' : 'Title'} *</Label><Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
           <div className="space-y-2"><Label>{language === 'fr' ? 'Description' : 'Description'}</Label><Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2"><Label>{language === 'fr' ? 'Assigné à' : 'Assigned to'}</Label><Input value={form.assignedTo} onChange={e => setForm({ ...form, assignedTo: e.target.value })} placeholder={language === 'fr' ? 'Nom' : 'Name'} /></div>
+            <div className="space-y-2">
+              <Label>{language === 'fr' ? 'Assigné à' : 'Assigned to'}</Label>
+              {assigneeList.length > 0 ? (
+                <Select value={form.assignedTo} onValueChange={handleAssigneeChange}>
+                  <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner...' : 'Select...'} /></SelectTrigger>
+                  <SelectContent>
+                    {assigneeList.map(a => (
+                      <SelectItem key={`${a.source}-${a.name}`} value={a.name}>
+                        {a.name} {a.email ? `(${a.email})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input value={form.assignedTo} onChange={e => setForm({ ...form, assignedTo: e.target.value })} placeholder={language === 'fr' ? 'Nom' : 'Name'} />
+              )}
+            </div>
             <div className="space-y-2"><Label>{language === 'fr' ? 'Catégorie' : 'Category'}</Label><Input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} /></div>
+          </div>
+          {/* Email notification section */}
+          <div className="rounded-lg border p-3 space-y-3 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Mail className="h-4 w-4 text-emerald-600" />
+                <Label className="text-sm font-medium cursor-pointer" onClick={() => setSendEmailNotif(!sendEmailNotif)}>
+                  {language === 'fr' ? 'Notifier par email' : 'Notify by email'}
+                </Label>
+              </div>
+              <Switch checked={sendEmailNotif} onCheckedChange={setSendEmailNotif} />
+            </div>
+            {sendEmailNotif && (
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{language === 'fr' ? 'Email du destinataire' : 'Recipient email'}</Label>
+                <Input
+                  type="email"
+                  value={form.assignedToEmail}
+                  onChange={e => setForm({ ...form, assignedToEmail: e.target.value })}
+                  placeholder="person@email.com"
+                />
+                {!form.assignedToEmail.includes('@') && (
+                  <p className="text-xs text-amber-600">{language === 'fr' ? 'Veuillez entrer un email valide pour envoyer la notification.' : 'Please enter a valid email to send notification.'}</p>
+                )}
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2"><Label>{language === 'fr' ? 'Priorité' : 'Priority'}</Label><Select value={form.priority} onValueChange={v => setForm({ ...form, priority: v as Task['priority'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="urgent">{t('urgent', language)}</SelectItem><SelectItem value="high">{t('high', language)}</SelectItem><SelectItem value="medium">{t('medium', language)}</SelectItem><SelectItem value="low">{t('low', language)}</SelectItem></SelectContent></Select></div>
@@ -2064,7 +2172,14 @@ function TasksPage() {
           </div>
           <div className="space-y-2"><Label>{language === 'fr' ? 'Échéance' : 'Due Date'}</Label><Input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} /></div>
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button>
+          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave} disabled={emailSending}>
+            {emailSending ? (
+              <span className="flex items-center gap-2"><RefreshCw className="h-4 w-4 animate-spin" />{language === 'fr' ? 'Envoi en cours...' : 'Sending...'}</span>
+            ) : t('save', language)}
+          </Button>
+        </DialogFooter>
       </DialogContent></Dialog>
     </div>
   );
