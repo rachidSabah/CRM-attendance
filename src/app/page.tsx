@@ -2550,11 +2550,11 @@ function SettingsPage() {
   }, [schoolInfo]);
 
   // Backup state
-  const [autoBackupEnabled, setAutoBackupEnabled] = useState(() => localStorage.getItem('attendance_auto_backup') === 'true');
-  const [backupFrequency, setBackupFrequency] = useState(() => localStorage.getItem('attendance_backup_freq') || '12h');
-  const [lastBackupTime, setLastBackupTime] = useState(() => localStorage.getItem('attendance_last_backup') || '');
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState(() => { try { return typeof window !== 'undefined' && localStorage.getItem('attendance_auto_backup') === 'true'; } catch { return false; } });
+  const [backupFrequency, setBackupFrequency] = useState(() => { try { return typeof window !== 'undefined' ? (localStorage.getItem('attendance_backup_freq') || '12h') : '12h'; } catch { return '12h'; } });
+  const [lastBackupTime, setLastBackupTime] = useState(() => { try { return typeof window !== 'undefined' ? (localStorage.getItem('attendance_last_backup') || '') : ''; } catch { return ''; } });
   const [backupHistory, setBackupHistory] = useState<Array<{ timestamp: string; size: string }>>(() => {
-    try { return JSON.parse(localStorage.getItem('attendance_backup_history') || '[]'); } catch { return []; }
+    try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('attendance_backup_history') || '[]') : []; } catch { return []; }
   });
   const [restorePreview, setRestorePreview] = useState<Record<string, number> | null>(null);
   const [restoreData, setRestoreData] = useState<Record<string, unknown> | null>(null);
@@ -2563,7 +2563,7 @@ function SettingsPage() {
 
   // Cloud storage config state
   const [cloudConfig, setCloudConfig] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('attendance_cloud_config') || '{}'); } catch { return {}; }
+    try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('attendance_cloud_config') || '{}') : {}; } catch { return {}; }
   });
   const [cloudUploading, setCloudUploading] = useState(false);
 

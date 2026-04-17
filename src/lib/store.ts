@@ -63,6 +63,7 @@ interface AppState {
   addAuditLog: (action: string, entityType: string, entityId?: string, entityName?: string, details?: string) => void;
   setAuditLog: (logs: AuditLogEntry[]) => void;
   setSavedSchedules: (schedules: SavedSchedule[]) => void;
+  setAdmins: (admins: Record<string, unknown>[]) => void;
   purgeCache: () => void;
   loadAllData: () => Promise<void>;
 }
@@ -280,6 +281,7 @@ export const useAppStore = create<AppState>((set) => ({
   },
   setAuditLog: (logs) => { set({ auditLog: logs }); localStorage.setItem('attendance_audit_log', JSON.stringify(logs)); },
   setSavedSchedules: (s) => { set({ savedSchedules: s }); localStorage.setItem('attendance_saved_schedules', JSON.stringify(s)); scheduleApiSync(); },
+  setAdmins: (a) => { set({ admins: a }); localStorage.setItem('attendance_admins', JSON.stringify(a)); },
   purgeCache: () => {
     const keep = ['attendance_auth', 'attendance_primary_color'];
     const keys = Object.keys(localStorage);
