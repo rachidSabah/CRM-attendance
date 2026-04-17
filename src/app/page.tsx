@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { setApiToken, api } from '@/lib/api';
 import { t } from '@/lib/i18n';
-import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
+import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
 import * as pdfUtils from '@/lib/pdf';
 
@@ -2477,7 +2477,7 @@ function ProgressReportsSection() {
 
 // ==================== SETTINGS PAGE ====================
 function SettingsPage() {
-  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser, setStudents, setClasses, setModules, setAttendance, setGrades, setBehavior, setTasks, setIncidents, setTemplates, primaryColor, setPrimaryColor, setSchedules, setExams, setExamGrades, setCurriculum, savedSchedules, setSavedSchedules, addAuditLog } = useAppStore();
+  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser, setStudents, setClasses, setModules, setAttendance, setGrades, setBehavior, setTasks, setIncidents, setTemplates, primaryColor, setPrimaryColor, schedules, setSchedules, setExams, setExamGrades, setCurriculum, savedSchedules, setSavedSchedules, addAuditLog } = useAppStore();
   const [activeTab, setActiveTab] = useState('general');
 
   // Teachers state
@@ -2564,7 +2564,7 @@ function SettingsPage() {
     localStorage.setItem('attendance_backup_freq', backupFrequency);
   }, [autoBackupEnabled, backupFrequency]);
 
-  const handleBackupRef = useRef(handleManualBackup);
+  const handleBackupRef = useRef<((silent?: boolean, incremental?: boolean) => void) | null>(null);
   useEffect(() => { handleBackupRef.current = handleManualBackup; }, [students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, schedules, exams, examGrades, curriculum, savedSchedules, academicYears, schoolInfo]);
 
   useEffect(() => {
@@ -3553,10 +3553,10 @@ function CurriculumPage() {
     setDialogOpen(true);
   };
 
-  const addObjective = () => setForm({ ...form, objectives: [...form.objectives, ''] });
-  const removeObjective = (idx: number) => setForm({ ...form, objectives: form.objectives.filter((_, i) => i !== idx) });
+  const addObjective = () => setForm({ ...form, objectives: [...(form.objectives || []), ''] });
+  const removeObjective = (idx: number) => setForm({ ...form, objectives: (form.objectives || []).filter((_, i) => i !== idx) });
   const updateObjective = (idx: number, val: string) => {
-    const newObj = [...form.objectives];
+    const newObj = [...(form.objectives || [])];
     newObj[idx] = val;
     setForm({ ...form, objectives: newObj });
   };
@@ -3640,9 +3640,9 @@ function CurriculumPage() {
                       <StatusBadge status={item.status} />
                     </div>
                     {item.description && <p className="text-sm text-muted-foreground mt-1">{item.description}</p>}
-                    {item.objectives.length > 0 && (
+                    {(item.objectives || []).length > 0 && (
                       <ul className="mt-2 space-y-1">
-                        {item.objectives.map((obj, oi) => (
+                        {(item.objectives || []).map((obj, oi) => (
                           <li key={oi} className="text-xs text-muted-foreground flex items-start gap-1.5">
                             <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />
                             <span>{obj}</span>

@@ -70,3 +70,5 @@ worklog.md
 mini-services/
 download/
 prisma/.cf_token
+.next
+node_modules
