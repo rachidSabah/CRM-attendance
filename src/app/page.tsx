@@ -2477,7 +2477,7 @@ function ProgressReportsSection() {
 
 // ==================== SETTINGS PAGE ====================
 function SettingsPage() {
-  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser, setStudents, setClasses, setModules, setAttendance, setGrades, setBehavior, setTasks, setIncidents, setTemplates, primaryColor, setPrimaryColor, schedules, setSchedules, setExams, setExamGrades, setCurriculum, savedSchedules, setSavedSchedules, addAuditLog } = useAppStore();
+  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser, setStudents, setClasses, setModules, setAttendance, setGrades, setBehavior, setTasks, setIncidents, setTemplates, primaryColor, setPrimaryColor, schedules, setSchedules, exams, setExams, examGrades, setExamGrades, curriculum, setCurriculum, savedSchedules, setSavedSchedules, addAuditLog } = useAppStore();
   const [activeTab, setActiveTab] = useState('general');
 
   // Teachers state
