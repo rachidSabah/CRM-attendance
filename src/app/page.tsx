@@ -1066,20 +1066,26 @@ function SchedulePage() {
   const [entryForm, setEntryForm] = useState({
     teacherId: '',
     roomId: '',
-    timeSlot: '',
+    timeFrom: '',
+    timeTo: '',
     moduleId: '',
     notes: '',
   });
 
-  // Generate all 24 hourly time slots
-  const TIME_SLOTS = useMemo(() => {
-    const slots = [];
+  // Combined timeSlot derived from timeFrom and timeTo
+  const combinedTimeSlot = useMemo(() => {
+    if (entryForm.timeFrom && entryForm.timeTo) return `${entryForm.timeFrom} - ${entryForm.timeTo}`;
+    return '';
+  }, [entryForm.timeFrom, entryForm.timeTo]);
+
+  // Generate all 24 hour options for From/To time selection
+  const TIME_OPTIONS = useMemo(() => {
+    const options = [];
     for (let h = 0; h < 24; h++) {
-      const start = `${String(h).padStart(2, '0')}:00`;
-      const end = `${String((h + 1) % 24).padStart(2, '0')}:00`;
-      slots.push({ value: `${start}-${end}`, label: `${start} - ${end}` });
+      const hh = `${String(h).padStart(2, '0')}:00`;
+      options.push({ value: hh, label: hh });
     }
-    return slots;
+    return options;
   }, []);
 
   // Derive unique rooms from classes
@@ -1162,15 +1168,18 @@ function SchedulePage() {
     const existing = getEntryForDay(day);
     setEditingDay(ds);
     if (existing) {
+      // Parse existing timeSlot (e.g. "08:00 - 10:00") into timeFrom and timeTo
+      const parts = (existing.timeSlot || '').split(' - ');
       setEntryForm({
         teacherId: existing.teacherId,
         roomId: existing.roomId,
-        timeSlot: existing.timeSlot,
+        timeFrom: parts[0] || '',
+        timeTo: parts[1] || '',
         moduleId: existing.moduleId,
         notes: existing.notes || '',
       });
     } else {
-      setEntryForm({ teacherId: '', roomId: '', timeSlot: '', moduleId: '', notes: '' });
+      setEntryForm({ teacherId: '', roomId: '', timeFrom: '', timeTo: '', moduleId: '', notes: '' });
     }
     setConflictMsg(null);
     setDialogOpen(true);
@@ -1179,14 +1188,14 @@ function SchedulePage() {
   // Save entry
   const handleSaveEntry = () => {
     if (!editingDay || !selectedClassId) return;
-    if (!entryForm.teacherId && !entryForm.roomId && !entryForm.timeSlot && !entryForm.moduleId) {
+    if (!entryForm.teacherId && !entryForm.roomId && !combinedTimeSlot && !entryForm.moduleId) {
       toast.error(language === 'fr' ? 'Veuillez remplir au moins un champ' : 'Please fill at least one field');
       return;
     }
 
     // Check conflicts
-    if (entryForm.roomId && entryForm.timeSlot) {
-      const conflict = checkConflicts(editingDay, entryForm.timeSlot, entryForm.roomId, entryForm.teacherId, selectedClassId);
+    if (entryForm.roomId && combinedTimeSlot) {
+      const conflict = checkConflicts(editingDay, combinedTimeSlot, entryForm.roomId, entryForm.teacherId, selectedClassId);
       if (conflict) {
         setConflictMsg(conflict);
         return;
@@ -1200,7 +1209,7 @@ function SchedulePage() {
         ...s,
         teacherId: entryForm.teacherId,
         roomId: entryForm.roomId,
-        timeSlot: entryForm.timeSlot,
+        timeSlot: combinedTimeSlot,
         moduleId: entryForm.moduleId,
         notes: entryForm.notes,
       } : s));
@@ -1212,7 +1221,7 @@ function SchedulePage() {
         date: editingDay,
         teacherId: entryForm.teacherId,
         roomId: entryForm.roomId,
-        timeSlot: entryForm.timeSlot,
+        timeSlot: combinedTimeSlot,
         moduleId: entryForm.moduleId,
         notes: entryForm.notes,
         createdAt: new Date().toISOString(),
@@ -1574,33 +1583,59 @@ function SchedulePage() {
           )}
 
           <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label>{t('assigned_time', language)}</Label>
-              <Select value={entryForm.timeSlot} onValueChange={v => {
-                setEntryForm({ ...entryForm, timeSlot: v });
-                // Auto-check conflicts on change
-                if (entryForm.roomId && editingDay && selectedClassId) {
-                  const c = checkConflicts(editingDay, v, entryForm.roomId, entryForm.teacherId, selectedClassId);
-                  setConflictMsg(c);
-                }
-              }}>
-                <SelectTrigger>
-                  <SelectValue placeholder={language === 'fr' ? 'Sélectionner un créneau' : 'Select time slot'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIME_SLOTS.map(ts => (
-                    <SelectItem key={ts.value} value={ts.value}>{ts.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>{language === 'fr' ? 'De (Heure début)' : 'From'}</Label>
+                <Select value={entryForm.timeFrom || '__none__'} onValueChange={v => {
+                  const from = v === '__none__' ? '' : v;
+                  setEntryForm({ ...entryForm, timeFrom: from });
+                  if (entryForm.roomId && from && entryForm.timeTo && editingDay && selectedClassId) {
+                    const slot = `${from} - ${entryForm.timeTo}`;
+                    const c = checkConflicts(editingDay, slot, entryForm.roomId, entryForm.teacherId, selectedClassId);
+                    setConflictMsg(c);
+                  }
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={language === 'fr' ? 'Heure début' : 'Start time'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{language === 'fr' ? 'Sélectionner' : 'Select'}</SelectItem>
+                    {TIME_OPTIONS.map(t => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>{language === 'fr' ? 'À (Heure fin)' : 'To'}</Label>
+                <Select value={entryForm.timeTo || '__none__'} onValueChange={v => {
+                  const to = v === '__none__' ? '' : v;
+                  setEntryForm({ ...entryForm, timeTo: to });
+                  if (entryForm.roomId && entryForm.timeFrom && to && editingDay && selectedClassId) {
+                    const slot = `${entryForm.timeFrom} - ${to}`;
+                    const c = checkConflicts(editingDay, slot, entryForm.roomId, entryForm.teacherId, selectedClassId);
+                    setConflictMsg(c);
+                  }
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={language === 'fr' ? 'Heure fin' : 'End time'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{language === 'fr' ? 'Sélectionner' : 'Select'}</SelectItem>
+                    {TIME_OPTIONS.map(t => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="space-y-2">
               <Label>{t('assigned_teacher', language)}</Label>
               <Select value={entryForm.teacherId} onValueChange={v => {
                 setEntryForm({ ...entryForm, teacherId: v });
-                if (entryForm.roomId && entryForm.timeSlot && editingDay && selectedClassId) {
-                  const c = checkConflicts(editingDay, entryForm.timeSlot, entryForm.roomId, v, selectedClassId);
+                if (entryForm.roomId && combinedTimeSlot && editingDay && selectedClassId) {
+                  const c = checkConflicts(editingDay, combinedTimeSlot, entryForm.roomId, v, selectedClassId);
                   setConflictMsg(c);
                 }
               }}>
@@ -1620,8 +1655,8 @@ function SchedulePage() {
               <Label>{t('assigned_room', language)}</Label>
               <Select value={entryForm.roomId} onValueChange={v => {
                 setEntryForm({ ...entryForm, roomId: v });
-                if (entryForm.timeSlot && editingDay && selectedClassId) {
-                  const c = checkConflicts(editingDay, entryForm.timeSlot, v, entryForm.teacherId, selectedClassId);
+                if (combinedTimeSlot && editingDay && selectedClassId) {
+                  const c = checkConflicts(editingDay, combinedTimeSlot, v, entryForm.teacherId, selectedClassId);
                   setConflictMsg(c);
                 }
               }}>
