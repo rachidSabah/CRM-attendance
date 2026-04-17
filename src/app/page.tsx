@@ -3709,8 +3709,72 @@ function CurriculumPage() {
 
 // ==================== SUPER ADMIN PAGE ====================
 function SuperAdminPage() {
-  const { language, admins, students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, schoolInfo } = useAppStore();
+  const { language, admins, students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, schoolInfo, auditLog, addAuditLog, setAdmins } = useAppStore();
   const [tab, setTab] = useState('tenants');
+
+  // ===== Tenants state (persisted in localStorage) =====
+  const defaultTenants = [
+    { id: '1', name: 'INFOHAS Academy', slug: 'infohas-academy', students: 245, teachers: 18, status: 'active' },
+    { id: '2', name: 'Ecole Primaire Al Khawarizmi', slug: 'al-khawarizmi', students: 120, teachers: 10, status: 'active' },
+    { id: '3', name: 'Lycée Ibn Sina', slug: 'ibn-sina', students: 380, teachers: 25, status: 'active' },
+  ];
+  const [tenants, setTenants] = useState<Array<{ id: string; name: string; slug: string; students: number; teachers: number; status: string }>>(() => {
+    try { return JSON.parse(localStorage.getItem('attendance_tenants') || 'null') || defaultTenants; } catch { return defaultTenants; }
+  });
+  const [tenantDialog, setTenantDialog] = useState(false);
+  const [editTenant, setEditTenant] = useState<typeof tenants[0] | null>(null);
+  const [tForm, setTForm] = useState({ name: '', slug: '', students: 0, teachers: 0, status: 'active' });
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  const saveTenants = (updated: typeof tenants) => {
+    setTenants(updated);
+    localStorage.setItem('attendance_tenants', JSON.stringify(updated));
+  };
+
+  const openAddTenant = () => {
+    setEditTenant(null);
+    setTForm({ name: '', slug: '', students: 0, teachers: 0, status: 'active' });
+    setTenantDialog(true);
+  };
+
+  const openEditTenant = (t: typeof tenants[0]) => {
+    setEditTenant(t);
+    setTForm({ name: t.name, slug: t.slug, students: t.students, teachers: t.teachers, status: t.status });
+    setTenantDialog(true);
+  };
+
+  const saveTenant = () => {
+    if (!tForm.name.trim()) { toast.error(language === 'fr' ? 'Le nom est requis' : 'Name is required'); return; }
+    const slugVal = tForm.slug.trim() || tForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (editTenant) {
+      saveTenants(tenants.map(t => t.id === editTenant.id ? { ...t, name: tForm.name.trim(), slug: slugVal, students: Number(tForm.students), teachers: Number(tForm.teachers), status: tForm.status } : t));
+      addAuditLog('UPDATE_TENANT', 'school', editTenant.id, tForm.name, `Updated school: ${tForm.name}`);
+      toast.success(language === 'fr' ? 'École mise à jour' : 'School updated');
+    } else {
+      const newTenant = { id: Date.now().toString(36) + Math.random().toString(36).substring(2, 6), name: tForm.name.trim(), slug: slugVal, students: Number(tForm.students), teachers: Number(tForm.teachers), status: tForm.status };
+      saveTenants([...tenants, newTenant]);
+      addAuditLog('CREATE_TENANT', 'school', newTenant.id, newTenant.name, `Created school: ${newTenant.name}`);
+      toast.success(language === 'fr' ? 'École ajoutée' : 'School added');
+    }
+    setTenantDialog(false);
+  };
+
+  const deleteTenant = (id: string) => {
+    const t = tenants.find(t => t.id === id);
+    saveTenants(tenants.filter(t => t.id !== id));
+    addAuditLog('DELETE_TENANT', 'school', id, t?.name || '', `Deleted school: ${t?.name}`);
+    toast.success(language === 'fr' ? 'École supprimée' : 'School deleted');
+    setDeleteConfirm(null);
+  };
+
+  const toggleTenantStatus = (id: string) => {
+    const t = tenants.find(t => t.id === id);
+    if (!t) return;
+    const newStatus = t.status === 'active' ? 'inactive' : 'active';
+    saveTenants(tenants.map(t => t.id === id ? { ...t, status: newStatus } : t));
+    addAuditLog('TOGGLE_TENANT', 'school', id, t.name, `${t.name} → ${newStatus}`);
+    toast.success(`${t.name} ${language === 'fr' ? '→' : '→'} ${newStatus}`);
+  };
 
   // Export tab state
   const [exportFormat, setExportFormat] = useState<'csv' | 'pdf'>('pdf');
@@ -3771,26 +3835,36 @@ function SuperAdminPage() {
     toast.success(language === 'fr' ? 'Export complet!' : 'Full export!');
   };
 
-  const mockTenants = [
-    { id: '1', name: 'INFOHAS Academy', slug: 'infohas-academy', students: 245, teachers: 18, status: 'active' },
-    { id: '2', name: 'Ecole Primaire Al Khawarizmi', slug: 'al-khawarizmi', students: 120, teachers: 10, status: 'active' },
-    { id: '3', name: 'Lycée Ibn Sina', slug: 'ibn-sina', students: 380, teachers: 25, status: 'active' },
-  ];
+  // ===== Real system health data from store =====
+  const activeStudents = students.filter(s => s.status === 'active').length;
+  const totalUsers = students.length + teachers.length + employees.length + admins.length;
+  const totalDataRecords = students.length + classes.length + modules.length + attendance.length + grades.length + behavior.length + tasks.length + incidents.length;
+  const storageEstimate = typeof navigator !== 'undefined' && navigator.storage?.estimate ? null : null;
+  const [storageUsed, setStorageUsed] = useState('N/A');
 
-  const mockAuditLogs = [
-    { id: '1', action: 'LOGIN', user: 'admin@infohas.ma', timestamp: new Date().toISOString(), ip: '192.168.1.1', details: 'Successful login' },
-    { id: '2', action: 'CREATE_STUDENT', user: 'teacher@infohas.ma', timestamp: new Date(Date.now() - 3600000).toISOString(), ip: '192.168.1.2', details: 'Created student: Ahmed B.' },
-    { id: '3', action: 'EXPORT_DATA', user: 'admin@infohas.ma', timestamp: new Date(Date.now() - 7200000).toISOString(), ip: '192.168.1.1', details: 'Exported all data' },
-    { id: '4', action: 'DELETE_INCIDENT', user: 'admin@al-khawarizmi.ma', timestamp: new Date(Date.now() - 86400000).toISOString(), ip: '10.0.0.5', details: 'Deleted incident #15' },
-  ];
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
+      navigator.storage.estimate().then(est => {
+        const usedMB = ((est.usage || 0) / (1024 * 1024)).toFixed(1);
+        const quotaMB = ((est.quota || 0) / (1024 * 1024)).toFixed(0);
+        setStorageUsed(`${usedMB} MB / ${quotaMB} MB`);
+      }).catch(() => setStorageUsed('N/A'));
+    }
+  }, []);
 
   const systemHealth = [
-    { label: 'API Status', value: 'Operational', color: 'text-emerald-600', icon: <CheckCircle2 className="h-4 w-4" /> },
-    { label: 'Database', value: 'Connected', color: 'text-emerald-600', icon: <Database className="h-4 w-4" /> },
-    { label: 'Uptime', value: '99.9%', color: 'text-emerald-600', icon: <Activity className="h-4 w-4" /> },
-    { label: 'Total Requests', value: '12,458', color: 'text-blue-600', icon: <Globe className="h-4 w-4" /> },
-    { label: 'Storage', value: '2.4 GB / 10 GB', color: 'text-amber-600', icon: <Database className="h-4 w-4" /> },
-    { label: 'Active Users', value: String(mockTenants.reduce((s, t) => s + t.students, 0)), color: 'text-purple-600', icon: <Users className="h-4 w-4" /> },
+    { label: language === 'fr' ? 'Statut API' : 'API Status', value: 'Operational', color: 'text-emerald-600', icon: <CheckCircle2 className="h-4 w-4" /> },
+    { label: language === 'fr' ? 'Base de données' : 'Database', value: localStorage ? 'Connected' : 'Unavailable', color: localStorage ? 'text-emerald-600' : 'text-red-600', icon: <Database className="h-4 w-4" /> },
+    { label: language === 'fr' ? 'Disponibilité' : 'Uptime', value: '99.9%', color: 'text-emerald-600', icon: <Activity className="h-4 w-4" /> },
+    { label: language === 'fr' ? 'Écoles actives' : 'Active Schools', value: String(tenants.filter(t => t.status === 'active').length), color: 'text-blue-600', icon: <Building2 className="h-4 w-4" /> },
+    { label: language === 'fr' ? 'Total étudiants (multi-écoles)' : 'Total Students (all schools)', value: String(tenants.reduce((s, t) => s + t.students, 0)), color: 'text-purple-600', icon: <Users className="h-4 w-4" /> },
+    { label: language === 'fr' ? 'Utilisateurs actifs (cette école)' : 'Active Users (this school)', value: String(totalUsers), color: 'text-indigo-600', icon: <Users className="h-4 w-4" /> },
+    { label: language === 'fr' ? 'Étudiants actifs' : 'Active Students', value: String(activeStudents), color: 'text-emerald-600', icon: <GraduationCap className="h-4 w-4" /> },
+    { label: language === 'fr' ? 'Enseignants' : 'Teachers', value: String(teachers.length), color: 'text-blue-600', icon: <Users className="h-4 w-4" /> },
+    { label: language === 'fr' ? 'Employés' : 'Employees', value: String(employees.length), color: 'text-cyan-600', icon: <Users className="h-4 w-4" /> },
+    { label: language === 'fr' ? 'Enregistrements totaux' : 'Total Data Records', value: String(totalDataRecords), color: 'text-amber-600', icon: <Database className="h-4 w-4" /> },
+    { label: language === 'fr' ? 'Fichiers d\'audit' : 'Audit Log Entries', value: String(auditLog.length), color: 'text-orange-600', icon: <History className="h-4 w-4" /> },
+    { label: language === 'fr' ? 'Stockage' : 'Storage', value: storageUsed, color: 'text-amber-600', icon: <HardDrive className="h-4 w-4" /> },
   ];
 
   return (
@@ -3865,10 +3939,29 @@ function SuperAdminPage() {
         </TabsContent>
 
         <TabsContent value="tenants" className="space-y-4">
-          <div className="flex justify-between items-center"><h3 className="font-semibold">{language === 'fr' ? 'Écoles gérées' : 'Managed Schools'} ({mockTenants.length})</h3><Button size="sm" className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter école' : 'Add School'}</Button></div>
-          <div className="grid gap-3">{mockTenants.map(t => (
-            <Card key={t.id}><CardContent className="p-4"><div className="flex items-start justify-between"><div><h4 className="font-semibold">{t.name}</h4><p className="text-sm text-muted-foreground">/{t.slug}</p><div className="flex gap-4 mt-2 text-sm"><span>👥 {t.students} {language === 'fr' ? 'étudiants' : 'students'}</span><span>👨‍🏫 {t.teachers} {language === 'fr' ? 'enseignants' : 'teachers'}</span></div></div><Badge className={t.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100'}>{t.status}</Badge></div></CardContent></Card>
+          <div className="flex justify-between items-center"><h3 className="font-semibold">{language === 'fr' ? 'Écoles gérées' : 'Managed Schools'} ({tenants.length})</h3><Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={openAddTenant}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter école' : 'Add School'}</Button></div>
+          <div className="grid gap-3">{tenants.map(t => (
+            <Card key={t.id}><CardContent className="p-4"><div className="flex items-start justify-between"><div><h4 className="font-semibold">{t.name}</h4><p className="text-sm text-muted-foreground">/{t.slug}</p><div className="flex gap-4 mt-2 text-sm"><span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {t.students} {language === 'fr' ? 'étudiants' : 'students'}</span><span className="flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" /> {t.teachers} {language === 'fr' ? 'enseignants' : 'teachers'}</span></div></div><div className="flex items-center gap-2"><Badge className={t.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100'}>{t.status}</Badge><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditTenant(t)} title={language === 'fr' ? 'Modifier' : 'Edit'}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => setDeleteConfirm(t.id)} title={language === 'fr' ? 'Supprimer' : 'Delete'}><Trash2 className="h-3.5 w-3.5" /></Button></div></div></CardContent></Card>
           ))}</div>
+
+          {/* Add/Edit Tenant Dialog */}
+          <Dialog open={tenantDialog} onOpenChange={setTenantDialog}><DialogContent><DialogHeader><DialogTitle>{editTenant ? (language === 'fr' ? 'Modifier l\'école' : 'Edit School') : (language === 'fr' ? 'Ajouter une école' : 'Add School')}</DialogTitle><DialogDescription>{editTenant ? (language === 'fr' ? 'Modifier les informations de l\'école' : 'Update school information') : (language === 'fr' ? 'Remplir les informations de la nouvelle école' : 'Enter new school details')}</DialogDescription></DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Nom de l\'école' : 'School Name'} *</Label><Input value={tForm.name} onChange={e => setTForm({ ...tForm, name: e.target.value, slug: tForm.slug || e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') })} placeholder={language === 'fr' ? 'Ex: INFOHAS Academy' : 'e.g. INFOHAS Academy'} /></div>
+              <div className="space-y-2"><Label>Slug (URL)</Label><Input value={tForm.slug} onChange={e => setTForm({ ...tForm, slug: e.target.value.replace(/[^a-z0-9-]/g, '') })} placeholder="infohas-academy" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>{language === 'fr' ? 'Étudiants' : 'Students'}</Label><Input type="number" min={0} value={tForm.students} onChange={e => setTForm({ ...tForm, students: Number(e.target.value) || 0 })} /></div>
+                <div className="space-y-2"><Label>{language === 'fr' ? 'Enseignants' : 'Teachers'}</Label><Input type="number" min={0} value={tForm.teachers} onChange={e => setTForm({ ...tForm, teachers: Number(e.target.value) || 0 })} /></div>
+              </div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Statut' : 'Status'}</Label><Select value={tForm.status} onValueChange={v => setTForm({ ...tForm, status: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">{language === 'fr' ? 'Actif' : 'Active'}</SelectItem><SelectItem value="inactive">{language === 'fr' ? 'Inactif' : 'Inactive'}</SelectItem></SelectContent></Select></div>
+            </div>
+            <DialogFooter><Button variant="outline" onClick={() => setTenantDialog(false)}>{language === 'fr' ? 'Annuler' : 'Cancel'}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={saveTenant}>{editTenant ? <><Save className="h-4 w-4 mr-1" />{language === 'fr' ? 'Enregistrer' : 'Save'}</> : <><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter' : 'Add'}</>}</Button></DialogFooter>
+          </DialogContent></Dialog>
+
+          {/* Delete Confirmation Dialog */}
+          <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}><DialogContent><DialogHeader><DialogTitle>{language === 'fr' ? 'Confirmer la suppression' : 'Confirm Deletion'}</DialogTitle><DialogDescription>{language === 'fr' ? 'Cette action est irréversible. Voulez-vous vraiment supprimer cette école ?' : 'This action cannot be undone. Are you sure you want to delete this school?'}</DialogDescription></DialogHeader>
+            <DialogFooter><Button variant="outline" onClick={() => setDeleteConfirm(null)}>{language === 'fr' ? 'Annuler' : 'Cancel'}</Button><Button variant="destructive" onClick={() => deleteConfirm && deleteTenant(deleteConfirm)}><Trash2 className="h-4 w-4 mr-1" />{language === 'fr' ? 'Supprimer' : 'Delete'}</Button></DialogFooter>
+          </DialogContent></Dialog>
         </TabsContent>
 
         <TabsContent value="users" className="space-y-4">
@@ -3888,6 +3981,19 @@ function SuperAdminPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{systemHealth.map(s => (
             <Card key={s.label}><CardContent className="p-4 flex items-center gap-3"><div className={`${s.color}`}>{s.icon}</div><div><p className="text-sm text-muted-foreground">{s.label}</p><p className={`font-semibold ${s.color}`}>{s.value}</p></div></CardContent></Card>
           ))}</div>
+          {/* Data Breakdown */}
+          <Card><CardHeader><CardTitle className="text-base">{language === 'fr' ? 'Répartition des données' : 'Data Breakdown'}</CardTitle></CardHeader><CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="text-center p-3 rounded-lg bg-muted"><p className="text-2xl font-bold text-emerald-600">{students.length}</p><p className="text-xs text-muted-foreground">{t('students', language)}</p></div>
+              <div className="text-center p-3 rounded-lg bg-muted"><p className="text-2xl font-bold text-blue-600">{classes.length}</p><p className="text-xs text-muted-foreground">{t('classes', language)}</p></div>
+              <div className="text-center p-3 rounded-lg bg-muted"><p className="text-2xl font-bold text-purple-600">{attendance.length}</p><p className="text-xs text-muted-foreground">{t('attendance', language)}</p></div>
+              <div className="text-center p-3 rounded-lg bg-muted"><p className="text-2xl font-bold text-amber-600">{grades.length}</p><p className="text-xs text-muted-foreground">{t('grades', language)}</p></div>
+              <div className="text-center p-3 rounded-lg bg-muted"><p className="text-2xl font-bold text-orange-600">{tasks.length}</p><p className="text-xs text-muted-foreground">{language === 'fr' ? 'Tâches' : 'Tasks'}</p></div>
+              <div className="text-center p-3 rounded-lg bg-muted"><p className="text-2xl font-bold text-red-600">{incidents.length}</p><p className="text-xs text-muted-foreground">{language === 'fr' ? 'Incidents' : 'Incidents'}</p></div>
+              <div className="text-center p-3 rounded-lg bg-muted"><p className="text-2xl font-bold text-cyan-600">{behavior.length}</p><p className="text-xs text-muted-foreground">{language === 'fr' ? 'Comportement' : 'Behavior'}</p></div>
+              <div className="text-center p-3 rounded-lg bg-muted"><p className="text-2xl font-bold text-indigo-600">{modules.length}</p><p className="text-xs text-muted-foreground">{t('modules', language)}</p></div>
+            </div>
+          </CardContent></Card>
         </TabsContent>
       </Tabs>
     </div>
