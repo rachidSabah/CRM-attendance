@@ -2162,138 +2162,294 @@ function IncidentsPage() {
 
 // ==================== MESSAGING PAGE ====================
 function MessagingPage() {
-  const { students, classes, templates, language, setTemplates, attendance } = useAppStore();
-  const [mode, setMode] = useState<'individual' | 'bulk' | 'template'>('individual');
-  const [classFilter, setClassFilter] = useState('all');
-  const [selectedStudent, setSelectedStudent] = useState('');
-  const [message, setMessage] = useState('');
-  const [templateName, setTemplateName] = useState('');
-  const [templateCategory, setTemplateCategory] = useState('');
-  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const { templates, setTemplates, students, classes, schoolInfo, language } = useAppStore();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<Template | null>(null);
+  const [form, setForm] = useState({ name: '', content: '', category: '' });
+  const [quickStudentId, setQuickStudentId] = useState('');
+  const [quickTemplateId, setQuickTemplateId] = useState('');
+  const [bulkClassId, setBulkClassId] = useState('');
+  const [bulkTemplateId, setBulkTemplateId] = useState('');
 
-  const filteredStudents = useMemo(() => {
-    let s = [...students].filter(st => st.status === 'active');
-    if (classFilter !== 'all') s = s.filter(st => st.classId === classFilter);
-    return s;
-  }, [students, classFilter]);
-
-  const today = new Date().toISOString().split('T')[0];
-  const absentToday = useMemo(() => {
-    const absentIds = new Set(attendance.filter(a => a.date === today && a.status === 'absent').map(a => a.studentId));
-    return students.filter(s => absentIds.has(s.id));
-  }, [students, attendance, today]);
-
-  const lateToday = useMemo(() => {
-    const lateIds = new Set(attendance.filter(a => a.date === today && a.status === 'late').map(a => a.studentId));
-    return students.filter(s => lateIds.has(s.id));
-  }, [students, attendance, today]);
-
-  const sendWhatsApp = (phone: string | undefined, msg: string) => {
-    const formatted = formatWhatsAppPhone(phone);
-    if (!formatted) { toast.error(language === 'fr' ? 'Numéro invalide' : 'Invalid phone number'); return; }
-    window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(msg)}`, '_blank');
-    toast.success(language === 'fr' ? 'Ouverture WhatsApp...' : 'Opening WhatsApp...');
-  };
-
-  const handleSendIndividual = () => {
-    const s = students.find(st => st.id === selectedStudent);
-    if (!s) return;
-    sendWhatsApp(s.guardianPhone || s.phone, message);
-  };
-
-  const handleSendBulk = () => {
-    const targets = classFilter !== 'all' ? filteredStudents : students.filter(s => s.status === 'active');
-    const phones = targets.map(s => s.guardianPhone || s.phone).filter(Boolean);
-    if (phones.length === 0) { toast.error(language === 'fr' ? 'Aucun numéro trouvé' : 'No phone numbers found'); return; }
-    phones.forEach((p, i) => { setTimeout(() => sendWhatsApp(p, message), i * 500); });
-  };
-
-  const openEditTemplate = (tp: typeof templates[0]) => {
-    setEditingTemplateId(tp.id);
-    setTemplateName(tp.name);
-    setTemplateCategory(tp.category || '');
-    setMessage(tp.content);
-    setSaveDialogOpen(true);
-  };
-
-  const handleSaveTemplate = () => {
-    if (!templateName || !message) return;
-    if (editingTemplateId) {
-      setTemplates(templates.map(tp => tp.id === editingTemplateId ? { ...tp, name: templateName, content: message, category: templateCategory || 'general' } : tp));
-      toast.success(language === 'fr' ? 'Modèle mis à jour' : 'Template updated');
-    } else {
-      setTemplates([...templates, { id: genId(), name: templateName, content: message, category: templateCategory || 'general', createdAt: new Date().toISOString() }]);
-      toast.success(language === 'fr' ? 'Modèle sauvegardé' : 'Template saved');
+  // Initialize default templates if empty
+  useEffect(() => {
+    if (templates.length === 0) {
+      const defaults: Template[] = [
+        { id: genId(), name: 'Absence Notification', category: 'absence', content: 'Dear {guardian_name}, we would like to inform you that {student_name} was marked absent from {class} today ({date}). If this absence was planned, please disregard this message. Otherwise, please contact {school_name} to discuss. Thank you.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Late Arrival', category: 'late', content: 'Hello {guardian_name}, {student_name} arrived late to {class} today ({date}). Please ensure punctuality.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Guardian Meeting Request', category: 'meeting', content: "Dear {guardian_name}, we would like to schedule a meeting with you to discuss {student_name}'s progress in {class}. Please contact {school_name} at your earliest convenience.", createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Academic Progress Update', category: 'academic', content: "Dear {guardian_name}, this is an update regarding {student_name}'s academic progress in {class}. Please feel free to contact us if you have any questions.", createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Student Achievement', category: 'achievement', content: 'Dear {guardian_name}, we are pleased to inform you that {student_name} has shown excellent progress in {class}. Congratulations!', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'General Reminder', category: 'reminder', content: 'Dear {guardian_name}, this is a reminder regarding {student_name} in {class}. Please contact us if you have any questions.', createdAt: new Date().toISOString() },
+      ];
+      setTemplates(defaults);
     }
-    setEditingTemplateId(null);
-    setSaveDialogOpen(false);
+  }, []);
+
+  // Category labels and icons
+  const categoryLabels: Record<string, string> = {
+    absence: language === 'fr' ? 'Absence' : 'Absence Templates',
+    late: language === 'fr' ? 'Retard' : 'Late Arrival Templates',
+    meeting: language === 'fr' ? 'Réunion' : 'Meeting Templates',
+    academic: language === 'fr' ? 'Académique' : 'Academic Templates',
+    announcement: language === 'fr' ? 'Annonce' : 'Announcement Templates',
+    behavioral: language === 'fr' ? 'Comportement' : 'Behavioral Templates',
+    achievement: language === 'fr' ? 'Réalisation' : 'Achievement Templates',
+    reminder: language === 'fr' ? 'Rappel' : 'Reminder Templates',
+    custom: language === 'fr' ? 'Personnalisé' : 'Custom Templates',
   };
 
-  const applyTemplate = (content: string) => { setMessage(content); setMode('individual'); };
+  const categoryColors: Record<string, string> = {
+    absence: 'border-l-red-500', late: 'border-l-amber-500', meeting: 'border-l-blue-500',
+    academic: 'border-l-emerald-500', announcement: 'border-l-purple-500', behavioral: 'border-l-orange-500',
+    achievement: 'border-l-yellow-500', reminder: 'border-l-sky-500', custom: 'border-l-gray-400',
+  };
 
-  const absenceTemplate = (s: Student) => `${language === 'fr' ? 'Bonjour, Nous vous informons que' : 'Hello, We inform you that'} ${s.fullName} ${language === 'fr' ? 'est absent(e) aujourd\'hui.' : 'is absent today.'} ${language === 'fr' ? 'Merci de nous contacter.' : 'Please contact us.'}`;
+  // Group templates by category
+  const groupedTemplates = useMemo(() => {
+    const groups: Record<string, Template[]> = {};
+    templates.forEach(tmpl => {
+      const cat = tmpl.category || 'custom';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(tmpl);
+    });
+    return groups;
+  }, [templates]);
 
-  const lateTemplate = (s: Student) => `${language === 'fr' ? 'Bonjour, Nous vous informons que' : 'Hello, We inform you that'} ${s.fullName} ${language === 'fr' ? 'est arrivé(e) en retard aujourd\'hui.' : 'arrived late today.'} ${language === 'fr' ? 'Merci de nous contacter.' : 'Please contact us.'}`;
+  // Format phone number for WhatsApp
+  const formatWhatsAppPhone = (phone: string | undefined): string => {
+    if (!phone) return '';
+    let cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length === 10) cleaned = '1' + cleaned;
+    else if (cleaned.length === 11 && cleaned.startsWith('1')) { /* ok */ }
+    else if (cleaned.length === 9 && cleaned.startsWith('0')) cleaned = '44' + cleaned.substring(1);
+    else if (cleaned.length === 10 && cleaned.startsWith('0')) cleaned = '212' + cleaned.substring(1);
+    return cleaned;
+  };
+
+  // Build message from template + student data
+  const buildMessage = (template: Template, student: Student): string => {
+    const studentClass = classes.find(c => c.id === student.classId);
+    return template.content
+      .replace(/{student_name}/g, student.fullName)
+      .replace(/{guardian_name}/g, student.guardianName || 'Guardian')
+      .replace(/{class}/g, studentClass?.name || 'class')
+      .replace(/{date}/g, new Date().toLocaleDateString())
+      .replace(/{time}/g, new Date().toLocaleTimeString())
+      .replace(/{school_name}/g, schoolInfo?.name || 'School');
+  };
+
+  // Open WhatsApp Web with pre-filled message
+  const openWhatsApp = (phone: string | undefined, message: string) => {
+    if (!phone) { toast.error(language === 'fr' ? 'Aucun numéro de téléphone' : 'No phone number found'); return; }
+    const formatted = formatWhatsAppPhone(phone);
+    const url = `https://wa.me/${formatted}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+    toast.success(language === 'fr' ? 'WhatsApp ouvert!' : 'WhatsApp opened!');
+  };
+
+  // Quick Send: opens WhatsApp for selected student + template
+  const handleQuickSend = () => {
+    const student = students.find(s => s.id === quickStudentId);
+    const template = templates.find(t => t.id === quickTemplateId);
+    if (!student) { toast.error(language === 'fr' ? 'Sélectionnez un étudiant' : 'Please select a student'); return; }
+    if (!template) { toast.error(language === 'fr' ? 'Sélectionnez un modèle' : 'Please select a template'); return; }
+    if (!student.guardianPhone) { toast.error(language === 'fr' ? 'Aucun numéro pour cet étudiant' : 'No phone number for this student'); return; }
+    const message = buildMessage(template, student);
+    openWhatsApp(student.guardianPhone, message);
+  };
+
+  // Bulk Send: opens WhatsApp for each guardian in a class
+  const handleBulkSend = () => {
+    const template = templates.find(t => t.id === bulkTemplateId);
+    if (!template) { toast.error(language === 'fr' ? 'Sélectionnez un modèle' : 'Please select a template'); return; }
+    const classStudents = students.filter(s => s.classId === bulkClassId && s.guardianPhone);
+    if (classStudents.length === 0) { toast.error(language === 'fr' ? 'Aucun étudiant avec téléphone' : 'No students with phone numbers in this class'); return; }
+    if (!confirm(language === 'fr' ? `Envoyer à ${classStudents.length} gardiens?` : `Send to ${classStudents.length} guardians?`)) return;
+    classStudents.forEach((student, idx) => {
+      setTimeout(() => {
+        const message = buildMessage(template, student);
+        openWhatsApp(student.guardianPhone, message);
+      }, idx * 1500);
+    });
+    toast.success(language === 'fr' ? `Envoi à ${classStudents.length} gardiens...` : `Sending to ${classStudents.length} guardians...`);
+  };
+
+  // Template CRUD
+  const openAddTemplate = () => { setEditing(null); setForm({ name: '', content: '', category: '' }); setDialogOpen(true); };
+  const openEditTemplate = (t: Template) => { setEditing(t); setForm({ name: t.name, content: t.content, category: t.category || '' }); setDialogOpen(true); };
+  const handleSaveTemplate = () => {
+    if (!form.name || !form.content) { toast.error('Name and content required'); return; }
+    if (editing) { setTemplates(templates.map(t => t.id === editing.id ? { ...t, ...form } : t)); }
+    else { setTemplates([...templates, { ...form, id: genId(), createdAt: new Date().toISOString() }]); }
+    toast.success(language === 'fr' ? 'Modèle sauvegardé' : 'Template saved');
+    setDialogOpen(false);
+  };
+  const handleDeleteTemplate = (id: string) => { setTemplates(templates.filter(t => t.id !== id)); toast.success(language === 'fr' ? 'Supprimé' : 'Deleted'); };
 
   return (
-    <div className="space-y-4">
-      <div className="flex gap-2">
-        {([['individual', language === 'fr' ? 'Individuel' : 'Individual'], ['bulk', language === 'fr' ? 'Groupé' : 'Bulk'], ['template', language === 'fr' ? 'Modèles' : 'Templates']] as const).map(([m, label]) => (
-          <Button key={m} variant={mode === m ? 'default' : 'outline'} size="sm" onClick={() => setMode(m)} className={mode === m ? 'bg-emerald-600 hover:bg-emerald-700' : ''}>{label}</Button>
-        ))}
-      </div>
-
-      {mode === 'template' && (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-sm font-semibold">{language === 'fr' ? 'Modèles enregistrés' : 'Saved Templates'} ({templates.length})</h3>
-            <Button variant="outline" size="sm" onClick={() => setSaveDialogOpen(true)}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Nouveau modèle' : 'New Template'}</Button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {templates.map(tp => (
-              <Card key={tp.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => applyTemplate(tp.content)}>
-                <CardContent className="p-4"><div className="flex items-start justify-between"><div><h4 className="font-semibold text-sm">{tp.name}</h4>{tp.category && <Badge variant="outline" className="mt-1 text-xs">{tp.category}</Badge>}<p className="text-sm text-muted-foreground mt-2 line-clamp-3">{tp.content}</p></div><div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditTemplate(tp)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyTemplate(tp.content)}><Send className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => { setTemplates(templates.filter(t => t.id !== tp.id)); toast.success(language === 'fr' ? 'Modèle supprimé' : 'Template deleted'); }}><Trash2 className="h-3.5 w-3.5" /></Button></div></div></CardContent>
-              </Card>
-            ))}
-          </div>
-          {templates.length === 0 && <EmptyState message={language === 'fr' ? 'Aucun modèle sauvegardé' : 'No saved templates'} />}
-          <Dialog open={saveDialogOpen} onOpenChange={(open) => { if (!open) { setSaveDialogOpen(false); setEditingTemplateId(null); } else { setSaveDialogOpen(true); } }}><DialogContent><DialogHeader><DialogTitle>{editingTemplateId ? (language === 'fr' ? 'Modifier le modèle' : 'Edit Template') : (language === 'fr' ? 'Sauvegarder comme modèle' : 'Save as Template')}</DialogTitle></DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2"><Label>{language === 'fr' ? 'Nom du modèle' : 'Template Name'}</Label><Input value={templateName} onChange={e => setTemplateName(e.target.value)} /></div>
-              <div className="space-y-2"><Label>{language === 'fr' ? 'Catégorie' : 'Category'}</Label><Input value={templateCategory} onChange={e => setTemplateCategory(e.target.value)} placeholder="general, absence, ..." /></div>
-              <div className="space-y-2"><Label>{language === 'fr' ? 'Contenu' : 'Content'}</Label><Textarea value={message} onChange={e => setMessage(e.target.value)} rows={4} /></div>
+    <div className="space-y-6">
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-3 flex-row items-center justify-between">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <MessageCircle className="h-5 w-5 text-emerald-600" />
+            {language === 'fr' ? 'Messagerie WhatsApp' : 'WhatsApp Messaging'}
+          </CardTitle>
+          <Button size="sm" onClick={openAddTemplate}><Plus className="h-4 w-4 mr-1" /> {language === 'fr' ? 'Ajouter Modèle' : 'Add Template'}</Button>
+        </CardHeader>
+        <CardContent>
+          <div className="grid lg:grid-cols-2 gap-6">
+            {/* Left: Templates */}
+            <div>
+              <h3 className="font-semibold text-sm text-muted-foreground mb-3">{language === 'fr' ? 'Modèles de Message' : 'Message Templates'}</h3>
+              {Object.keys(groupedTemplates).length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">{t('no_data', language)}</div>
+              ) : (
+                <div className="max-h-[60vh] overflow-y-auto custom-scrollbar space-y-4">
+                  {Object.entries(groupedTemplates).map(([category, tmpls]) => (
+                    <div key={category}>
+                      <h4 className="text-xs font-semibold text-primary mb-2 pb-1 border-b border-primary/20">
+                        {categoryLabels[category] || category}
+                      </h4>
+                      <div className="space-y-2">
+                        {tmpls.map(tmpl => (
+                          <div key={tmpl.id} className={`p-3 border border-border rounded-lg border-l-4 ${categoryColors[category] || 'border-l-gray-400'} hover:bg-muted/50 transition-colors`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-medium text-sm">{tmpl.name}</h4>
+                                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{tmpl.content}</p>
+                                <p className="text-[10px] text-muted-foreground mt-1">
+                                  {'{student_name}'} {'{guardian_name}'} {'{class}'} {'{date}'} {'{school_name}'}
+                                </p>
+                              </div>
+                              <div className="flex gap-1 shrink-0">
+                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditTemplate(tmpl)}><Pencil className="h-3.5 w-3.5" /></Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDeleteTemplate(tmpl.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <DialogFooter><Button variant="outline" onClick={() => setSaveDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveTemplate}>{t('save', language)}</Button></DialogFooter>
-          </DialogContent></Dialog>
-        </div>
-      )}
 
-      {mode === 'individual' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card><CardHeader className="pb-3"><CardTitle className="text-base">{language === 'fr' ? 'Envoyer un message' : 'Send Message'}</CardTitle></CardHeader><CardContent className="space-y-4">
-            <div className="space-y-2"><Label>{t('students', language)}</Label><Select value={selectedStudent} onValueChange={v => setSelectedStudent(v)}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Choisir un étudiant' : 'Select student'} /></SelectTrigger><SelectContent>{students.filter(s => s.status === 'active').map(s => <SelectItem key={s.id} value={s.id}>{s.fullName} — {s.guardianPhone || s.phone || (language === 'fr' ? 'pas de tél' : 'no phone')}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label>{language === 'fr' ? 'Message' : 'Message'}</Label><Textarea value={message} onChange={e => setMessage(e.target.value)} rows={5} placeholder={language === 'fr' ? 'Écrire votre message...' : 'Write your message...'} /></div>
-            <div className="flex gap-2">
-              <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSendIndividual} disabled={!selectedStudent || !message}><Send className="h-4 w-4 mr-1" />WhatsApp</Button>
-              <Button variant="outline" onClick={() => setSaveDialogOpen(true)}><Save className="h-4 w-4 mr-1" />{language === 'fr' ? 'Sauvegarder' : 'Save'}</Button>
+            {/* Right: Quick Send + Bulk */}
+            <div className="space-y-6">
+              {/* Quick Send */}
+              <div className="border border-border rounded-xl p-4">
+                <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                  <Send className="h-4 w-4 text-emerald-600" />
+                  {language === 'fr' ? 'Envoi Rapide' : 'Quick Send'}
+                </h3>
+                <div className="space-y-3">
+                  <Select value={quickStudentId} onValueChange={setQuickStudentId}>
+                    <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner étudiant...' : 'Select student...'} /></SelectTrigger>
+                    <SelectContent>
+                      {students.filter(s => s.guardianPhone).map(s => (
+                        <SelectItem key={s.id} value={s.id}>{s.fullName} ({s.studentId}) — {s.guardianPhone}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={quickTemplateId} onValueChange={setQuickTemplateId}>
+                    <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner modèle...' : 'Select template...'} /></SelectTrigger>
+                    <SelectContent>
+                      {templates.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleQuickSend}>
+                    <MessageCircle className="h-4 w-4 mr-2" />
+                    {language === 'fr' ? 'Ouvrir WhatsApp' : 'Send WhatsApp'}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  {language === 'fr'
+                    ? 'Ouvre WhatsApp Web avec un message pré-rempli ciblant le numéro du gardien.'
+                    : 'Opens WhatsApp Web with a pre-filled message targeting the guardian\'s number.'}
+                </p>
+              </div>
+
+              {/* Bulk Send */}
+              <div className="border border-border rounded-xl p-4">
+                <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                  <Users className="h-4 w-4 text-amber-600" />
+                  {language === 'fr' ? 'Envoi Groupé' : 'Bulk Messaging'}
+                </h3>
+                <div className="space-y-3">
+                  <Select value={bulkClassId} onValueChange={setBulkClassId}>
+                    <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner classe...' : 'Select class...'} /></SelectTrigger>
+                    <SelectContent>
+                      {classes.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name} ({students.filter(s => s.classId === c.id && s.guardianPhone).length} {language === 'fr' ? 'avec téléphone' : 'with phone'})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={bulkTemplateId} onValueChange={setBulkTemplateId}>
+                    <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner modèle...' : 'Select template...'} /></SelectTrigger>
+                    <SelectContent>
+                      {templates.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Button className="w-full bg-amber-600 hover:bg-amber-700 text-white" onClick={handleBulkSend}>
+                    <Send className="h-4 w-4 mr-2" />
+                    {language === 'fr' ? 'Envoyer à toute la classe' : 'Send to Class'}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  {language === 'fr'
+                    ? 'Ouvre WhatsApp pour chaque gardien de la classe sélectionnée (délai de 1.5s entre chaque).'
+                    : 'Opens WhatsApp for each guardian in the selected class (1.5s delay between each).'}
+                </p>
+              </div>
             </div>
-          </CardContent></Card>
-          <Card><CardHeader className="pb-3"><CardTitle className="text-base">{language === 'fr' ? 'Actions rapides' : 'Quick Actions'}</CardTitle></CardHeader><CardContent className="space-y-2">
-            {absentToday.length > 0 && <div className="rounded-lg border p-3"><p className="text-xs font-semibold text-red-600 mb-2">🚫 {language === 'fr' ? `Absents aujourd'hui (${absentToday.length})` : `Absent today (${absentToday.length})`}</p><div className="space-y-1 max-h-32 overflow-y-auto">{absentToday.slice(0, 5).map(s => (<button key={s.id} onClick={() => { setSelectedStudent(s.id); setMessage(absenceTemplate(s)); }} className="w-full text-left text-xs p-1.5 rounded hover:bg-muted flex justify-between"><span className="font-medium">{s.fullName}</span><span className="text-muted-foreground">{s.guardianPhone || '-'}</span></button>))}</div></div>}
-            {lateToday.length > 0 && <div className="rounded-lg border p-3"><p className="text-xs font-semibold text-amber-600 mb-2">⏰ {language === 'fr' ? `Retards aujourd'hui (${lateToday.length})` : `Late today (${lateToday.length})`}</p><div className="space-y-1 max-h-32 overflow-y-auto">{lateToday.slice(0, 5).map(s => (<button key={s.id} onClick={() => { setSelectedStudent(s.id); setMessage(lateTemplate(s)); }} className="w-full text-left text-xs p-1.5 rounded hover:bg-muted flex justify-between"><span className="font-medium">{s.fullName}</span><span className="text-muted-foreground">{s.guardianPhone || '-'}</span></button>))}</div></div>}
-          </CardContent></Card>
-        </div>
-      )}
+          </div>
+        </CardContent>
+      </Card>
 
-      {mode === 'bulk' && (
-        <Card><CardHeader className="pb-3"><CardTitle className="text-base">{language === 'fr' ? 'Envoi groupé' : 'Bulk Messaging'}</CardTitle></CardHeader><CardContent className="space-y-4">
-          <div className="space-y-2"><Label>{t('class_name', language)}</Label><Select value={classFilter} onValueChange={v => setClassFilter(v)}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Toutes les classes' : 'All Classes'} /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Tous les étudiants' : 'All Students'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({students.filter(s => s.classId === c.id && s.status === 'active').length})</SelectItem>)}</SelectContent></Select></div>
-          <p className="text-sm text-muted-foreground">{language === 'fr' ? 'Destinataires' : 'Recipients'}: <strong>{filteredStudents.length}</strong></p>
-          <div className="space-y-2"><Label>{language === 'fr' ? 'Message' : 'Message'}</Label><Textarea value={message} onChange={e => setMessage(e.target.value)} rows={5} placeholder={language === 'fr' ? 'Écrire le message groupé...' : 'Write bulk message...'} /></div>
-          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSendBulk} disabled={!message}><Send className="h-4 w-4 mr-1" />{language === 'fr' ? 'Envoyer à tous' : 'Send to All'}</Button>
-        </CardContent></Card>
-      )}
+      {/* Template Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editing ? t('edit', language) : t('add', language)} {language === 'fr' ? 'Modèle' : 'Template'}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>{language === 'fr' ? 'Nom' : 'Name'}</Label>
+              <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Absence Notification" />
+            </div>
+            <div className="space-y-2">
+              <Label>{language === 'fr' ? 'Catégorie' : 'Category'}</Label>
+              <Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}>
+                <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner...' : 'Select...'} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="absence">{language === 'fr' ? 'Absence' : 'Absence'}</SelectItem>
+                  <SelectItem value="late">{language === 'fr' ? 'Retard' : 'Late'}</SelectItem>
+                  <SelectItem value="meeting">{language === 'fr' ? 'Réunion' : 'Meeting'}</SelectItem>
+                  <SelectItem value="academic">{language === 'fr' ? 'Académique' : 'Academic'}</SelectItem>
+                  <SelectItem value="announcement">{language === 'fr' ? 'Annonce' : 'Announcement'}</SelectItem>
+                  <SelectItem value="behavioral">{language === 'fr' ? 'Comportement' : 'Behavioral'}</SelectItem>
+                  <SelectItem value="achievement">{language === 'fr' ? 'Réalisation' : 'Achievement'}</SelectItem>
+                  <SelectItem value="reminder">{language === 'fr' ? 'Rappel' : 'Reminder'}</SelectItem>
+                  <SelectItem value="custom">{language === 'fr' ? 'Personnalisé' : 'Custom'}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{language === 'fr' ? 'Contenu' : 'Content'}</Label>
+              <Textarea value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} rows={6} placeholder="Dear {guardian_name}, {student_name} was marked absent from {class} today ({date})..." />
+              <p className="text-[11px] text-muted-foreground">
+                Variables: {'{student_name}'} {'{guardian_name}'} {'{class}'} {'{date}'} {'{time}'} {'{school_name}'}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveTemplate}>{t('save', language)}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
