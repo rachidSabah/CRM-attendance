@@ -41,14 +41,50 @@ export interface TaskEmailParams {
 }
 
 /**
+ * Read Brevo configuration from localStorage (set via Settings > Email tab)
+ */
+function getBrevoConfig(): { apiKey: string; senderEmail: string } {
+  if (typeof window === 'undefined') return { apiKey: '', senderEmail: '' };
+  try {
+    const raw = localStorage.getItem('attendance_brevo_config');
+    if (raw) {
+      const config = JSON.parse(raw);
+      return { apiKey: config.apiKey || '', senderEmail: config.senderEmail || '' };
+    }
+  } catch { /* ignore */ }
+  return { apiKey: '', senderEmail: '' };
+}
+
+/**
+ * Save Brevo configuration to localStorage
+ */
+export function saveBrevoConfig(config: { apiKey: string; senderEmail: string }): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem('attendance_brevo_config', JSON.stringify(config));
+}
+
+/**
+ * Load Brevo configuration from localStorage (for Settings page)
+ */
+export function loadBrevoConfig(): { apiKey: string; senderEmail: string } {
+  return getBrevoConfig();
+}
+
+/**
  * Generic email sender — calls /api/send-email Cloudflare Pages Function
  */
 export async function sendEmail(params: SendEmailParams): Promise<{ success: boolean; error?: string; messageId?: string }> {
   try {
+    const brevo = getBrevoConfig();
     const res = await fetch('/api/send-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+      body: JSON.stringify({
+        ...params,
+        // Pass Brevo credentials from Settings (server falls back to env vars if not provided)
+        ...(brevo.apiKey ? { apiKey: brevo.apiKey } : {}),
+        ...(brevo.senderEmail ? { senderEmail: brevo.senderEmail } : {}),
+      }),
     });
 
     const data = await res.json();

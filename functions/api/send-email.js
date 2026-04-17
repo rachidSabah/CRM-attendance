@@ -3,16 +3,22 @@
  *
  * Route: POST /api/send-email
  *
- * Required Environment Variables (set in Cloudflare Pages dashboard):
- *   BREVO_API_KEY   — Your Brevo API key (starts with xkeysib-...)
- *   BREVO_SENDER    — Sender email (must be verified in Brevo, e.g. "noreply@yourdomain.com")
+ * Credentials (either source works):
+ *   Option A — Cloudflare Environment Variables (more secure):
+ *     BREVO_API_KEY   — Your Brevo API key (starts with xkeysib-...)
+ *     BREVO_SENDER    — Sender email (must be verified in Brevo)
+ *   Option B — From request body (configured via CRM Settings page):
+ *     apiKey       — Brevo API key
+ *     senderEmail  — Sender email address
  *
  * Request Body (JSON):
- *   to          — Recipient email address (string)
- *   toName      — Recipient name (string, optional)
- *   subject     — Email subject (string)
- *   htmlContent — HTML body (string)
- *  textContent  — Plain text fallback (string, optional)
+ *   to           — Recipient email address (string)
+ *   toName       — Recipient name (string, optional)
+ *   subject      — Email subject (string)
+ *   htmlContent  — HTML body (string)
+ *   textContent  — Plain text fallback (string, optional)
+ *   apiKey       — Brevo API key (optional, overrides env var)
+ *   senderEmail  — Sender email (optional, overrides env var)
  *
  * Response:
  *   { success: true, messageId: "..." }  on success
@@ -21,30 +27,11 @@
 
 export async function onRequestPost(context) {
   try {
-    // --- CORS preflight handled by Cloudflare, but let's set headers on response ---
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     };
-
-    // --- Validate environment ---
-    const apiKey = context.env.BREVO_API_KEY;
-    const senderEmail = context.env.BREVO_SENDER;
-
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'BREVO_API_KEY not configured on server. Set it in Cloudflare Pages Environment Variables.' }),
-        { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
-    }
-
-    if (!senderEmail) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'BREVO_SENDER not configured on server. Set it in Cloudflare Pages Environment Variables.' }),
-        { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
-    }
 
     // --- Parse request body ---
     let body;
@@ -54,6 +41,24 @@ export async function onRequestPost(context) {
       return new Response(
         JSON.stringify({ success: false, error: 'Invalid JSON body' }),
         { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      );
+    }
+
+    // --- Resolve credentials: body > env vars ---
+    const apiKey = body.apiKey || context.env.BREVO_API_KEY;
+    const senderEmail = body.senderEmail || context.env.BREVO_SENDER;
+
+    if (!apiKey) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Brevo API key not configured. Set it in Settings > Email (Brevo) or as BREVO_API_KEY env var.' }),
+        { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      );
+    }
+
+    if (!senderEmail) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Sender email not configured. Set it in Settings > Email (Brevo) or as BREVO_SENDER env var.' }),
+        { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
       );
     }
 

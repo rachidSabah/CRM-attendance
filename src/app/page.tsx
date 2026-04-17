@@ -9,7 +9,7 @@ import { t } from '@/lib/i18n';
 import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
 import * as pdfUtils from '@/lib/pdf';
-import { sendTaskAssignmentEmail } from '@/lib/email';
+import { sendTaskAssignmentEmail, saveBrevoConfig, loadBrevoConfig } from '@/lib/email';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -2870,6 +2870,71 @@ function SettingsPage() {
   // Password state
   const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' });
 
+  // Brevo Email config state
+  const [brevoConfig, setBrevoConfig] = useState({ apiKey: '', senderEmail: '' });
+  const [brevoSaving, setBrevoSaving] = useState(false);
+  const [brevoTesting, setBrevoTesting] = useState(false);
+  const [brevoTestResult, setBrevoTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  useEffect(() => {
+    const config = loadBrevoConfig();
+    if (config.apiKey || config.senderEmail) setBrevoConfig(config);
+  }, []);
+
+  const handleSaveBrevoConfig = () => {
+    saveBrevoConfig(brevoConfig);
+    toast.success(language === 'fr' ? 'Configuration Brevo sauvegardée' : 'Brevo configuration saved');
+  };
+
+  const handleTestBrevo = async () => {
+    if (!brevoConfig.apiKey || !brevoConfig.senderEmail) {
+      toast.error(language === 'fr' ? 'Veuillez remplir la clé API et l\'email expéditeur' : 'Please fill in API key and sender email');
+      return;
+    }
+    if (!brevoConfig.senderEmail.includes('@')) {
+      toast.error(language === 'fr' ? 'Email expéditeur invalide' : 'Invalid sender email');
+      return;
+    }
+    setBrevoTesting(true);
+    setBrevoTestResult(null);
+    saveBrevoConfig(brevoConfig);
+    try {
+      const { sendEmail } = await import('@/lib/email');
+      const result = await sendEmail({
+        to: brevoConfig.senderEmail,
+        toName: language === 'fr' ? 'Admin CRM' : 'CRM Admin',
+        subject: language === 'fr' ? '[CRM] Test de configuration Brevo' : '[CRM] Brevo Configuration Test',
+        htmlContent: `
+          <div style="padding:24px;font-family:sans-serif;max-width:480px;margin:0 auto;background:#f0fdf4;border-radius:12px;">
+            <div style="background:#059669;padding:20px;border-radius:8px 8px 0 0;text-align:center;">
+              <h2 style="color:white;margin:0;">${language === 'fr' ? 'Test réussi !' : 'Test Successful!'}</h2>
+            </div>
+            <div style="padding:20px;text-align:center;color:#334155;">
+              <p style="font-size:16px;">${language === 'fr' ? 'Votre intégration Brevo est correctement configurée. Les notifications par email fonctionneront.' : 'Your Brevo integration is correctly configured. Email notifications will work.'}</p>
+              <p style="font-size:13px;color:#64748b;margin-top:12px;">${language === 'fr' ? 'Envoyé depuis CRM Attendance le' : 'Sent from CRM Attendance on'} ${new Date().toLocaleString()}</p>
+            </div>
+          </div>
+        `,
+      });
+      if (result.success) {
+        setBrevoTestResult({ success: true, message: language === 'fr' ? 'Email de test envoyé avec succès ! Vérifiez votre boîte de réception.' : 'Test email sent successfully! Check your inbox.' });
+        toast.success(language === 'fr' ? 'Email de test envoyé' : 'Test email sent');
+      } else {
+        setBrevoTestResult({ success: false, message: result.error || (language === 'fr' ? 'Erreur inconnue' : 'Unknown error') });
+        toast.error(result.error || (language === 'fr' ? "Erreur d'envoi" : 'Send error'));
+      }
+    } catch {
+      setBrevoTestResult({ success: false, message: language === 'fr' ? 'Erreur de connexion au service' : 'Connection error to email service' });
+    }
+    setBrevoTesting(false);
+  };
+
+  const handleClearBrevoConfig = () => {
+    setBrevoConfig({ apiKey: '', senderEmail: '' });
+    if (typeof window !== 'undefined') localStorage.removeItem('attendance_brevo_config');
+    setBrevoTestResult(null);
+    toast.success(language === 'fr' ? 'Configuration Brevo supprimée' : 'Brevo configuration cleared');
+  };
+
   // School info - sync with store
   const [sForm, setSForm] = useState({ name: schoolInfo?.name || '', address: schoolInfo?.address || '', phone: schoolInfo?.phone || '', email: schoolInfo?.email || '', field: schoolInfo?.field || '', logo: schoolInfo?.logo || '' });
   useEffect(() => {
@@ -3298,6 +3363,7 @@ function SettingsPage() {
           <TabsTrigger value="import">{language === 'fr' ? 'Import de Données' : 'Data Import'}</TabsTrigger>
           <TabsTrigger value="admins">{t('admin_users', language)}</TabsTrigger>
           <TabsTrigger value="password">{t('change_password', language)}</TabsTrigger>
+          <TabsTrigger value="email" className="flex items-center gap-1.5"><Mail className="h-4 w-4" />{language === 'fr' ? 'Email (Brevo)' : 'Email (Brevo)'}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -3620,6 +3686,73 @@ function SettingsPage() {
             <div className="space-y-2"><Label>{language === 'fr' ? 'Nouveau mot de passe' : 'New Password'}</Label><Input type="password" value={pwForm.newPw} onChange={e => setPwForm({ ...pwForm, newPw: e.target.value })} /></div>
             <div className="space-y-2"><Label>{language === 'fr' ? 'Confirmer' : 'Confirm Password'}</Label><Input type="password" value={pwForm.confirm} onChange={e => setPwForm({ ...pwForm, confirm: e.target.value })} /></div>
             <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleChangePw}><Lock className="h-4 w-4 mr-1" />{t('change_password', language)}</Button>
+          </CardContent></Card>
+        </TabsContent>
+        {/* Email (Brevo) Configuration Tab */}
+        <TabsContent value="email" className="space-y-4">
+          <Card><CardHeader><CardTitle className="text-base flex items-center gap-2"><Mail className="h-5 w-5 text-emerald-600" />{language === 'fr' ? 'Configuration Email — Brevo (Sendinblue)' : 'Email Configuration — Brevo (Sendinblue)'}</CardTitle><CardDescription>{language === 'fr' ? 'Configurez l\'envoi d\'emails pour les notifications de tâches et autres alertes.' : 'Configure email sending for task assignment notifications and other alerts.'}</CardDescription></CardHeader><CardContent className="space-y-5">
+            {/* Status indicator */}
+            <div className={`flex items-center gap-3 p-3 rounded-lg border ${brevoConfig.apiKey && brevoConfig.senderEmail ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800'}`}>
+              {brevoConfig.apiKey && brevoConfig.senderEmail ? <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" /> : <AlertOctagon className="h-5 w-5 text-amber-600 shrink-0" />}
+              <div className="text-sm">
+                {brevoConfig.apiKey && brevoConfig.senderEmail
+                  ? <span className="text-emerald-700 dark:text-emerald-400 font-medium">{language === 'fr' ? 'Brevo est configuré et prêt à envoyer des emails.' : 'Brevo is configured and ready to send emails.'}</span>
+                  : <span className="text-amber-700 dark:text-amber-400 font-medium">{language === 'fr' ? 'Brevo n\'est pas encore configuré. Remplissez les champs ci-dessous.' : 'Brevo is not configured yet. Fill in the fields below.'}</span>
+                }
+              </div>
+            </div>
+            {/* API Key field */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5"><Key className="h-4 w-4 text-muted-foreground" />Brevo API Key</Label>
+              <Input
+                type="password"
+                value={brevoConfig.apiKey}
+                onChange={e => setBrevoConfig({ ...brevoConfig, apiKey: e.target.value })}
+                placeholder={language === 'fr' ? 'Entrez votre clé API Brevo (xkeysib-...)' : 'Enter your Brevo API key (xkeysib-...)'}
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Trouvez votre clé API sur brevo.com → Paramètres → Clés API' : 'Find your API key at brevo.com → Settings → API Keys'}</p>
+            </div>
+            {/* Sender Email field */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5"><Mail className="h-4 w-4 text-muted-foreground" />{language === 'fr' ? 'Email expéditeur' : 'Sender Email'}</Label>
+              <Input
+                type="email"
+                value={brevoConfig.senderEmail}
+                onChange={e => setBrevoConfig({ ...brevoConfig, senderEmail: e.target.value })}
+                placeholder={language === 'fr' ? 'noreply@votredomaine.com (doit être vérifié dans Brevo)' : 'noreply@yourdomain.com (must be verified in Brevo)'}
+              />
+              <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Cet email doit être vérifié dans votre compte Brevo. Il apparaîtra comme expéditeur.' : 'This email must be verified in your Brevo account. It will appear as the sender.'}</p>
+            </div>
+            {/* Action buttons */}
+            <div className="flex flex-wrap gap-2 pt-2">
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveBrevoConfig}><Save className="h-4 w-4 mr-1" />{language === 'fr' ? 'Sauvegarder' : 'Save'}</Button>
+              <Button variant="outline" onClick={handleTestBrevo} disabled={brevoTesting || !brevoConfig.apiKey || !brevoConfig.senderEmail}>
+                {brevoTesting ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Send className="h-4 w-4 mr-1" />}
+                {brevoTesting ? (language === 'fr' ? 'Envoi en cours...' : 'Sending...') : (language === 'fr' ? 'Envoyer un email test' : 'Send Test Email')}
+              </Button>
+              {brevoConfig.apiKey && <Button variant="outline" className="text-red-600 hover:text-red-700" onClick={handleClearBrevoConfig}><Trash2 className="h-4 w-4 mr-1" />{language === 'fr' ? 'Effacer' : 'Clear'}</Button>}
+            </div>
+            {/* Test result */}
+            {brevoTestResult && (
+              <div className={`p-3 rounded-lg border text-sm ${brevoTestResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-400' : 'bg-red-50 border-red-200 text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400'}`}>
+                <div className="flex items-center gap-2 font-medium">
+                  {brevoTestResult.success ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                  {brevoTestResult.success ? (language === 'fr' ? 'Succès' : 'Success') : (language === 'fr' ? 'Échec' : 'Failed')}
+                </div>
+                <p className="mt-1">{brevoTestResult.message}</p>
+              </div>
+            )}
+            {/* Info box */}
+            <div className="rounded-lg border p-4 bg-muted/30 space-y-2">
+              <h4 className="text-sm font-semibold flex items-center gap-1.5"><Info className="h-4 w-4" />{language === 'fr' ? 'Comment configurer Brevo' : 'How to set up Brevo'}</h4>
+              <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+                <li>{language === 'fr' ? 'Créez un compte gratuit sur' : 'Create a free account at'} <span className="font-medium text-foreground">brevo.com</span></li>
+                <li>{language === 'fr' ? 'Allez dans Paramètres → Clés API → Créer une clé' : 'Go to Settings → API Keys → Create a key'}</li>
+                <li>{language === 'fr' ? 'Ajoutez et vérifiez votre email expéditeur dans Paramètres → Senders' : 'Add and verify your sender email in Settings → Senders'}</li>
+                <li>{language === 'fr' ? 'Copiez la clé API et l\'email ici, puis cliquez sur "Envoyer un email test"' : 'Copy the API key and email here, then click "Send Test Email"'}</li>
+              </ol>
+            </div>
           </CardContent></Card>
         </TabsContent>
       </Tabs>
