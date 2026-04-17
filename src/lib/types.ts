@@ -156,6 +156,7 @@ export interface Template {
 export interface AcademicYear {
   id: string;
   name: string;
+  level?: string;
   startDate?: string;
   endDate?: string;
   isCurrent?: boolean;

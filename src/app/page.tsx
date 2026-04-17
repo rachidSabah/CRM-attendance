@@ -1071,16 +1071,16 @@ function SchedulePage() {
     notes: '',
   });
 
-  const TIME_SLOTS = [
-    { value: '08:00-10:00', label: language === 'fr' ? '08:00 - 10:00' : '08:00 - 10:00' },
-    { value: '10:00-12:00', label: language === 'fr' ? '10:00 - 12:00' : '10:00 - 12:00' },
-    { value: '13:00-15:00', label: language === 'fr' ? '13:00 - 15:00' : '13:00 - 15:00' },
-    { value: '15:00-17:00', label: language === 'fr' ? '15:00 - 17:00' : '15:00 - 17:00' },
-    { value: '08:00-12:00', label: language === 'fr' ? '08:00 - 12:00' : '08:00 - 12:00' },
-    { value: '13:00-17:00', label: language === 'fr' ? '13:00 - 17:00' : '13:00 - 17:00' },
-    { value: '09:00-12:00', label: language === 'fr' ? '09:00 - 12:00' : '09:00 - 12:00' },
-    { value: '14:00-17:00', label: language === 'fr' ? '14:00 - 17:00' : '14:00 - 17:00' },
-  ];
+  // Generate all 24 hourly time slots
+  const TIME_SLOTS = useMemo(() => {
+    const slots = [];
+    for (let h = 0; h < 24; h++) {
+      const start = `${String(h).padStart(2, '0')}:00`;
+      const end = `${String((h + 1) % 24).padStart(2, '0')}:00`;
+      slots.push({ value: `${start}-${end}`, label: `${start} - ${end}` });
+    }
+    return slots;
+  }, []);
 
   // Derive unique rooms from classes
   const rooms = useMemo(() => {
@@ -2495,7 +2495,7 @@ function SettingsPage() {
   // Academic Year state
   const [ayDialog, setAyDialog] = useState(false);
   const [editAy, setEditAy] = useState<AcademicYear | null>(null);
-  const [ayForm, setAyForm] = useState({ name: '', startDate: '', endDate: '', isCurrent: false });
+  const [ayForm, setAyForm] = useState({ name: '', level: '', startDate: '', endDate: '', isCurrent: false });
 
   // Promote Students state
   const [promoteClass, setPromoteClass] = useState('__all__');
@@ -2665,11 +2665,12 @@ function SettingsPage() {
   const deleteEmp = (id: string) => { setEmployees(employees.filter(e => e.id !== id)); toast.success('Deleted'); };
 
   // Academic Year handlers
-  const openAddAy = () => { setEditAy(null); setAyForm({ name: '', startDate: '', endDate: '', isCurrent: false }); setAyDialog(true); };
-  const openEditAy = (ay: AcademicYear) => { setEditAy(ay); setAyForm({ name: ay.name, startDate: ay.startDate || '', endDate: ay.endDate || '', isCurrent: ay.isCurrent || false }); setAyDialog(true); };
+  const openAddAy = () => { setEditAy(null); setAyForm({ name: '', level: '__none__', startDate: '', endDate: '', isCurrent: false }); setAyDialog(true); };
+  const openEditAy = (ay: AcademicYear) => { setEditAy(ay); setAyForm({ name: ay.name, level: ay.level || '__none__', startDate: ay.startDate || '', endDate: ay.endDate || '', isCurrent: ay.isCurrent || false }); setAyDialog(true); };
   const saveAy = () => {
     if (!ayForm.name) return;
-    const updated = editAy ? academicYears.map(ay => ay.id === editAy.id ? { ...ay, name: ayForm.name, startDate: ayForm.startDate, endDate: ayForm.endDate, isCurrent: ayForm.isCurrent } : ay) : [...academicYears, { id: genId(), name: ayForm.name, startDate: ayForm.startDate, endDate: ayForm.endDate, isCurrent: ayForm.isCurrent, createdAt: new Date().toISOString() }];
+    const levelValue = ayForm.level === '__none__' ? '' : ayForm.level;
+    const updated = editAy ? academicYears.map(ay => ay.id === editAy.id ? { ...ay, name: ayForm.name, level: levelValue, startDate: ayForm.startDate, endDate: ayForm.endDate, isCurrent: ayForm.isCurrent } : ay) : [...academicYears, { id: genId(), name: ayForm.name, level: levelValue, startDate: ayForm.startDate, endDate: ayForm.endDate, isCurrent: ayForm.isCurrent, createdAt: new Date().toISOString() }];
     if (ayForm.isCurrent) { updated.forEach(ay => { ay.isCurrent = ay.name === ayForm.name || (editAy && ay.id === editAy.id) ? ayForm.isCurrent : false; }); }
     setAcademicYears(updated); toast.success(editAy ? 'Updated' : 'Added'); setAyDialog(false);
   };
@@ -3055,13 +3056,14 @@ function SettingsPage() {
         <TabsContent value="academic" className="space-y-4">
           <div className="flex justify-between"><h3 className="font-semibold">{t('academic_year_management', language)} ({academicYears.length})</h3><Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={openAddAy}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button></div>
           {academicYears.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
-            <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{t('name', language)}</TableHead><TableHead>{language === 'fr' ? 'Début' : 'Start'}</TableHead><TableHead>{language === 'fr' ? 'Fin' : 'End'}</TableHead><TableHead>{language === 'fr' ? 'Actuelle' : 'Current'}</TableHead><TableHead className="w-24">{t('actions', language)}</TableHead></TableRow></TableHeader><TableBody>
-              {academicYears.map(ay => <TableRow key={ay.id}><TableCell className="font-medium">{ay.name}</TableCell><TableCell className="text-sm">{ay.startDate || '-'}</TableCell><TableCell className="text-sm">{ay.endDate || '-'}</TableCell><TableCell>{ay.isCurrent ? <Badge className="bg-emerald-100 text-emerald-800">✓</Badge> : '-'}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditAy(ay)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => deleteAy(ay.id)}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell></TableRow>)}
+            <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{t('name', language)}</TableHead><TableHead>{language === 'fr' ? 'Niveau' : 'Level'}</TableHead><TableHead>{language === 'fr' ? 'Début' : 'Start'}</TableHead><TableHead>{language === 'fr' ? 'Fin' : 'End'}</TableHead><TableHead>{language === 'fr' ? 'Actuelle' : 'Current'}</TableHead><TableHead className="w-24">{t('actions', language)}</TableHead></TableRow></TableHeader><TableBody>
+              {academicYears.map(ay => <TableRow key={ay.id}><TableCell className="font-medium">{ay.name}</TableCell><TableCell className="text-sm">{ay.level || '-'}</TableCell><TableCell className="text-sm">{ay.startDate || '-'}</TableCell><TableCell className="text-sm">{ay.endDate || '-'}</TableCell><TableCell>{ay.isCurrent ? <Badge className="bg-emerald-100 text-emerald-800">✓</Badge> : '-'}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditAy(ay)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => deleteAy(ay.id)}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell></TableRow>)}
             </TableBody></Table></div></CardContent></Card>
           )}
           <Dialog open={ayDialog} onOpenChange={setAyDialog}><DialogContent><DialogHeader><DialogTitle>{editAy ? t('edit', language) : t('add', language)} {t('academic_year', language)}</DialogTitle></DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="space-y-2"><Label>{t('name', language)} *</Label><Input value={ayForm.name} onChange={e => setAyForm({ ...ayForm, name: e.target.value })} placeholder="2024-2025" /></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Niveau (ex: 1ère année, 2ème année)' : 'Level (e.g. 1st Year, 2nd Year)'}</Label><Select value={ayForm.level} onValueChange={v => setAyForm({ ...ayForm, level: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner un niveau' : 'Select level'} /></SelectTrigger><SelectContent><SelectItem value="__none__">{language === 'fr' ? 'Aucun' : 'None'}</SelectItem><SelectItem value="1st Year">1st Year</SelectItem><SelectItem value="2nd Year">2nd Year</SelectItem><SelectItem value="3rd Year">3rd Year</SelectItem><SelectItem value="4th Year">4th Year</SelectItem><SelectItem value="5th Year">5th Year</SelectItem><SelectItem value="Master 1">Master 1</SelectItem><SelectItem value="Master 2">Master 2</SelectItem><SelectItem value="Doctorate">Doctorate</SelectItem></SelectContent></Select></div>
               <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Date début' : 'Start Date'}</Label><Input type="date" value={ayForm.startDate} onChange={e => setAyForm({ ...ayForm, startDate: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Date fin' : 'End Date'}</Label><Input type="date" value={ayForm.endDate} onChange={e => setAyForm({ ...ayForm, endDate: e.target.value })} /></div></div>
               <div className="flex items-center gap-2"><Checkbox checked={ayForm.isCurrent} onCheckedChange={v => setAyForm({ ...ayForm, isCurrent: v as boolean })} /><Label>{language === 'fr' ? 'Année en cours' : 'Current Year'}</Label></div>
             </div>
@@ -3679,7 +3681,7 @@ function CurriculumPage() {
             <Label>{t('academic_year', language)}</Label>
             <Select value={selectedYear} onValueChange={setSelectedYear}>
               <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Toutes les années' : 'All years'} /></SelectTrigger>
-              <SelectContent>{(academicYears || []).map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}</SelectContent>
+              <SelectContent>{(academicYears || []).filter(y => y.name).map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
@@ -3743,7 +3745,7 @@ function CurriculumPage() {
             <div className="space-y-2"><Label>{t('topic_description', language)}</Label><Textarea value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>{t('modules', language)} *</Label><Select value={form.moduleId} onValueChange={v => setForm({ ...form, moduleId: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-2"><Label>{t('academic_year', language)}</Label><Select value={form.academicYear || undefined} onValueChange={v => setForm({ ...form, academicYear: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{(academicYears || []).map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>{t('academic_year', language)}</Label><Select value={form.academicYear || undefined} onValueChange={v => setForm({ ...form, academicYear: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{(academicYears || []).filter(y => y.name).map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2"><Label>{t('hours_allocated', language)}</Label><Input type="number" min={1} value={form.hours} onChange={e => setForm({ ...form, hours: Number(e.target.value) })} /></div>
