@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
-import { useAppStore } from '@/lib/store';
+import { useAppStore, syncToCloud, loadFromCloud, getCloudSyncStatus, sendAttendanceReminders } from '@/lib/store';
 import { setApiToken, api } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
@@ -40,7 +40,7 @@ import {
   Flame, Award, Zap, Globe, Database, Activity, ToggleLeft, CreditCard, IdCard,
   Palette, HardDrive, ChevronDown, Info, RotateCcw, Archive, Cloud, FolderOpen,
   FileCheck, ListChecks, Target, Smartphone, WifiOff, History, FileUp,
-  AlertOctagon, Paperclip
+  AlertOctagon, Paperclip, BellRing
 } from 'lucide-react';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
@@ -3752,6 +3752,8 @@ function SettingsPage() {
           <TabsTrigger value="password">{t('change_password', language)}</TabsTrigger>
           <TabsTrigger value="email" className="flex items-center gap-1.5"><Mail className="h-4 w-4" />{language === 'fr' ? 'Email (Brevo)' : 'Email (Brevo)'}</TabsTrigger>
           <TabsTrigger value="notifications" className="flex items-center gap-1.5"><Bell className="h-4 w-4" />{language === 'fr' ? 'Notifications' : 'Notifications'}</TabsTrigger>
+          <TabsTrigger value="cloudsync" className="flex items-center gap-1.5"><Cloud className="h-4 w-4" />{language === 'fr' ? 'Cloud Sync' : 'Cloud Sync'}</TabsTrigger>
+          <TabsTrigger value="reminders" className="flex items-center gap-1.5"><BellRing className="h-4 w-4" />{language === 'fr' ? 'Rappels Auto' : 'Auto Reminders'}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -4147,6 +4149,12 @@ function SettingsPage() {
         <TabsContent value="notifications" className="space-y-4">
           <NotificationSettingsSection />
         </TabsContent>
+        <TabsContent value="cloudsync" className="space-y-4">
+          <CloudSyncSettings />
+        </TabsContent>
+        <TabsContent value="reminders" className="space-y-4">
+          <ReminderSettings />
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -4247,6 +4255,248 @@ function NotificationSettingsSection() {
         </ul>
       </div>
     </CardContent></Card>
+  );
+}
+
+// ==================== CLOUD SYNC SETTINGS ====================
+function CloudSyncSettings() {
+  const { language, students, classes, attendance, tasks, grades } = useAppStore();
+  const [syncing, setSyncing] = useState(false);
+  const [pulling, setPulling] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState<{
+    status: string; lastCloudSync: string | null; lastCloudPull: string | null;
+    cloudCounts: Record<string, number>; cloudConnected: boolean; success: boolean;
+  } | null>(null);
+  const [lastSyncResult, setLastSyncResult] = useState<string>('');
+
+  useEffect(() => {
+    getCloudSyncStatus().then(setCloudStatus);
+  }, []);
+
+  const handleSyncToCloud = async () => {
+    setSyncing(true);
+    setLastSyncResult('');
+    const result = await syncToCloud();
+    if (result.success) {
+      setLastSyncResult(`${language === 'fr' ? 'Synchronisé' : 'Synced'}: ${result.upserted || 0} ${language === 'fr' ? 'enregistrements' : 'records'}`);
+      toast.success(language === 'fr' ? 'Données envoyées vers le cloud' : 'Data pushed to cloud');
+    } else {
+      setLastSyncResult(`${language === 'fr' ? 'Erreur' : 'Error'}: ${result.error}`);
+      toast.error(result.error || (language === 'fr' ? 'Échec de la synchronisation' : 'Sync failed'));
+    }
+    setSyncing(false);
+    const updated = await getCloudSyncStatus();
+    setCloudStatus(updated);
+  };
+
+  const handlePullFromCloud = async () => {
+    if (!confirm(language === 'fr' ? 'Remplacer les données locales par les données du cloud ?' : 'Replace local data with cloud data?')) return;
+    setPulling(true);
+    setLastSyncResult('');
+    const result = await loadFromCloud();
+    if (result.success && result.data) {
+      // Apply pulled data to store
+      const { setStudents, setClasses, setAttendance, setGrades, setTasks, setModules, setBehavior, setIncidents, setTeachers, setEmployees, setSchedules, setExams, setExamGrades, setCurriculum, setSchoolInfo, setAcademicYears } = useAppStore.getState();
+      if (Array.isArray(result.data.students)) { setStudents(result.data.students as Student[]); localStorage.setItem('attendance_students', JSON.stringify(result.data.students)); }
+      if (Array.isArray(result.data.classes)) { setClasses(result.data.classes as Class[]); localStorage.setItem('attendance_classes', JSON.stringify(result.data.classes)); }
+      if (Array.isArray(result.data.attendance)) { setAttendance(result.data.attendance as AttendanceRecord[]); localStorage.setItem('attendance_records', JSON.stringify(result.data.attendance)); }
+      if (Array.isArray(result.data.grades)) { setGrades(result.data.grades as Grade[]); localStorage.setItem('attendance_grades', JSON.stringify(result.data.grades)); }
+      if (Array.isArray(result.data.tasks)) { setTasks(result.data.tasks as Task[]); localStorage.setItem('attendance_tasks', JSON.stringify(result.data.tasks)); }
+      if (Array.isArray(result.data.schoolInfo)) { setSchoolInfo(result.data.schoolInfo as SchoolInfo); localStorage.setItem('attendance_school_info', JSON.stringify(result.data.schoolInfo)); }
+      setLastSyncResult(`${language === 'fr' ? 'Données récupérées du cloud' : 'Data pulled from cloud'}`);
+      toast.success(language === 'fr' ? 'Données chargées depuis le cloud' : 'Data loaded from cloud');
+    } else {
+      setLastSyncResult(`${language === 'fr' ? 'Erreur' : 'Error'}: ${result.error}`);
+      toast.error(result.error || (language === 'fr' ? 'Échec du chargement' : 'Pull failed'));
+    }
+    setPulling(false);
+    const updated = await getCloudSyncStatus();
+    setCloudStatus(updated);
+  };
+
+  const statusColor = cloudStatus?.status === 'success' ? 'text-emerald-600' : cloudStatus?.status === 'error' ? 'text-red-600' : cloudStatus?.status === 'syncing' ? 'text-blue-600' : 'text-muted-foreground';
+  const statusText = cloudStatus?.status === 'success' ? (language === 'fr' ? 'Connecté' : 'Connected') : cloudStatus?.status === 'error' ? (language === 'fr' ? 'Erreur' : 'Error') : cloudStatus?.status === 'syncing' ? (language === 'fr' ? 'Synchronisation...' : 'Syncing...') : (language === 'fr' ? 'Inactif' : 'Idle');
+
+  return (
+    <div className="space-y-4">
+      <Card><CardHeader><CardTitle className="text-base flex items-center gap-2"><Cloud className="h-5 w-5 text-blue-600" />{language === 'fr' ? 'Synchronisation Cloud (D1)' : 'Cloud Sync (D1)'}</CardTitle><CardDescription>{language === 'fr' ? 'Sauvegardez et synchronisez vos données avec Cloudflare D1' : 'Backup and sync your data with Cloudflare D1'}</CardDescription></CardHeader><CardContent className="space-y-5">
+        {/* Status */}
+        <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+          <div className="flex items-center gap-2">
+            <div className={`w-2.5 h-2.5 rounded-full ${cloudStatus?.cloudConnected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
+            <span className={`text-sm font-medium ${statusColor}`}>{statusText}</span>
+          </div>
+          <span className="text-xs text-muted-foreground">{cloudStatus?.cloudConnected ? (language === 'fr' ? 'Base de données connectée' : 'Database connected') : (language === 'fr' ? 'Non connecté' : 'Not connected')}</span>
+        </div>
+
+        {/* Timestamps */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="p-3 rounded-lg border bg-muted/20">
+            <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Dernier envoi' : 'Last Push'}</p>
+            <p className="text-sm font-medium mt-0.5">{cloudStatus?.lastCloudSync ? new Date(cloudStatus.lastCloudSync).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-US') : (language === 'fr' ? 'Jamais' : 'Never')}</p>
+          </div>
+          <div className="p-3 rounded-lg border bg-muted/20">
+            <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Dernière récupération' : 'Last Pull'}</p>
+            <p className="text-sm font-medium mt-0.5">{cloudStatus?.lastCloudPull ? new Date(cloudStatus.lastCloudPull).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-US') : (language === 'fr' ? 'Jamais' : 'Never')}</p>
+          </div>
+        </div>
+
+        {/* Entity counts comparison */}
+        <div className="rounded-lg border p-3 bg-muted/20">
+          <p className="text-xs text-muted-foreground mb-2">{language === 'fr' ? 'Comparaison des données' : 'Data Comparison'}:</p>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="flex justify-between"><span>{language === 'fr' ? 'Étudiants' : 'Students'}:</span><span>{students.length} {cloudStatus?.cloudCounts?.students ? `/ ${cloudStatus.cloudCounts.students}` : ''}</span></div>
+            <div className="flex justify-between"><span>{language === 'fr' ? 'Classes' : 'Classes'}:</span><span>{classes.length} {cloudStatus?.cloudCounts?.classes ? `/ ${cloudStatus.cloudCounts.classes}` : ''}</span></div>
+            <div className="flex justify-between"><span>{language === 'fr' ? 'Présence' : 'Attendance'}:</span><span>{attendance.length} {cloudStatus?.cloudCounts?.attendance_records ? `/ ${cloudStatus.cloudCounts.attendance_records}` : ''}</span></div>
+            <div className="flex justify-between"><span>{language === 'fr' ? 'Notes' : 'Grades'}:</span><span>{grades.length} {cloudStatus?.cloudCounts?.grades ? `/ ${cloudStatus.cloudCounts.grades}` : ''}</span></div>
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Button onClick={handleSyncToCloud} disabled={syncing} className="flex-1 bg-blue-600 hover:bg-blue-700">
+            {syncing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+            {syncing ? (language === 'fr' ? 'Envoi en cours...' : 'Pushing...') : (language === 'fr' ? 'Envoyer vers le Cloud' : 'Push to Cloud')}
+          </Button>
+          <Button onClick={handlePullFromCloud} disabled={pulling} variant="outline" className="flex-1">
+            {pulling ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            {pulling ? (language === 'fr' ? 'Récupération...' : 'Pulling...') : (language === 'fr' ? 'Récupérer du Cloud' : 'Pull from Cloud')}
+          </Button>
+        </div>
+
+        {/* Result message */}
+        {lastSyncResult && (
+          <div className={`p-3 rounded-lg text-sm ${lastSyncResult.includes('Erreur') || lastSyncResult.includes('Error') ? 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-900/20 dark:text-red-400' : 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400'}`}>
+            {lastSyncResult}
+          </div>
+        )}
+
+        {/* Info */}
+        <div className="rounded-lg border p-3 bg-muted/30 space-y-1.5">
+          <h4 className="text-sm font-semibold flex items-center gap-1.5"><Info className="h-4 w-4" />{language === 'fr' ? 'Comment ça marche' : 'How it works'}</h4>
+          <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+            <li>{language === 'fr' ? 'Les données sont automatiquement synchronisées vers D1 après chaque modification (délai 5s)' : 'Data auto-syncs to D1 after each change (5s debounce)'}</li>
+            <li>{language === 'fr' ? 'Au chargement, les données locales sont complétées par les données cloud si plus récentes' : 'On load, local data is supplemented by cloud data if newer'}</li>
+            <li>{language === 'fr' ? 'Le localStorage reste la source principale — D1 est un backup/cloud' : 'localStorage remains primary — D1 is backup/cloud'}</li>
+          </ul>
+        </div>
+      </CardContent></Card>
+    </div>
+  );
+}
+
+// ==================== AUTOMATED REMINDER SETTINGS ====================
+function ReminderSettings() {
+  const { language, attendance, students, classes, schoolInfo } = useAppStore();
+  const [sending, setSending] = useState(false);
+  const [reminderResult, setReminderResult] = useState<{ success: boolean; sent?: number; skipped?: number; errors?: unknown[]; error?: string } | null>(null);
+  const [autoReminderEnabled, setAutoReminderEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('attendance_auto_reminders') === 'true';
+  });
+  const brevoConfig = loadBrevoConfig();
+
+  const handleToggleAutoReminder = () => {
+    const newVal = !autoReminderEnabled;
+    setAutoReminderEnabled(newVal);
+    if (typeof window !== 'undefined') localStorage.setItem('attendance_auto_reminders', JSON.stringify(newVal));
+    toast.success(newVal
+      ? (language === 'fr' ? 'Rappels automatiques activés' : 'Auto reminders enabled')
+      : (language === 'fr' ? 'Rappels automatiques désactivés' : 'Auto reminders disabled'));
+  };
+
+  const handleSendReminders = async () => {
+    if (!brevoConfig.apiKey || !brevoConfig.senderEmail) {
+      toast.error(language === 'fr' ? 'Configurez Brevo dans l\'onglet Email avant d\'envoyer des rappels' : 'Configure Brevo in Email tab before sending reminders');
+      return;
+    }
+    setSending(true);
+    setReminderResult(null);
+    const result = await sendAttendanceReminders({
+      attendance: attendance.filter(a => a.date === new Date().toISOString().split('T')[0] && (a.status === 'absent' || a.status === 'late')),
+      students,
+      classes,
+      brevoApiKey: brevoConfig.apiKey,
+      senderEmail: brevoConfig.senderEmail,
+      language,
+      schoolInfo: schoolInfo as Record<string, string>,
+    });
+    setReminderResult(result);
+    if (result.success) {
+      toast.success(`${language === 'fr' ? 'Rappels envoyés' : 'Reminders sent'}: ${result.sent || 0} ${language === 'fr' ? 'email(s)' : 'email(s)'}`);
+    } else {
+      toast.error(result.error || (language === 'fr' ? 'Échec de l\'envoi' : 'Send failed'));
+    }
+    setSending(false);
+  };
+
+  const today = new Date().toISOString().split('T')[0];
+  const todayAbsences = attendance.filter(a => a.date === today && a.status === 'absent').length;
+  const todayLates = attendance.filter(a => a.date === today && a.status === 'late').length;
+
+  return (
+    <div className="space-y-4">
+      <Card><CardHeader><CardTitle className="text-base flex items-center gap-2"><BellRing className="h-5 w-5 text-amber-600" />{language === 'fr' ? 'Rappels Automatiques d\'Absence' : 'Automated Attendance Reminders'}</CardTitle><CardDescription>{language === 'fr' ? 'Envoyez automatiquement des emails aux parents en cas d\'absence ou de retard' : 'Automatically email guardians when students are absent or late'}</CardDescription></CardHeader><CardContent className="space-y-5">
+        {/* Brevo status */}
+        {(!brevoConfig.apiKey || !brevoConfig.senderEmail) && (
+          <div className="flex items-center gap-3 p-3 rounded-lg border bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800">
+            <AlertOctagon className="h-5 w-5 text-amber-600 shrink-0" />
+            <span className="text-sm text-amber-700 dark:text-amber-400">{language === 'fr' ? 'Veuillez d\'abord configurer Brevo dans l\'onglet Email.' : 'Please configure Brevo in the Email tab first.'}</span>
+          </div>
+        )}
+
+        {/* Auto toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">{language === 'fr' ? 'Activer les rappels automatiques' : 'Enable automatic reminders'}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{language === 'fr' ? 'Envoi automatique lors du marquage de présence' : 'Auto-send when attendance is marked'}</p>
+          </div>
+          <Switch checked={autoReminderEnabled} onCheckedChange={handleToggleAutoReminder} />
+        </div>
+
+        {/* Today's summary */}
+        <div className="rounded-lg border p-3 bg-muted/20">
+          <p className="text-xs text-muted-foreground mb-2">{language === 'fr' ? `Résumé du ${new Date().toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US')}` : `Summary for ${new Date().toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US')}`}</p>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="flex justify-between"><span className="text-red-600 font-medium">{language === 'fr' ? 'Absents' : 'Absent'}:</span><span>{todayAbsences}</span></div>
+            <div className="flex justify-between"><span className="text-amber-600 font-medium">{language === 'fr' ? 'Retards' : 'Late'}:</span><span>{todayLates}</span></div>
+          </div>
+        </div>
+
+        {/* Send button */}
+        <Button onClick={handleSendReminders} disabled={sending || (!brevoConfig.apiKey || !brevoConfig.senderEmail)} className="w-full bg-amber-600 hover:bg-amber-700">
+          {sending ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+          {sending ? (language === 'fr' ? 'Envoi en cours...' : 'Sending...') : (language === 'fr' ? `Envoyer les rappels d'aujourd'hui (${todayAbsences + todayLates})` : `Send today's reminders (${todayAbsences + todayLates})`)}
+        </Button>
+
+        {/* Result */}
+        {reminderResult && (
+          <div className={`p-3 rounded-lg text-sm space-y-1 ${reminderResult.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-900/20 dark:text-red-400'}`}>
+            {reminderResult.success ? (
+              <>
+                <p className="font-medium">{language === 'fr' ? 'Rappels envoyés avec succès' : 'Reminders sent successfully'}</p>
+                <p className="text-xs">{language === 'fr' ? 'Envoyés' : 'Sent'}: {reminderResult.sent} | {language === 'fr' ? 'Ignorés (déjà envoyés)' : 'Skipped (already sent)'}: {reminderResult.skipped}</p>
+                {reminderResult.errors && reminderResult.errors.length > 0 && (
+                  <p className="text-xs mt-1 text-amber-600">{language === 'fr' ? 'Erreurs' : 'Errors'}: {reminderResult.errors.map((e: unknown) => (e as { error: string })?.error || '').join(', ')}</p>
+                )}
+              </>
+            ) : (
+              <p>{reminderResult.error || (language === 'fr' ? 'Échec de l\'envoi' : 'Send failed')}</p>
+            )}
+          </div>
+        )}
+
+        {/* Info */}
+        <div className="rounded-lg border p-3 bg-muted/30 space-y-1.5">
+          <h4 className="text-sm font-semibold flex items-center gap-1.5"><Info className="h-4 w-4" />{language === 'fr' ? 'Fonctionnement' : 'How it works'}</h4>
+          <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+            <li>{language === 'fr' ? 'Les rappels sont envoyés aux emails des tuteurs (guardianEmail)' : 'Reminders are sent to guardian emails (guardianEmail)'}</li>
+            <li>{language === 'fr' ? 'Un duplicat est évité — chaque rappel n\'est envoyé qu\'une fois par jour' : 'Duplicates are avoided — each reminder is sent only once per day'}</li>
+            <li>{language === 'fr' ? 'Nécessite Brevo configuré dans l\'onglet Email' : 'Requires Brevo configured in Email tab'}</li>
+          </ul>
+        </div>
+      </CardContent></Card>
+    </div>
   );
 }
 

@@ -1,3 +1,9 @@
 name = "crm-attendance"
 compatibility_flags = ["nodejs_compat"]
 compatibility_date = "2024-01-01"
+pages_build_output_dir = "./out"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "crm-attendance-db"
+database_id = "bf17a081-9418-40ea-a6ab-558f927ba3f4"

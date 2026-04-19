@@ -85,6 +85,52 @@ function loadLocalObj<T>(key: string, fallback: T): T {
 // ========== API Sync System ==========
 let _loadingFromApi = false;
 let _syncTimer: ReturnType<typeof setTimeout> | null = null;
+let _d1PushTimer: ReturnType<typeof setTimeout> | null = null;
+
+// D1 Cloud Sync status
+export type D1SyncStatus = 'idle' | 'syncing' | 'error' | 'success';
+export interface D1SyncState {
+  status: D1SyncStatus;
+  lastCloudSync: string | null;
+  lastCloudPull: string | null;
+  cloudCounts: Record<string, number>;
+  cloudConnected: boolean;
+}
+
+let _d1SyncState: D1SyncState = {
+  status: 'idle',
+  lastCloudSync: null,
+  lastCloudPull: null,
+  cloudCounts: {},
+  cloudConnected: false,
+};
+
+export function getD1SyncState(): D1SyncState {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('attendance_d1_sync_state');
+      if (saved) _d1SyncState = { ..._d1SyncState, ...JSON.parse(saved) };
+    } catch {}
+  }
+  return _d1SyncState;
+}
+
+function updateD1SyncState(partial: Partial<D1SyncState>) {
+  _d1SyncState = { ..._d1SyncState, ...partial };
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('attendance_d1_sync_state', JSON.stringify(_d1SyncState));
+  }
+}
+
+function getTenantId(): string {
+  if (typeof window !== 'undefined') {
+    try {
+      const auth = JSON.parse(localStorage.getItem('attendance_auth') || '{}');
+      return auth.tenantId || 'default';
+    } catch {}
+  }
+  return 'default';
+}
 
 function scheduleApiSync() {
   if (_loadingFromApi) return;
@@ -92,6 +138,179 @@ function scheduleApiSync() {
   if (!token) return;
   if (_syncTimer) clearTimeout(_syncTimer);
   _syncTimer = setTimeout(syncAllToApi, 3000); // 3 second debounce
+  scheduleD1Push();
+}
+
+// ========== D1 Cloud Sync System ==========
+function scheduleD1Push() {
+  if (_d1PushTimer) clearTimeout(_d1PushTimer);
+  _d1PushTimer = setTimeout(pushToD1, 5000); // 5 second debounce
+}
+
+async function pushToD1() {
+  try {
+    updateD1SyncState({ status: 'syncing' });
+    const state = useAppStore.getState();
+    const payload = {
+      tenant_id: getTenantId(),
+      students: state.students,
+      classes: state.classes,
+      modules: state.modules,
+      attendance: state.attendance,
+      grades: state.grades,
+      behavior: state.behavior,
+      tasks: state.tasks,
+      incidents: state.incidents,
+      teachers: state.teachers,
+      employees: state.employees,
+      templates: state.templates,
+      academicYears: state.academicYears,
+      schedules: state.schedules,
+      exams: state.exams,
+      examGrades: state.examGrades,
+      curriculum: state.curriculum,
+      schoolInfo: state.schoolInfo,
+    };
+    const res = await fetch('/api/sync/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.success) {
+      updateD1SyncState({ status: 'success', lastCloudSync: new Date().toISOString(), cloudConnected: true });
+      console.log('[D1] Cloud push successful:', data.upserted, 'records');
+    } else {
+      updateD1SyncState({ status: 'error' });
+      console.warn('[D1] Cloud push failed:', data.error);
+    }
+  } catch (err) {
+    updateD1SyncState({ status: 'error', cloudConnected: false });
+    console.warn('[D1] Cloud push error:', err);
+  }
+}
+
+// Manual sync to cloud (called from Settings UI)
+export async function syncToCloud(): Promise<{ success: boolean; upserted?: number; error?: string }> {
+  try {
+    updateD1SyncState({ status: 'syncing' });
+    const state = useAppStore.getState();
+    const payload = {
+      tenant_id: getTenantId(),
+      mode: 'push',
+      students: state.students,
+      classes: state.classes,
+      modules: state.modules,
+      attendance: state.attendance,
+      grades: state.grades,
+      behavior: state.behavior,
+      tasks: state.tasks,
+      incidents: state.incidents,
+      teachers: state.teachers,
+      employees: state.employees,
+      templates: state.templates,
+      academicYears: state.academicYears,
+      schedules: state.schedules,
+      exams: state.exams,
+      examGrades: state.examGrades,
+      curriculum: state.curriculum,
+      schoolInfo: state.schoolInfo,
+    };
+    const res = await fetch('/api/sync/trigger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.success) {
+      const pushOp = data.operations?.find((o: { operation: string }) => o.operation === 'push');
+      updateD1SyncState({ status: 'success', lastCloudSync: new Date().toISOString(), cloudConnected: true });
+      return { success: true, upserted: pushOp?.count };
+    }
+    updateD1SyncState({ status: 'error' });
+    return { success: false, error: data.error };
+  } catch (err) {
+    updateD1SyncState({ status: 'error' });
+    return { success: false, error: String(err) };
+  }
+}
+
+// Pull data from cloud (called from Settings UI)
+export async function loadFromCloud(): Promise<{ success: boolean; data?: Record<string, unknown>; error?: string }> {
+  try {
+    updateD1SyncState({ status: 'syncing' });
+    const tenantId = getTenantId();
+    const res = await fetch(`/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
+    const data = await res.json();
+    if (data.success && data.data) {
+      updateD1SyncState({ status: 'success', lastCloudPull: new Date().toISOString(), cloudConnected: true, cloudCounts: data.counts || {} });
+      return { success: true, data: data.data };
+    }
+    updateD1SyncState({ status: 'error' });
+    return { success: false, error: data.error };
+  } catch (err) {
+    updateD1SyncState({ status: 'error' });
+    return { success: false, error: String(err) };
+  }
+}
+
+// Get cloud sync status
+export async function getCloudSyncStatus(): Promise<D1SyncState & { success: boolean }> {
+  try {
+    const tenantId = getTenantId();
+    const res = await fetch(`/api/sync/status?tenant_id=${encodeURIComponent(tenantId)}`);
+    const data = await res.json();
+    if (data.success) {
+      const updated: D1SyncState = {
+        status: 'idle',
+        lastCloudSync: data.last_push || _d1SyncState.lastCloudSync,
+        lastCloudPull: data.last_pull || _d1SyncState.lastCloudPull,
+        cloudCounts: data.entity_counts || {},
+        cloudConnected: data.connected,
+      };
+      updateD1SyncState(updated);
+      return { ...updated, success: true };
+    }
+    return { ..._d1SyncState, success: false };
+  } catch {
+    return { ..._d1SyncState, success: false };
+  }
+}
+
+// Send attendance reminders via Brevo
+export async function sendAttendanceReminders(params: {
+  date?: string;
+  attendance?: unknown[];
+  students?: unknown[];
+  classes?: unknown[];
+  brevoApiKey: string;
+  senderEmail: string;
+  language: string;
+  schoolInfo: Record<string, string>;
+}): Promise<{ success: boolean; sent?: number; skipped?: number; errors?: unknown[]; error?: string }> {
+  try {
+    const tenantId = getTenantId();
+    const payload = {
+      tenant_id: tenantId,
+      date: params.date || new Date().toISOString().split('T')[0],
+      attendance: params.attendance || [],
+      students: params.students || [],
+      classes: params.classes || [],
+      brevo_api_key: params.brevoApiKey,
+      sender_email: params.senderEmail,
+      language: params.language,
+      school_info: params.schoolInfo,
+    };
+    const res = await fetch('/api/reminders/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
 }
 
 async function syncAllToApi() {
@@ -243,24 +462,24 @@ export const useAppStore = create<AppState>((set) => ({
     localStorage.removeItem('attendance_auth');
   },
 
-  setStudents: (s) => { set({ students: s }); localStorage.setItem('attendance_students', JSON.stringify(s)); scheduleApiSync(); },
-  setClasses: (c) => { set({ classes: c }); localStorage.setItem('attendance_classes', JSON.stringify(c)); scheduleApiSync(); },
-  setModules: (m) => { set({ modules: m }); localStorage.setItem('attendance_modules', JSON.stringify(m)); scheduleApiSync(); },
-  setAttendance: (a) => { set({ attendance: a }); localStorage.setItem('attendance_records', JSON.stringify(a)); scheduleApiSync(); },
-  setGrades: (g) => { set({ grades: g }); localStorage.setItem('attendance_grades', JSON.stringify(g)); scheduleApiSync(); },
-  setBehavior: (b) => { set({ behavior: b }); localStorage.setItem('attendance_behavior', JSON.stringify(b)); scheduleApiSync(); },
-  setTasks: (t) => { set({ tasks: t }); localStorage.setItem('attendance_tasks', JSON.stringify(t)); scheduleApiSync(); },
-  setIncidents: (i) => { set({ incidents: i }); localStorage.setItem('attendance_incidents', JSON.stringify(i)); scheduleApiSync(); },
-  setTeachers: (t) => { set({ teachers: t }); localStorage.setItem('attendance_teachers', JSON.stringify(t)); scheduleApiSync(); },
-  setEmployees: (e) => { set({ employees: e }); localStorage.setItem('attendance_employees', JSON.stringify(e)); scheduleApiSync(); },
-  setTemplates: (t) => { set({ templates: t }); localStorage.setItem('attendance_templates', JSON.stringify(t)); scheduleApiSync(); },
-  setAcademicYears: (y) => { set({ academicYears: y }); localStorage.setItem('attendance_academic_years', JSON.stringify(y)); scheduleApiSync(); },
-  setSchoolInfo: (i) => { set({ schoolInfo: i }); localStorage.setItem('attendance_school_info', JSON.stringify(i)); scheduleApiSync(); },
+  setStudents: (s) => { set({ students: s }); localStorage.setItem('attendance_students', JSON.stringify(s)); scheduleApiSync(); scheduleD1Push(); },
+  setClasses: (c) => { set({ classes: c }); localStorage.setItem('attendance_classes', JSON.stringify(c)); scheduleApiSync(); scheduleD1Push(); },
+  setModules: (m) => { set({ modules: m }); localStorage.setItem('attendance_modules', JSON.stringify(m)); scheduleApiSync(); scheduleD1Push(); },
+  setAttendance: (a) => { set({ attendance: a }); localStorage.setItem('attendance_records', JSON.stringify(a)); scheduleApiSync(); scheduleD1Push(); },
+  setGrades: (g) => { set({ grades: g }); localStorage.setItem('attendance_grades', JSON.stringify(g)); scheduleApiSync(); scheduleD1Push(); },
+  setBehavior: (b) => { set({ behavior: b }); localStorage.setItem('attendance_behavior', JSON.stringify(b)); scheduleApiSync(); scheduleD1Push(); },
+  setTasks: (t) => { set({ tasks: t }); localStorage.setItem('attendance_tasks', JSON.stringify(t)); scheduleApiSync(); scheduleD1Push(); },
+  setIncidents: (i) => { set({ incidents: i }); localStorage.setItem('attendance_incidents', JSON.stringify(i)); scheduleApiSync(); scheduleD1Push(); },
+  setTeachers: (t) => { set({ teachers: t }); localStorage.setItem('attendance_teachers', JSON.stringify(t)); scheduleApiSync(); scheduleD1Push(); },
+  setEmployees: (e) => { set({ employees: e }); localStorage.setItem('attendance_employees', JSON.stringify(e)); scheduleApiSync(); scheduleD1Push(); },
+  setTemplates: (t) => { set({ templates: t }); localStorage.setItem('attendance_templates', JSON.stringify(t)); scheduleApiSync(); scheduleD1Push(); },
+  setAcademicYears: (y) => { set({ academicYears: y }); localStorage.setItem('attendance_academic_years', JSON.stringify(y)); scheduleApiSync(); scheduleD1Push(); },
+  setSchoolInfo: (i) => { set({ schoolInfo: i }); localStorage.setItem('attendance_school_info', JSON.stringify(i)); scheduleApiSync(); scheduleD1Push(); },
   setNotifications: (n) => { set({ notifications: n }); },
-  setSchedules: (s) => { set({ schedules: s }); localStorage.setItem('attendance_schedules', JSON.stringify(s)); scheduleApiSync(); },
-  setExams: (e) => { set({ exams: e }); localStorage.setItem('attendance_exams', JSON.stringify(e)); scheduleApiSync(); },
-  setExamGrades: (eg) => { set({ examGrades: eg }); localStorage.setItem('attendance_exam_grades', JSON.stringify(eg)); scheduleApiSync(); },
-  setCurriculum: (c) => { set({ curriculum: c }); localStorage.setItem('attendance_curriculum', JSON.stringify(c)); scheduleApiSync(); },
+  setSchedules: (s) => { set({ schedules: s }); localStorage.setItem('attendance_schedules', JSON.stringify(s)); scheduleApiSync(); scheduleD1Push(); },
+  setExams: (e) => { set({ exams: e }); localStorage.setItem('attendance_exams', JSON.stringify(e)); scheduleApiSync(); scheduleD1Push(); },
+  setExamGrades: (eg) => { set({ examGrades: eg }); localStorage.setItem('attendance_exam_grades', JSON.stringify(eg)); scheduleApiSync(); scheduleD1Push(); },
+  setCurriculum: (c) => { set({ curriculum: c }); localStorage.setItem('attendance_curriculum', JSON.stringify(c)); scheduleApiSync(); scheduleD1Push(); },
   addAuditLog: (action, entityType, entityId, entityName, details) => {
     const state = useAppStore.getState();
     const user = state.currentUser;
@@ -573,6 +792,28 @@ export const useAppStore = create<AppState>((set) => ({
         const usersRes = await api.get('/users');
         if (usersRes?.success && Array.isArray(usersRes.data)) {
           localStorage.setItem('attendance_users', JSON.stringify(usersRes.data));
+        }
+      } catch {}
+
+      // Also try loading from D1 cloud database
+      try {
+        const tenantId = getTenantId();
+        const cloudRes = await fetch(`/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
+        const cloudData = await cloudRes.json();
+        if (cloudData?.success && cloudData.data) {
+          // D1 data is used to supplement, not replace (merge if D1 has more recent data)
+          const cd = cloudData.data;
+          const mergeArray = (local: unknown[], cloud: unknown[], key: string) => {
+            if (Array.isArray(cd[key]) && cd[key].length > local.length) return cd[key];
+            return local;
+          };
+          set({
+            students: mergeArray(state.students, cd.students, 'students') as Student[],
+            classes: mergeArray(state.classes, cd.classes, 'classes') as Class[],
+            attendance: mergeArray(state.attendance, cd.attendance, 'attendance') as AttendanceRecord[],
+          });
+          updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });
+          console.log('[D1] Cloud data loaded, counts:', cloudData.counts);
         }
       } catch {}
 
