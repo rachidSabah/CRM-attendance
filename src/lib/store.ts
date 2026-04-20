@@ -32,6 +32,7 @@ interface AppState {
   curriculum: CurriculumItem[];
   auditLog: AuditLogEntry[];
   savedSchedules: SavedSchedule[];
+  profileViewStudent: Student | null;
 
   // Settings
   language: 'en' | 'fr' | 'ar';
@@ -329,7 +330,7 @@ export const useAppStore = create<AppState>((set) => ({
   examGrades: [],
   curriculum: [],
   auditLog: [],
-  savedSchedules: [],
+  savedSchedules: [], profileViewStudent: null,
   language: 'en',
   primaryColor: '#10b981',
 

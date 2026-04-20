@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useAppStore, syncToCloud, loadFromCloud, getCloudSyncStatus, sendAttendanceReminders } from '@/lib/store';
 import { setApiToken } from '@/lib/api';
 import { t } from '@/lib/i18n';
-import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
+import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
 import * as pdfUtils from '@/lib/pdf';
 import { sendTaskAssignmentEmail, saveBrevoConfig, loadBrevoConfig, sendEmail } from '@/lib/email';
@@ -1016,12 +1016,12 @@ function AttendancePage() {
 
   // Email notification for absences
   const sendAbsenceEmails = async (absences: Array<{ student: Student; status: AttendanceRecord['status'] }>) => {
+    const isFr = language === 'fr';
     for (const abs of absences) {
       const s = abs.student;
       const email = s.guardianEmail || s.email;
       if (!email || !email.includes('@')) continue;
       const isLate = abs.status === 'late';
-      const isFr = language === 'fr';
       const subject = isLate
         ? (isFr ? `[CRM] Retard: ${s.fullName} — ${selectedDate}` : `[CRM] Late Arrival: ${s.fullName} — ${selectedDate}`)
         : (isFr ? `[CRM] Absence: ${s.fullName} — ${selectedDate}` : `[CRM] Absence: ${s.fullName} — ${selectedDate}`);
@@ -3204,7 +3204,7 @@ function ProgressReportsSection() {
 function SettingsPage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
-  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser, setStudents, setClasses, setModules, setAttendance, setGrades, setBehavior, setTasks, setIncidents, setTemplates, primaryColor, setPrimaryColor, schedules, setSchedules, exams, setExams, examGrades, setExamGrades, curriculum, setCurriculum, savedSchedules, setSavedSchedules, addAuditLog } = useAppStore();
+  const { language, setTeachers, setEmployees, setAcademicYears, teachers, employees, academicYears, students, classes, modules, attendance, grades, behavior, tasks, incidents, admins, schoolInfo, setSchoolInfo, currentUser, setStudents, setClasses, setModules, setAttendance, setGrades, setBehavior, setTasks, setIncidents, setTemplates, primaryColor, setPrimaryColor, schedules, setSchedules, exams, setExams, examGrades, setExamGrades, curriculum, setCurriculum, savedSchedules, setSavedSchedules, addAuditLog, login, templates } = useAppStore();
   const [activeTab, setActiveTab] = useState('general');
 
   // Teachers state
@@ -3388,7 +3388,7 @@ function SettingsPage() {
   };
 
   // Language & timezone
-  const [lang, setLang] = useState<'en' | 'fr'>(language);
+  const [lang, setLang] = useState<'en' | 'fr' | 'ar'>(language as 'en' | 'fr' | 'ar');
   const [tz, setTz] = useState('Africa/Casablanca');
 
   // Auto-backup effect
@@ -4480,7 +4480,7 @@ function ReminderSettings() {
 
         {/* Today's summary */}
         <div className="rounded-lg border p-3 bg-muted/20">
-          <p className="text-xs text-muted-foreground mb-2">{language === 'fr' ? `Résumé du ${new Date().toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US')}` : `Summary for ${new Date().toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US')}`}</p>
+          <p className="text-xs text-muted-foreground mb-2">{`Summary for ${new Date().toLocaleDateString(language === 'fr' ? 'fr-FR' : language === 'ar' ? 'ar-MA' : 'en-US')}`}</p>
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="flex justify-between"><span className="text-red-600 font-medium">{language === 'fr' ? 'Absents' : 'Absent'}:</span><span>{todayAbsences}</span></div>
             <div className="flex justify-between"><span className="text-amber-600 font-medium">{language === 'fr' ? 'Retards' : 'Late'}:</span><span>{todayLates}</span></div>

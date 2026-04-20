@@ -37,7 +37,7 @@ export interface TaskEmailParams {
   description?: string;
   ticketNumber?: string;
   category?: string;
-  language?: 'en' | 'fr';
+  language?: 'en' | 'fr' | 'ar';
 }
 
 /**
