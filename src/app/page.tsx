@@ -758,13 +758,14 @@ function StudentsPage() {
   const handleDelete = (id: string) => {
     const studentName = students.find(s => s.id === id)?.fullName || '';
     setStudents(students.filter(s => s.id !== id));
-    setAttendance(attendance.filter(a => a.studentId !== id));
-    setGrades(grades.filter(g => g.studentId !== id));
-    setBehavior(behavior.filter(b => b.studentId !== id));
-    setIncidents(incidents.filter(i => i.studentId !== id));
-    setExamGrades(examGrades.filter(eg => eg.studentId !== id));
+    const st = useAppStore.getState();
+    st.setAttendance(st.attendance.filter(a => a.studentId !== id));
+    st.setGrades(st.grades.filter(g => g.studentId !== id));
+    st.setBehavior(st.behavior.filter(b => b.studentId !== id));
+    st.setIncidents(st.incidents.filter(i => i.studentId !== id));
+    st.setExamGrades(st.examGrades.filter(eg => eg.studentId !== id));
     toast.success(language === 'fr' ? 'Étudiant supprimé' : 'Student deleted');
-    useAppStore.getState().addAuditLog('DELETE_STUDENT', 'student', id, studentName);
+    st.addAuditLog('DELETE_STUDENT', 'student', id, studentName);
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) { if (f.size > 512000) { toast.error(language === 'fr' ? 'Image trop volumineuse (max 500 Ko)' : 'Image too large (max 500KB)'); return; } const r = new FileReader(); r.onload = (ev) => setForm({ ...form, photo: ev.target?.result as string }); r.readAsDataURL(f); } };
@@ -6039,7 +6040,6 @@ export default function App() {
         </main>
       </div>
       <ExportDataDialog open={exportOpen} onOpenChange={setExportOpen} />
-      <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       {profileStudent && <Student360Profile student={profileStudent} onClose={() => { setProfileStudent(null); useAppStore.setState({ profileViewStudent: null } as Partial<typeof useAppStore.getState>); }} />}
       <PWAInstallPrompt />
     </div>
