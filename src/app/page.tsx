@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { useAppStore, syncToCloud, loadFromCloud, getCloudSyncStatus, sendAttendanceReminders } from '@/lib/store';
-import { setApiToken } from '@/lib/api';
+import { setApiToken, localApi } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
@@ -3549,15 +3549,11 @@ function SettingsPage() {
     try {
       // Get current user info for D1 storage
       const auth = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('attendance_auth') || '{}') : {};
-      const res = await fetch('/api/change-password', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentPassword: pwForm.current,
-          newPassword: pwForm.newPw,
-          username: currentUser?.username || auth.username || 'admin',
-          tenant_id: currentUser?.tenantId || auth.tenantId || 'default',
-        }),
+      const res = await localApi('PUT', '/api/change-password', {
+        currentPassword: pwForm.current,
+        newPassword: pwForm.newPw,
+        username: currentUser?.username || auth.username || 'admin',
+        tenant_id: currentUser?.tenantId || auth.tenantId || 'default',
       });
       const data = await res.json();
       if (data.success) {
@@ -5073,11 +5069,7 @@ async function saveAdminToD1(action: 'create' | 'update' | 'delete', admin: Reco
   try {
     const auth = JSON.parse(localStorage.getItem('attendance_auth') || '{}');
     const tid = auth.tenantId || 'default';
-    const res = await fetch('/api/admins/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, tenant_id: tid, admin }),
-    });
+    const res = await localApi('POST', '/api/admins/save', { action, tenant_id: tid, admin });
     return res.ok;
   } catch { return false; }
 }

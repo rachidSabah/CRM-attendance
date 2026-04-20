@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from './types';
-import { api, setApiToken } from './api';
+import { api, setApiToken, localApi } from './api';
 
 interface AppState {
   // Auth
@@ -168,11 +168,7 @@ async function pushToD1() {
       schoolInfo: state.schoolInfo,
       admins: state.admins,
     };
-    const res = await fetch('/api/sync/push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const res = await localApi('POST', '/api/sync/push', payload);
     const data = await res.json();
     if (data.success) {
       updateD1SyncState({ status: 'success', lastCloudSync: new Date().toISOString(), cloudConnected: true });
@@ -211,11 +207,7 @@ export async function syncToCloud(): Promise<{ success: boolean; upserted?: numb
       curriculum: state.curriculum,
       schoolInfo: state.schoolInfo,
     };
-    const res = await fetch('/api/sync/trigger', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const res = await localApi('POST', '/api/sync/trigger', payload);
     const data = await res.json();
     if (data.success) {
       const pushOp = data.operations?.find((o: { operation: string }) => o.operation === 'push');
@@ -235,7 +227,7 @@ export async function loadFromCloud(): Promise<{ success: boolean; data?: Record
   try {
     updateD1SyncState({ status: 'syncing' });
     const tenantId = getTenantId();
-    const res = await fetch(`/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
+    const res = await localApi('GET', `/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
     const data = await res.json();
     if (data.success && data.data) {
       updateD1SyncState({ status: 'success', lastCloudPull: new Date().toISOString(), cloudConnected: true, cloudCounts: data.counts || {} });
@@ -253,7 +245,7 @@ export async function loadFromCloud(): Promise<{ success: boolean; data?: Record
 export async function getCloudSyncStatus(): Promise<D1SyncState & { success: boolean }> {
   try {
     const tenantId = getTenantId();
-    const res = await fetch(`/api/sync/status?tenant_id=${encodeURIComponent(tenantId)}`);
+    const res = await localApi('GET', `/api/sync/status?tenant_id=${encodeURIComponent(tenantId)}`);
     const data = await res.json();
     if (data.success) {
       const updated: D1SyncState = {
@@ -296,11 +288,7 @@ export async function sendAttendanceReminders(params: {
       language: params.language,
       school_info: params.schoolInfo,
     };
-    const res = await fetch('/api/reminders/check', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const res = await localApi('POST', '/api/reminders/check', payload);
     const data = await res.json();
     return data;
   } catch (err) {
@@ -488,7 +476,7 @@ export const useAppStore = create<AppState>((set) => ({
       // Also try loading from D1 cloud database
       try {
         const tenantId = getTenantId();
-        const cloudRes = await fetch(`/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
+        const cloudRes = await localApi('GET', `/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
         if (!cloudRes.ok) {
           // Endpoint not available or error — skip silently
         } else {

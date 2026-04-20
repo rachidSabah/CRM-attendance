@@ -76,15 +76,12 @@ export function loadBrevoConfig(): { apiKey: string; senderEmail: string } {
 export async function sendEmail(params: SendEmailParams): Promise<{ success: boolean; error?: string; messageId?: string }> {
   try {
     const brevo = getBrevoConfig();
-    const res = await fetch('/api/send-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...params,
-        // Pass Brevo credentials from Settings (server falls back to env vars if not provided)
-        ...(brevo.apiKey ? { apiKey: brevo.apiKey } : {}),
-        ...(brevo.senderEmail ? { senderEmail: brevo.senderEmail } : {}),
-      }),
+    const { localApi } = await import('./api');
+    const res = await localApi('POST', '/api/send-email', {
+      ...params,
+      // Pass Brevo credentials from Settings (server falls back to env vars if not provided)
+      ...(brevo.apiKey ? { apiKey: brevo.apiKey } : {}),
+      ...(brevo.senderEmail ? { senderEmail: brevo.senderEmail } : {}),
     });
 
     const data = await res.json();

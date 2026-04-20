@@ -18,6 +18,23 @@ export function getApiToken(): string | null {
   return apiToken;
 }
 
+/** Auth headers for local /api/* requests — includes Bearer token */
+export function localAuthHeaders(): Record<string, string> {
+  const h: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getApiToken();
+  if (token) h['Authorization'] = 'Bearer ' + token;
+  return h;
+}
+
+/** Local API fetch with auth headers — for /api/* endpoints */
+export async function localApi(method: string, endpoint: string, body?: unknown): Promise<Response> {
+  return fetch(endpoint, {
+    method,
+    headers: localAuthHeaders(),
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
 async function apiRequest(method: string, endpoint: string, body?: unknown): Promise<Record<string, unknown> | null> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const token = getApiToken();

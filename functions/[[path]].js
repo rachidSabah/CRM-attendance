@@ -1,16 +1,18 @@
 /**
  * Catch-all SPA fallback — serves index.html for non-API, non-static routes.
- * API routes (/api/*) are passed to specific function handlers via context.next().
- * Static assets (/_next/*, /logo*, etc.) are passed through via context.next().
+ * Also acts as middleware for /api/* routes: enforces CORS and token validation.
  */
+
+import { getCorsHeaders } from './_lib/cors.js';
+import { validateRequest } from './_lib/auth.js';
 
 export async function onRequest(context) {
   const url = new URL(context.request.url);
   const path = url.pathname;
 
-  // Let API routes be handled by specific function handlers
+  // Handle CORS preflight for API routes
   if (path.startsWith('/api/')) {
-    return context.next();
+    return handleApiRequest(context);
   }
 
   // Allow static assets through
@@ -43,6 +45,41 @@ export async function onRequest(context) {
   return context.env.ASSETS.fetch(new URL('/index.html', context.request.url).toString());
 }
 
+async function handleApiRequest(context) {
+  const request = context.request;
+  const corsHeaders = getCorsHeaders(request);
+
+  // Handle OPTIONS preflight
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  // Token validation
+  const db = context.env.DB;
+  const auth = await validateRequest(request, db);
+
+  if (!auth.authenticated) {
+    return new Response(
+      JSON.stringify({ success: false, error: auth.error }),
+      { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+    );
+  }
+
+  // Pass to specific API handler
+  const response = await context.next();
+
+  // Inject CORS headers into the response
+  const newHeaders = new Headers(response.headers);
+  for (const [key, value] of Object.entries(corsHeaders)) {
+    newHeaders.set(key, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: newHeaders,
+  });
+}
+
 export async function onRequestGet(context) {
   return onRequest(context);
 }
@@ -68,5 +105,10 @@ export async function onRequestHead(context) {
 }
 
 export async function onRequestOptions(context) {
+  const url = new URL(context.request.url);
+  if (url.pathname.startsWith('/api/')) {
+    const corsHeaders = getCorsHeaders(context.request);
+    return new Response(null, { headers: corsHeaders });
+  }
   return context.next();
 }
