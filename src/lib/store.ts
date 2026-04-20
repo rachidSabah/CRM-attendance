@@ -166,6 +166,7 @@ async function pushToD1() {
       examGrades: state.examGrades,
       curriculum: state.curriculum,
       schoolInfo: state.schoolInfo,
+      admins: state.admins,
     };
     const res = await fetch('/api/sync/push', {
       method: 'POST',
@@ -204,6 +205,7 @@ export async function syncToCloud(): Promise<{ success: boolean; upserted?: numb
       templates: state.templates,
       academicYears: state.academicYears,
       schedules: state.schedules,
+      admins: state.admins,
       exams: state.exams,
       examGrades: state.examGrades,
       curriculum: state.curriculum,

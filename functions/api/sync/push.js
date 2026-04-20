@@ -66,6 +66,58 @@ async function handlePush(context) {
       }
     }
 
+    // Sync admin users to school_settings so login endpoint can authenticate them
+    // Key format: auth_{username}_{tenantId} — matches what /api/auth/login expects
+    if (Array.isArray(body.admins)) {
+      // First, clean up any stale auth_ entries that no longer exist in the admins list
+      try {
+        const existingAuths = await db.prepare(
+          `SELECT key FROM school_settings WHERE tenant_id = ? AND key LIKE 'auth_%'`
+        ).bind(tenantId).all();
+        if (existingAuths && existingAuths.results) {
+          const currentAdminUsernames = new Set(
+            body.admins.map(a => `auth_${String(a.username || '').trim()}_${tenantId}`)
+          );
+          for (const row of existingAuths.results) {
+            if (!currentAdminUsernames.has(row.key)) {
+              await db.prepare(
+                `DELETE FROM school_settings WHERE tenant_id = ? AND key = ?`
+              ).bind(tenantId, row.key).run();
+              totalUpserted++;
+            }
+          }
+        }
+      } catch {}
+
+      for (const admin of body.admins) {
+        const username = String(admin.username || '').trim();
+        if (!username) continue;
+        const authKey = `auth_${username}_${tenantId}`;
+        // Build the user record in the same format the login endpoint reads
+        const authData = {
+          id: admin.id || username,
+          username: username,
+          password: admin.password || '',
+          fullName: admin.fullName || admin.name || username,
+          email: admin.email || '',
+          role: admin.role || 'admin',
+          department: admin.department || '',
+          tenantId: admin.tenantId || tenantId,
+          is_super_admin: admin.role === 'super_admin' ? true : false,
+          updatedAt: new Date().toISOString(),
+        };
+        // Only write if there's a password (skip entries without credentials)
+        if (authData.password) {
+          await db.prepare(
+            `INSERT INTO school_settings (id, tenant_id, key, data, updated_at)
+             VALUES (?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(tenant_id, key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
+          ).bind(authKey, tenantId, authKey, JSON.stringify(authData)).run();
+          totalUpserted++;
+        }
+      }
+    }
+
     // Log sync
     await db.prepare(
       `INSERT INTO sync_log (tenant_id, operation, record_count, status, details) VALUES (?, 'push', ?, 'success', ?)`
