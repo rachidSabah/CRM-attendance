@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { useAppStore, syncToCloud, loadFromCloud, getCloudSyncStatus, sendAttendanceReminders } from '@/lib/store';
-import { setApiToken, api } from '@/lib/api';
+import { setApiToken } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
@@ -3362,13 +3362,11 @@ function SettingsPage() {
         config: cloudConfig,
         data: { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, templates: [], academicYears, schoolInfo }
       };
-      await api.post('/backup/upload', backupData);
+      // Data syncs to D1 cloud automatically, no separate upload needed
       toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'connecté et sauvegardé!' : 'connected & backup saved!'}`);
     } catch (err) {
-      console.warn('Cloud backup upload failed:', err);
-      // Still save config locally even if API upload fails
+      console.warn('Cloud config error:', err);
       toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'configuration sauvegardée' : 'configuration saved'}`);
-      toast.error(language === 'fr' ? 'Échec de l\'envoi au serveur - config sauvegardée localement' : 'Server upload failed - config saved locally');
     }
     setCloudUploading(false);
 
@@ -3489,6 +3487,12 @@ function SettingsPage() {
       if (data.success) {
         toast.success(language === 'fr' ? 'Mot de passe changé' : 'Password changed');
         addAuditLog('CHANGE_PASSWORD', 'user', currentUser?.id, currentUser?.fullName, 'Password changed');
+        // Re-login with new password to refresh auth token
+        try {
+          const uName = currentUser?.username || auth.username || 'admin';
+          const relogin = await login(uName, pwForm.newPw, auth.tenantId);
+          if (!relogin) console.warn('[change-password] Re-login failed, token may be stale');
+        } catch {}
       } else {
         toast.error(data.error || (language === 'fr' ? 'Échec du changement de mot de passe' : 'Failed to change password'));
       }
@@ -3504,9 +3508,6 @@ function SettingsPage() {
     setSavingSchool(true);
     const info = { name: sForm.name, address: sForm.address, phone: sForm.phone, email: sForm.email, field: sForm.field, logo: sForm.logo };
     setSchoolInfo(info);
-    try {
-      await api.put('/settings/school', info);
-    } catch {}
     toast.success(language === 'fr' ? 'Informations sauvegardées !' : 'School info saved!');
     setSavingSchool(false);
   };
@@ -3620,10 +3621,7 @@ function SettingsPage() {
       toast.success(`${language === 'fr' ? 'Sauvegarde' : 'Backup'} ${isInc} ${language === 'fr' ? 'créée!' : 'created!'}`);
     }
 
-    // Upload to server in background
-    api.post('/backup/upload', backupData).then(() => {
-      console.log('[Backup] Uploaded to server');
-    }).catch(() => {});
+    // Upload to D1 cloud sync happens automatically via store.ts scheduleD1Push()
   };
 
   // Restore backup - supports full and selective restore

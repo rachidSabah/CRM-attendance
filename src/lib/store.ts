@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from './types';
-import { api, setApiToken, getApiToken } from './api';
+import { api, setApiToken } from './api';
 
 interface AppState {
   // Auth
@@ -84,7 +84,6 @@ function loadLocalObj<T>(key: string, fallback: T): T {
 
 // ========== API Sync System ==========
 let _loadingFromApi = false;
-let _syncTimer: ReturnType<typeof setTimeout> | null = null;
 let _d1PushTimer: ReturnType<typeof setTimeout> | null = null;
 
 // D1 Cloud Sync status
@@ -133,11 +132,7 @@ function getTenantId(): string {
 }
 
 function scheduleApiSync() {
-  if (_loadingFromApi) return;
-  const token = getApiToken();
-  if (!token) return;
-  if (_syncTimer) clearTimeout(_syncTimer);
-  _syncTimer = setTimeout(syncAllToApi, 3000); // 3 second debounce
+  // Only trigger D1 cloud sync — external API does not support entity sync
   scheduleD1Push();
 }
 
@@ -313,86 +308,6 @@ export async function sendAttendanceReminders(params: {
   }
 }
 
-async function syncAllToApi() {
-  const state = useAppStore.getState();
-  const token = getApiToken();
-  if (!token || _loadingFromApi) return;
-
-  try {
-    // Try bulk sync endpoint first (most efficient)
-    await api.post('/sync', {
-      schoolInfo: state.schoolInfo,
-      primaryColor: state.primaryColor,
-      language: state.language,
-      data: {
-        students: state.students,
-        classes: state.classes,
-        modules: state.modules,
-        attendance: state.attendance,
-        grades: state.grades,
-        behavior: state.behavior,
-        tasks: state.tasks,
-        incidents: state.incidents,
-        teachers: state.teachers,
-        employees: state.employees,
-        schedules: state.schedules,
-        academicYears: state.academicYears,
-        exams: state.exams,
-        examGrades: state.examGrades,
-        curriculum: state.curriculum,
-      }
-    });
-    console.log('[API] Data synced to cloud successfully');
-  } catch (bulkErr) {
-    // Fallback: try individual entity endpoints
-    console.warn('[API] Bulk sync failed, trying individual endpoints:', bulkErr);
-    const entities: Array<{ endpoint: string; data: unknown[] }> = [
-      { endpoint: 'students', data: state.students },
-      { endpoint: 'classes', data: state.classes },
-      { endpoint: 'modules', data: state.modules },
-      { endpoint: 'attendance', data: state.attendance },
-      { endpoint: 'grades', data: state.grades },
-      { endpoint: 'behavior', data: state.behavior },
-      { endpoint: 'tasks', data: state.tasks },
-      { endpoint: 'incidents', data: state.incidents },
-      { endpoint: 'teachers', data: state.teachers },
-      { endpoint: 'employees', data: state.employees },
-      { endpoint: 'schedules', data: state.schedules },
-      { endpoint: 'academic-years', data: state.academicYears },
-      { endpoint: 'exams', data: state.exams },
-      { endpoint: 'exam-grades', data: state.examGrades },
-      { endpoint: 'curriculum', data: state.curriculum },
-    ];
-
-    // Sync school settings separately
-    if (state.schoolInfo && Object.keys(state.schoolInfo).length > 0) {
-      api.put('/settings/school', state.schoolInfo).catch(() => {});
-    }
-
-    // Try individual entity sync
-    for (const entity of entities) {
-      if (entity.data.length === 0) continue;
-      try {
-        await api.post(`/${entity.endpoint}`, entity.data);
-      } catch {
-        // Try upsert-style endpoint
-        try {
-          await api.put(`/${entity.endpoint}`, entity.data);
-        } catch {
-          // Last resort: sync individual items
-          for (const item of entity.data.slice(0, 5)) { // Limit to 5 to avoid flooding
-            const record = item as Record<string, unknown>;
-            if (record.id) {
-              api.put(`/${entity.endpoint}/${record.id}`, record).catch(() => {});
-            }
-          }
-        }
-      }
-    }
-    console.log('[API] Individual entity sync attempted');
-  }
-}
-
 export const useAppStore = create<AppState>((set) => ({
   currentUser: null,
   isAuthenticated: false,
@@ -498,7 +413,7 @@ export const useAppStore = create<AppState>((set) => ({
     set({ auditLog: newLog });
     localStorage.setItem('attendance_audit_log', JSON.stringify(newLog));
     // Sync audit log periodically
-    try { api.post('/audit-log', entry).catch(() => {}); } catch {}
+    // Audit logs stored locally only (external API does not have audit-log endpoint)
   },
   setAuditLog: (logs) => { set({ auditLog: logs }); localStorage.setItem('attendance_audit_log', JSON.stringify(logs)); },
   setSavedSchedules: (s) => { set({ savedSchedules: s }); localStorage.setItem('attendance_saved_schedules', JSON.stringify(s)); scheduleApiSync(); },
@@ -554,266 +469,37 @@ export const useAppStore = create<AppState>((set) => ({
       document.documentElement.lang = savedLang;
     }
 
-    const token = getApiToken();
-    if (!token) return;
-
     // Mark as loading from API to prevent sync-back
     _loadingFromApi = true;
 
     try {
-      // Load school settings
-      try {
-        const settingsRes = await api.get('/settings/school');
-        if (settingsRes && !settingsRes.error) {
-          const si = settingsRes.data || settingsRes;
-          if (si && Object.keys(si).length > 0) {
-            set({ schoolInfo: si });
-            localStorage.setItem('attendance_school_info', JSON.stringify(si));
-          }
-        }
-      } catch {}
-
-      // Load theme settings
-      try {
-        const themeRes = await api.get('/settings/theme');
-        if (themeRes && themeRes.primaryColor) {
-          const color = String(themeRes.primaryColor);
-          set({ primaryColor: color });
-          localStorage.setItem('attendance_primary_color', color);
-          document.documentElement.style.setProperty('--app-primary-color', color);
-        }
-      } catch {}
-
-      // Load students
-      try {
-        const studentsRes = await api.get('/students');
-        if (studentsRes?.success && Array.isArray(studentsRes.data)) {
-          const normalized = studentsRes.data.map((s: Record<string, unknown>) => ({
-            id: String(s.id || ''),
-            fullName: String(s.fullName || s.first_name || s.email || 'Unknown'),
-            studentId: String(s.studentId || s.student_id || ''),
-            classId: String(s.classId || s.class || ''),
-            className: String(s.className || s.class || ''),
-            academicYear: String(s.academicYear || s.academic_year || ''),
-            status: (s.status as Student['status']) || 'active',
-            guardianName: String(s.guardianName || s.guardian_name || ''),
-            guardianPhone: String(s.guardianPhone || s.guardian_phone || s.phone || ''),
-            phone: String(s.phone || ''),
-            email: String(s.email || ''),
-            address: String(s.address || ''),
-            notes: String(s.notes || ''),
-            photo: (s.photo as string) || null,
-            group: String(s.group || s.group_name || ''),
-            createdAt: String(s.createdAt || s.created_at || s.enrollment_date || new Date().toISOString()),
-          }));
-          set({ students: normalized });
-          localStorage.setItem('attendance_students', JSON.stringify(normalized));
-        }
-      } catch {}
-
-      // Load classes
-      try {
-        const classesRes = await api.get('/classes');
-        if (classesRes?.success && Array.isArray(classesRes.data)) {
-          const normalized = classesRes.data.map((c: Record<string, unknown>) => ({
-            id: String(c.id),
-            name: String(c.name || c.className || ''),
-            description: String(c.description || c.department || ''),
-            teacher: String(c.teacher || c.teacher_id || ''),
-            room: String(c.room || c.schedule || ''),
-            capacity: Number(c.capacity) || 30,
-            academicYear: String(c.academicYear || c.academic_year || ''),
-            createdAt: String(c.createdAt || c.created_at || new Date().toISOString()),
-          }));
-          set({ classes: normalized });
-          localStorage.setItem('attendance_classes', JSON.stringify(normalized));
-        }
-      } catch {}
-
-      // Load attendance
-      try {
-        const attendanceRes = await api.get('/attendance');
-        if (attendanceRes?.success && Array.isArray(attendanceRes.data)) {
-          const normalized = attendanceRes.data.map((a: Record<string, unknown>) => ({
-            id: String(a.id),
-            studentId: String(a.studentId || a.student_id || ''),
-            date: String(a.date || ''),
-            status: (a.status as AttendanceRecord['status']) || 'present',
-            notes: String(a.notes || ''),
-            createdAt: String(a.createdAt || a.created_at || new Date().toISOString()),
-          }));
-          set({ attendance: normalized });
-          localStorage.setItem('attendance_records', JSON.stringify(normalized));
-        }
-      } catch {}
-
-      // Load modules
-      try {
-        const modulesRes = await api.get('/modules');
-        if (modulesRes?.success && Array.isArray(modulesRes.data)) {
-          set({ modules: modulesRes.data });
-          localStorage.setItem('attendance_modules', JSON.stringify(modulesRes.data));
-        }
-      } catch {}
-
-      // Load grades
-      try {
-        const gradesRes = await api.get('/grades');
-        if (gradesRes?.success && Array.isArray(gradesRes.data)) {
-          set({ grades: gradesRes.data });
-          localStorage.setItem('attendance_grades', JSON.stringify(gradesRes.data));
-        }
-      } catch {}
-
-      // Load behavior
-      try {
-        const behaviorRes = await api.get('/behavior');
-        if (behaviorRes?.success && Array.isArray(behaviorRes.data)) {
-          set({ behavior: behaviorRes.data });
-          localStorage.setItem('attendance_behavior', JSON.stringify(behaviorRes.data));
-        }
-      } catch {}
-
-      // Load tasks
-      try {
-        const tasksRes = await api.get('/tasks');
-        if (tasksRes?.success && Array.isArray(tasksRes.data)) {
-          const normalized = tasksRes.data.map((t: Record<string, unknown>) => ({
-            id: String(t.id),
-            title: String(t.title || ''),
-            description: String(t.description || ''),
-            assignedTo: String(t.assignedTo || t.assigned_to || ''),
-            assignedBy: String(t.assignedBy || t.assigned_by || ''),
-            priority: (t.priority as Task['priority']) || 'medium',
-            status: (t.status as Task['status']) || 'pending',
-            category: String(t.category || ''),
-            dueDate: String(t.dueDate || t.due_date || ''),
-            progress: Number(t.progress) || 0,
-            ticketNumber: String(t.ticketNumber || 'TK-' + String(t.id || '').substring(0, 6).toUpperCase()),
-            completionReport: String(t.completionReport || ''),
-            attachments: (t.attachments as string[]) || [],
-            comments: (t.comments as Task['comments']) || [],
-            createdAt: String(t.createdAt || t.created_at || new Date().toISOString()),
-            completedAt: (t.completedAt as string) || null,
-          }));
-          set({ tasks: normalized });
-          localStorage.setItem('attendance_tasks', JSON.stringify(normalized));
-        }
-      } catch {}
-
-      // Load incidents
-      try {
-        const incidentsRes = await api.get('/incidents');
-        if (incidentsRes?.success && Array.isArray(incidentsRes.data)) {
-          const normalized = incidentsRes.data.map((i: Record<string, unknown>) => ({
-            id: String(i.id),
-            studentId: String(i.studentId || i.student_id || ''),
-            incidentType: String(i.incidentType || i.type || ''),
-            description: String(i.description || ''),
-            actionTaken: String(i.actionTaken || i.action_taken || ''),
-            reportedBy: String(i.reportedBy || i.reported_by || ''),
-            date: String(i.date || i.incident_date || ''),
-            severity: (i.severity as Incident['severity']) || 'medium',
-            status: (i.status as Incident['status']) || 'open',
-            followUpNotes: String(i.followUpNotes || ''),
-            attachments: (i.attachments as string[]) || [],
-            createdAt: String(i.createdAt || i.created_at || new Date().toISOString()),
-          }));
-          set({ incidents: normalized });
-          localStorage.setItem('attendance_incidents', JSON.stringify(normalized));
-        }
-      } catch {}
-
-      // Load teachers
-      try {
-        const teachersRes = await api.get('/teachers');
-        if (teachersRes?.success && Array.isArray(teachersRes.data)) {
-          set({ teachers: teachersRes.data });
-          localStorage.setItem('attendance_teachers', JSON.stringify(teachersRes.data));
-        }
-      } catch {}
-
-      // Load employees
-      try {
-        const employeesRes = await api.get('/employees');
-        if (employeesRes?.success && Array.isArray(employeesRes.data)) {
-          set({ employees: employeesRes.data });
-          localStorage.setItem('attendance_employees', JSON.stringify(employeesRes.data));
-        }
-      } catch {}
-
-      // Load schedules
-      try {
-        const schedulesRes = await api.get('/schedules');
-        if (schedulesRes?.success && Array.isArray(schedulesRes.data)) {
-          set({ schedules: schedulesRes.data });
-          localStorage.setItem('attendance_schedules', JSON.stringify(schedulesRes.data));
-        }
-      } catch {}
-
-      // Load academic years
-      try {
-        const ayRes = await api.get('/academic-years');
-        if (ayRes?.success && Array.isArray(ayRes.data)) {
-          set({ academicYears: ayRes.data });
-          localStorage.setItem('attendance_academic_years', JSON.stringify(ayRes.data));
-        }
-      } catch {}
-
-      // Load exams
-      try {
-        const examsRes = await api.get('/exams');
-        if (examsRes?.success && Array.isArray(examsRes.data)) {
-          set({ exams: examsRes.data });
-          localStorage.setItem('attendance_exams', JSON.stringify(examsRes.data));
-        }
-      } catch {}
-
-      // Load exam grades
-      try {
-        const egRes = await api.get('/exam-grades');
-        if (egRes?.success && Array.isArray(egRes.data)) {
-          set({ examGrades: egRes.data });
-          localStorage.setItem('attendance_exam_grades', JSON.stringify(egRes.data));
-        }
-      } catch {}
-
-      // Load curriculum
-      try {
-        const currRes = await api.get('/curriculum');
-        if (currRes?.success && Array.isArray(currRes.data)) {
-          set({ curriculum: currRes.data });
-          localStorage.setItem('attendance_curriculum', JSON.stringify(currRes.data));
-        }
-      } catch {}
-
-      // Load users
-      try {
-        const usersRes = await api.get('/users');
-        if (usersRes?.success && Array.isArray(usersRes.data)) {
-          localStorage.setItem('attendance_users', JSON.stringify(usersRes.data));
-        }
-      } catch {}
+      // NOTE: Entity data is loaded from localStorage (above) and D1 cloud sync (below).
+      // The external API (infohas-attendance-api) only supports auth/login.
+      // All entity GET endpoints return 404 there, so we skip them to avoid console noise.
 
       // Also try loading from D1 cloud database
       try {
         const tenantId = getTenantId();
         const cloudRes = await fetch(`/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
-        const cloudData = await cloudRes.json();
-        if (cloudData?.success && cloudData.data) {
-          // D1 data is used to supplement, not replace (merge if D1 has more recent data)
-          const cd = cloudData.data;
-          const mergeArray = (local: unknown[], cloud: unknown[], key: string) => {
-            if (Array.isArray(cd[key]) && cd[key].length > local.length) return cd[key];
-            return local;
-          };
-          set({
-            students: mergeArray(state.students, cd.students, 'students') as Student[],
-            classes: mergeArray(state.classes, cd.classes, 'classes') as Class[],
-            attendance: mergeArray(state.attendance, cd.attendance, 'attendance') as AttendanceRecord[],
-          });
-          updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });
-          console.log('[D1] Cloud data loaded, counts:', cloudData.counts);
+        if (!cloudRes.ok) {
+          // Endpoint not available or error — skip silently
+        } else {
+          const cloudData = await cloudRes.json();
+          if (cloudData?.success && cloudData.data) {
+            const cd = cloudData.data;
+            const currentState = useAppStore.getState();
+            const mergeArray = (local: unknown[], cloudKey: string) => {
+              const cloud = cd[cloudKey];
+              if (Array.isArray(cloud) && cloud.length > local.length) return cloud;
+              return local;
+            };
+            set({
+              students: mergeArray(currentState.students, 'students') as Student[],
+              classes: mergeArray(currentState.classes, 'classes') as Class[],
+              attendance: mergeArray(currentState.attendance, 'attendance') as AttendanceRecord[],
+            });
+            updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });
+          }
         }
       } catch {}
 

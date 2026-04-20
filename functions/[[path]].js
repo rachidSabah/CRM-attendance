@@ -2,6 +2,11 @@ export async function onRequestGet(context) {
   const url = new URL(context.request.url);
   const path = url.pathname;
 
+  // Let API routes be handled by specific function handlers
+  if (path.startsWith('/api/')) {
+    return context.next();
+  }
+
   // Allow static assets through
   if (path.startsWith('/_next/') || path.startsWith('/logo') || path === '/robots.txt' || path === '/_redirects') {
     return context.next();
