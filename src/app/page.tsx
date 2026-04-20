@@ -537,7 +537,7 @@ function Header({ onMenuClick, onExportClick }: { onMenuClick: () => void; onExp
         <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenuClick}><Menu className="h-5 w-5" /></Button>
         <div className="flex-1 min-w-0"><h1 className="text-lg font-semibold truncate">{t(currentPage, language)}</h1></div>
         <Button variant="outline" size="sm" className="hidden sm:flex gap-2 text-muted-foreground" onClick={() => setSearchOpen(true)}><Search className="h-4 w-4" /><span className="text-xs">{t('search', language)}</span><kbd className="hidden md:inline-flex items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">Ctrl+K</kbd></Button>
-        <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => { const newLang = language === 'en' ? 'fr' : 'en'; useAppStore.setState({ language: newLang }); localStorage.setItem('attendance_language', newLang); document.documentElement.lang = newLang; toast.success(language === 'en' ? 'Langue: Français' : 'Language: English'); }}><Languages className="h-4 w-4" /><span className="hidden sm:inline">{language.toUpperCase()}</span></Button>
+        <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => { const langs = ['en', 'fr', 'ar'] as const; const idx = langs.indexOf(language); const newLang = langs[(idx + 1) % langs.length]; useAppStore.setState({ language: newLang }); localStorage.setItem('attendance_language', newLang); document.documentElement.lang = newLang; document.documentElement.dir = newLang === 'ar' ? 'rtl' : 'ltr'; const names: Record<string, string> = { en: 'English', fr: 'Français', ar: 'العربية' }; toast.success(names[newLang]); }}><Languages className="h-4 w-4" /><span className="hidden sm:inline">{language.toUpperCase()}</span></Button>
         <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}</Button>
         <Button variant="outline" size="icon" onClick={onExportClick}><Download className="h-4 w-4" /></Button>
         <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground"><div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /><span>{language === 'fr' ? 'Dernière sync' : 'Last sync'}: {syncTime.toLocaleTimeString(language === 'fr' ? 'fr-FR' : 'en-US', { hour: '2-digit', minute: '2-digit' })}</span></div>
@@ -1058,9 +1058,8 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
 </div></body></html>`;
       try {
         await sendEmail({ to: email, toName: s.guardianName || undefined, subject, htmlContent });
-        console.log(`[Attendance] Email sent to ${email} for ${s.fullName}`);
       } catch (err) {
-        console.error(`[Attendance] Failed to send email to ${email}:`, err);
+        // Email send failed silently — Brevo may be misconfigured
       }
     }
     if (absences.length > 0) {
@@ -2689,6 +2688,12 @@ function MessagingPage() {
         { id: genId(), name: 'Academic Progress Update', category: 'academic', content: "Dear {guardian_name}, this is an update regarding {student_name}'s academic progress in {class}. Please feel free to contact us if you have any questions.", createdAt: new Date().toISOString() },
         { id: genId(), name: 'Student Achievement', category: 'achievement', content: 'Dear {guardian_name}, we are pleased to inform you that {student_name} has shown excellent progress in {class}. Congratulations!', createdAt: new Date().toISOString() },
         { id: genId(), name: 'General Reminder', category: 'reminder', content: 'Dear {guardian_name}, this is a reminder regarding {student_name} in {class}. Please contact us if you have any questions.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'إشعار غياب', category: 'absence', content: 'عزيزي/عزيزتي {guardian_name}، نود إعلامكم بأن {student_name} تم تسجيله/ها غائباً/غائبة عن قسم {class} اليوم ({date}). إذا كان الغياب مبرراً، يرجى تجاهل هذه الرسالة. وإلا يرجى الاتصال بـ {school_name} لمناقشة الموضوع. شكراً لتفهمكم.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'إشعار تأخر', category: 'late', content: 'عزيزي/عزيزتي {guardian_name}، الطالب/ة {student_name} وصل/ت متأخراً/ة إلى قسم {class} اليوم ({date}). نرجو منكم التأكد من الالتزام بالمواعيد.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'طلب اجتماع ولي الأمر', category: 'meeting', content: 'عزيزي/عزيزتي {guardian_name}، نود ترتيب اجتماع معكم لمناقشة مستوى {student_name} في قسم {class}. يرجى الاتصال بـ {school_name} في أقرب وقت ممكن.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'تحديث المستوى الدراسي', category: 'academic', content: 'عزيزي/عزيزتي {guardian_name}، نود إطلاعكم على آخر المستجدات المتعلقة بمستوى {student_name} في قسم {class}. لا تترددوا في الاتصال بنا إذا كان لديكم أي استفسار.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'إنجاز الطالب', category: 'achievement', content: 'عزيزي/عزيزتي {guardian_name}، يسعدنا إعلامكم بأن {student_name} أظهر/ت تحسناً متميزاً في قسم {class}. تهانينا!', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'تذكير عام', category: 'reminder', content: 'عزيزي/عزيزتي {guardian_name}، هذه رسالة تذكير بخصوص {student_name} في قسم {class}. يرجى الاتصال بنا إذا كان لديكم أي استفسار.', createdAt: new Date().toISOString() },
       ];
       setTemplates(defaults);
     }
@@ -2696,15 +2701,15 @@ function MessagingPage() {
 
   // Category labels and icons
   const categoryLabels: Record<string, string> = {
-    absence: language === 'fr' ? 'Absence' : 'Absence Templates',
-    late: language === 'fr' ? 'Retard' : 'Late Arrival Templates',
-    meeting: language === 'fr' ? 'Réunion' : 'Meeting Templates',
-    academic: language === 'fr' ? 'Académique' : 'Academic Templates',
-    announcement: language === 'fr' ? 'Annonce' : 'Announcement Templates',
-    behavioral: language === 'fr' ? 'Comportement' : 'Behavioral Templates',
-    achievement: language === 'fr' ? 'Réalisation' : 'Achievement Templates',
-    reminder: language === 'fr' ? 'Rappel' : 'Reminder Templates',
-    custom: language === 'fr' ? 'Personnalisé' : 'Custom Templates',
+    absence: language === 'ar' ? 'غياب' : language === 'fr' ? 'Absence' : 'Absence Templates',
+    late: language === 'ar' ? 'تأخر' : language === 'fr' ? 'Retard' : 'Late Arrival Templates',
+    meeting: language === 'ar' ? 'اجتماعات' : language === 'fr' ? 'Réunion' : 'Meeting Templates',
+    academic: language === 'ar' ? 'أكاديمي' : language === 'fr' ? 'Académique' : 'Academic Templates',
+    announcement: language === 'ar' ? 'إعلانات' : language === 'fr' ? 'Annonce' : 'Announcement Templates',
+    behavioral: language === 'ar' ? 'سلوكي' : language === 'fr' ? 'Comportement' : 'Behavioral Templates',
+    achievement: language === 'ar' ? 'إنجازات' : language === 'fr' ? 'Réalisation' : 'Achievement Templates',
+    reminder: language === 'ar' ? 'تذكيرات' : language === 'fr' ? 'Rappel' : 'Reminder Templates',
+    custom: language === 'ar' ? 'مخصص' : language === 'fr' ? 'Personnalisé' : 'Custom Templates',
   };
 
   const categoryColors: Record<string, string> = {
@@ -3487,11 +3492,11 @@ function SettingsPage() {
       if (data.success) {
         toast.success(language === 'fr' ? 'Mot de passe changé' : 'Password changed');
         addAuditLog('CHANGE_PASSWORD', 'user', currentUser?.id, currentUser?.fullName, 'Password changed');
-        // Re-login with new password to refresh auth token
+        // Re-login with new password to refresh auth token (best-effort)
         try {
           const uName = currentUser?.username || auth.username || 'admin';
           const relogin = await login(uName, pwForm.newPw, auth.tenantId);
-          if (!relogin) console.warn('[change-password] Re-login failed, token may be stale');
+          // Re-login may fail if external API is unreachable — that's fine
         } catch {}
       } else {
         toast.error(data.error || (language === 'fr' ? 'Échec du changement de mot de passe' : 'Failed to change password'));
@@ -3810,7 +3815,7 @@ function SettingsPage() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>{t('default_language', language)}</Label><Select value={lang} onValueChange={v => { setLang(v as 'en' | 'fr'); useAppStore.setState({ language: v as 'en' | 'fr' }); localStorage.setItem('attendance_language', v); document.documentElement.lang = v; }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="fr">Français</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>{t('default_language', language)}</Label><Select value={lang} onValueChange={v => { setLang(v as 'en' | 'fr' | 'ar'); useAppStore.setState({ language: v as 'en' | 'fr' | 'ar' }); localStorage.setItem('attendance_language', v); document.documentElement.lang = v; document.documentElement.dir = v === 'ar' ? 'rtl' : 'ltr'; }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="fr">Français</SelectItem><SelectItem value="ar">العربية</SelectItem></SelectContent></Select></div>
               <div className="space-y-2"><Label>{t('timezone', language)}</Label><Select value={tz} onValueChange={setTz}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Africa/Casablanca">Africa/Casablanca</SelectItem><SelectItem value="Europe/Paris">Europe/Paris</SelectItem><SelectItem value="UTC">UTC</SelectItem></SelectContent></Select></div>
             </div>
           </CardContent></Card>

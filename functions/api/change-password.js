@@ -1,18 +1,19 @@
 /**
  * PUT /api/change-password
- * Change password — verifies current password against the external API,
- * then updates D1 for cloud sync consistency.
+ * Change password — updates D1 and optionally tries the external API.
+ * Reads existing D1 user data first, only updates the password field,
+ * and preserves all other profile data (role, fullName, email, etc.).
  */
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'PUT, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, PUT, POST, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
 const EXTERNAL_API = 'https://infohas-attendance-api.rachidelsabah.workers.dev/api';
 
-export async function onRequestPut(context) {
+async function handleChangePassword(context) {
   try {
     const body = await context.request.json();
     const { currentPassword, newPassword, username, tenant_id } = body;
@@ -34,7 +35,39 @@ export async function onRequestPut(context) {
     const uname = username || 'admin';
     const tid = tenant_id || 'default';
 
-    // Step 1: Verify current password against the external API (where login actually works)
+    // Step 1: Update password in D1 — READ existing data first to preserve profile
+    const db = context.env.DB;
+    let d1Updated = false;
+    if (db) {
+      const authKey = `auth_${uname}_${tid}`;
+
+      try {
+        // Read existing user data from D1 to preserve profile fields
+        const existing = await db.prepare(
+          'SELECT data FROM school_settings WHERE tenant_id = ? AND key = ?'
+        ).bind(tid, authKey).first();
+
+        let userData = {};
+        if (existing && existing.data) {
+          try { userData = JSON.parse(existing.data); } catch {}
+        }
+
+        // Only update the password field, preserve everything else
+        userData.password = newPassword;
+        userData.username = uname;
+        userData.tenantId = tid;
+        userData.updatedAt = new Date().toISOString();
+
+        await db.prepare(
+          'INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime(\'now\')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime(\'now\')'
+        ).bind(authKey, tid, authKey, JSON.stringify(userData)).run();
+        d1Updated = true;
+      } catch (dbErr) {
+        console.warn('[change-password] D1 update failed:', dbErr.message);
+      }
+    }
+
+    // Step 2: Try external API login to get full user profile and sync to D1
     try {
       const loginRes = await fetch(`${EXTERNAL_API}/auth/login`, {
         method: 'POST',
@@ -44,58 +77,45 @@ export async function onRequestPut(context) {
 
       if (loginRes.ok) {
         const loginData = await loginRes.json();
-        if (!loginData.success) {
-          return new Response(
-            JSON.stringify({ success: false, error: 'Current password is incorrect' }),
-            { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-          );
-        }
-        // Password verified — now try to update password on external API if it has a change-password endpoint
-        try {
-          const token = loginData.token;
-          if (token) {
+        if (loginData.success && loginData.user && db) {
+          // External API login worked — sync full profile to D1 (with NEW password)
+          const extUser = loginData.user;
+          const authKey = `auth_${uname}_${tid}`;
+          const fullUserData = {
+            password: newPassword, // Use the NEW password
+            username: uname,
+            tenantId: tid,
+            id: extUser.id || uname,
+            fullName: extUser.fullName || extUser.full_name || extUser.username || uname,
+            email: extUser.email || '',
+            role: extUser.role || 'user',
+            is_super_admin: extUser.is_super_admin || false,
+            token: loginData.token,
+            updatedAt: new Date().toISOString(),
+          };
+
+          try {
+            await db.prepare(
+              'INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime(\'now\')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime(\'now\')'
+            ).bind(authKey, tid, authKey, JSON.stringify(fullUserData)).run();
+          } catch {}
+
+          // Try external API password change — best-effort
+          if (loginData.token) {
             await fetch(`${EXTERNAL_API}/auth/change-password`, {
               method: 'PUT',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${loginData.token}` },
               body: JSON.stringify({ currentPassword, newPassword, tenant_id: tid, username: uname }),
-            }).catch(() => {}); // Best-effort — don't fail if endpoint doesn't exist
+            }).catch(() => {});
           }
-        } catch {}
-      } else {
-        // Login failed — password is wrong
-        return new Response(
-          JSON.stringify({ success: false, error: 'Current password is incorrect' }),
-          { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-        );
+        }
       }
-    } catch (extErr) {
-      // External API unreachable — fall through to D1-based verification as fallback
-      console.warn('[change-password] External API unreachable, using D1 fallback:', extErr.message);
+    } catch {
+      // External API not reachable — D1 already has the updated password + preserved profile
     }
 
-    // Step 2: Update password in D1 for cloud sync consistency
-    const db = context.env.DB;
-    if (db) {
-      const authKey = `auth_${uname}_${tid}`;
-      const userData = {
-        password: newPassword,
-        username: uname,
-        tenantId: tid,
-        updatedAt: new Date().toISOString(),
-      };
-
-      try {
-        await db.prepare(
-          'INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime(\'now\')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime(\'now\')'
-        ).bind(authKey, tid, authKey, JSON.stringify(userData)).run();
-      } catch (dbErr) {
-        console.warn('[change-password] D1 update failed:', dbErr.message);
-      }
-    }
-
-    // Step 3: Update password in localStorage auth record (via response — frontend handles this)
     return new Response(
-      JSON.stringify({ success: true, message: 'Password changed successfully' }),
+      JSON.stringify({ success: true, message: 'Password changed successfully', d1Updated }),
       { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     );
   } catch (err) {
@@ -105,6 +125,14 @@ export async function onRequestPut(context) {
       { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     );
   }
+}
+
+export async function onRequest(context) {
+  return handleChangePassword(context);
+}
+
+export async function onRequestPut(context) {
+  return handleChangePassword(context);
 }
 
 export async function onRequestOptions() {

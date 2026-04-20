@@ -9,7 +9,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
-export async function onRequestGet(context) {
+async function handleStatus(context) {
   try {
     const url = new URL(context.request.url);
     const tenantId = url.searchParams.get('tenant_id') || 'default';
@@ -64,6 +64,14 @@ export async function onRequestGet(context) {
       { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     );
   }
+}
+
+export async function onRequest(context) {
+  return handleStatus(context);
+}
+
+export async function onRequestGet(context) {
+  return handleStatus(context);
 }
 
 export async function onRequestOptions() {

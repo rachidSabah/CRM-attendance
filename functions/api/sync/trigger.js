@@ -9,7 +9,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
-export async function onRequestPost(context) {
+async function handleTrigger(context) {
   try {
     const body = await context.request.json();
     const tenantId = body.tenant_id || 'default';
@@ -113,6 +113,14 @@ export async function onRequestPost(context) {
       { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     );
   }
+}
+
+export async function onRequest(context) {
+  return handleTrigger(context);
+}
+
+export async function onRequestPost(context) {
+  return handleTrigger(context);
 }
 
 export async function onRequestOptions() {

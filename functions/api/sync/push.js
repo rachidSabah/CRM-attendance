@@ -25,11 +25,11 @@ const ENTITY_TYPES = {
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
-export async function onRequestPost(context) {
+async function handlePush(context) {
   try {
     const body = await context.request.json();
     const tenantId = body.tenant_id || 'default';
@@ -82,6 +82,14 @@ export async function onRequestPost(context) {
       { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     );
   }
+}
+
+export async function onRequest(context) {
+  return handlePush(context);
+}
+
+export async function onRequestPost(context) {
+  return handlePush(context);
 }
 
 export async function onRequestOptions() {

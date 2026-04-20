@@ -19,9 +19,12 @@ const corsHeaders = {
 };
 
 function buildAbsenceEmailHtml(studentName, className, date, schoolName, language) {
+  const isAr = language === 'ar';
   const isFr = language === 'fr';
+  const dir = isAr ? 'rtl' : 'ltr';
+  const L = (ar, fr, en) => isAr ? ar : isFr ? fr : en;
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8">
+<html dir="${dir}"><head><meta charset="utf-8">
 <style>
 body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9}
 .container{max-width:560px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)}
@@ -40,37 +43,26 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
 </style></head><body>
 <div class="container">
   <div class="header">
-    <h1>${isFr ? 'Notification d\'Absence' : 'Absence Notification'}</h1>
-    <p>${schoolName || 'CRM Attendance'} — ${isFr ? 'Système de Gestion' : 'Management System'}</p>
+    <h1>${L('إشعار غياب', "Notification d'Absence", 'Absence Notification')}</h1>
+    <p>${schoolName || 'CRM Attendance'} — ${L('نظام إدارة الحضور', 'Système de Gestion', 'Management System')}</p>
   </div>
   <div class="body">
-    <p class="greeting">${isFr ? 'Bonjour,' : 'Hello,'}</p>
-    <p>${isFr
-      ? 'Nous vous informons que votre enfant a été marqué(e) absent(e) lors de l\'appel aujourd\'hui.'
-      : 'We would like to inform you that your child was marked absent during today\'s attendance check.'}</p>
+    <p class="greeting">${L('عزيزي ولي الأمر،', 'Bonjour,', 'Hello,')}</p>
+    <p>${L('نود إعلامكم بأن ابنكم/ابنتكم تم تسجيله/ها غائباً/غائبة أثناء تسجيل الحضور اليوم.',
+      "Nous vous informons que votre enfant a été marqué(e) absent(e) lors de l'appel aujourd'hui.",
+      'We would like to inform you that your child was marked absent during today\'s attendance check.')}</p>
     <div class="alert-box">
-      <h2>${isFr ? 'Détails de l\'absence' : 'Absence Details'}</h2>
-      <div class="info-row">
-        <span class="info-label">${isFr ? 'Élève' : 'Student'}</span>
-        <span class="info-value">${studentName}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">${isFr ? 'Classe' : 'Class'}</span>
-        <span class="info-value">${className || '-'}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">${isFr ? 'Date' : 'Date'}</span>
-        <span class="info-value">${date}</span>
-      </div>
+      <h2>${L('تفاصيل الغياب', "Détails de l'absence", 'Absence Details')}</h2>
+      <div class="info-row"><span class="info-label">${L('الطالب/ة', 'Élève', 'Student')}</span><span class="info-value">${studentName}</span></div>
+      <div class="info-row"><span class="info-label">${L('القسم', 'Classe', 'Class')}</span><span class="info-value">${className || '-'}</span></div>
+      <div class="info-row"><span class="info-label">${L('التاريخ', 'Date', 'Date')}</span><span class="info-value">${date}</span></div>
     </div>
-    <p style="font-size:13px;color:#64748b;">${isFr
-      ? 'Si vous pensez qu\'il s\'agit d\'une erreur, veuillez contacter l\'administration de l\'école dès que possible.'
-      : 'If you believe this is an error, please contact the school administration as soon as possible.'}</p>
+    <p style="font-size:13px;color:#64748b;">${L('إذا كنتم تعتقدون أن هذا خطأ، يرجى الاتصال بإدارة المدرسة في أقرب وقت ممكن.',
+      "Si vous pensez qu'il s'agit d'une erreur, veuillez contacter l'administration de l'école dès que possible.",
+      'If you believe this is an error, please contact the school administration as soon as possible.')}</p>
   </div>
   <div class="footer">
-    <p>${isFr
-      ? 'Cet email a été envoyé automatiquement par le système CRM Attendance.'
-      : 'This email was sent automatically by the CRM Attendance system.'}</p>
+    <p>${L('تم إرسال هذه الرسالة تلقائياً بواسطة نظام CRM للحضور.', 'Cet email a été envoyé automatiquement par le système CRM Attendance.', 'This email was sent automatically by the CRM Attendance system.')}</p>
     <p style="margin-top:4px">&copy; ${new Date().getFullYear()} ${schoolName || 'CRM Attendance'}</p>
   </div>
 </div>
@@ -78,9 +70,12 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
 }
 
 function buildLateEmailHtml(studentName, className, date, schoolName, language) {
+  const isAr = language === 'ar';
   const isFr = language === 'fr';
+  const dir = isAr ? 'rtl' : 'ltr';
+  const L = (ar, fr, en) => isAr ? ar : isFr ? fr : en;
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8">
+<html dir="${dir}"><head><meta charset="utf-8">
 <style>
 body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9}
 .container{max-width:560px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)}
@@ -99,34 +94,23 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
 </style></head><body>
 <div class="container">
   <div class="header">
-    <h1>${isFr ? 'Notification de Retard' : 'Late Arrival Notification'}</h1>
-    <p>${schoolName || 'CRM Attendance'} — ${isFr ? 'Système de Gestion' : 'Management System'}</p>
+    <h1>${L('إشعار تأخر', 'Notification de Retard', 'Late Arrival Notification')}</h1>
+    <p>${schoolName || 'CRM Attendance'} — ${L('نظام إدارة الحضور', 'Système de Gestion', 'Management System')}</p>
   </div>
   <div class="body">
-    <p class="greeting">${isFr ? 'Bonjour,' : 'Hello,'}</p>
-    <p>${isFr
-      ? 'Nous vous informons que votre enfant est arrivé(e) en retard aujourd\'hui.'
-      : 'We would like to inform you that your child arrived late today.'}</p>
+    <p class="greeting">${L('عزيزي ولي الأمر،', 'Bonjour,', 'Hello,')}</p>
+    <p>${L('نود إعلامكم بأن ابنكم/ابنتكم وصل/ت متأخراً/ة إلى المدرسة اليوم.',
+      "Nous vous informons que votre enfant est arrivé(e) en retard aujourd'hui.",
+      'We would like to inform you that your child arrived late today.')}</p>
     <div class="alert-box">
-      <h2>${isFr ? 'Détails du retard' : 'Late Arrival Details'}</h2>
-      <div class="info-row">
-        <span class="info-label">${isFr ? 'Élève' : 'Student'}</span>
-        <span class="info-value">${studentName}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">${isFr ? 'Classe' : 'Class'}</span>
-        <span class="info-value">${className || '-'}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">${isFr ? 'Date' : 'Date'}</span>
-        <span class="info-value">${date}</span>
-      </div>
+      <h2>${L('تفاصيل التأخر', 'Détails du retard', 'Late Arrival Details')}</h2>
+      <div class="info-row"><span class="info-label">${L('الطالب/ة', 'Élève', 'Student')}</span><span class="info-value">${studentName}</span></div>
+      <div class="info-row"><span class="info-label">${L('القسم', 'Classe', 'Class')}</span><span class="info-value">${className || '-'}</span></div>
+      <div class="info-row"><span class="info-label">${L('التاريخ', 'Date', 'Date')}</span><span class="info-value">${date}</span></div>
     </div>
   </div>
   <div class="footer">
-    <p>${isFr
-      ? 'Cet email a été envoyé automatiquement par le système CRM Attendance.'
-      : 'This email was sent automatically by the CRM Attendance system.'}</p>
+    <p>${L('تم إرسال هذه الرسالة تلقائياً بواسطة نظام CRM للحضور.', 'Cet email a été envoyé automatiquement par le système CRM Attendance.', 'This email was sent automatically by the CRM Attendance system.')}</p>
     <p style="margin-top:4px">&copy; ${new Date().getFullYear()} ${schoolName || 'CRM Attendance'}</p>
   </div>
 </div>
@@ -343,6 +327,11 @@ export async function onRequestPost(context) {
       { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     );
   }
+}
+
+export async function onRequest(context) {
+  // Fallback: route to specific method handlers
+  return context.next();
 }
 
 export async function onRequestOptions() {

@@ -34,7 +34,7 @@ interface AppState {
   savedSchedules: SavedSchedule[];
 
   // Settings
-  language: 'en' | 'fr';
+  language: 'en' | 'fr' | 'ar';
   primaryColor: string;
   setPrimaryColor: (color: string) => void;
 
@@ -174,14 +174,11 @@ async function pushToD1() {
     const data = await res.json();
     if (data.success) {
       updateD1SyncState({ status: 'success', lastCloudSync: new Date().toISOString(), cloudConnected: true });
-      console.log('[D1] Cloud push successful:', data.upserted, 'records');
     } else {
       updateD1SyncState({ status: 'error' });
-      console.warn('[D1] Cloud push failed:', data.error);
     }
   } catch (err) {
     updateD1SyncState({ status: 'error', cloudConnected: false });
-    console.warn('[D1] Cloud push error:', err);
   }
 }
 
@@ -340,13 +337,21 @@ export const useAppStore = create<AppState>((set) => ({
 
   login: async (username, password, slug) => {
     try {
+      // Use local /api/auth/login which tries external API first, then D1 fallback
+      // This ensures password changes (saved to D1) are properly recognized on next login
       const loginData: Record<string, string> = { username, password };
       if (slug) loginData.slug = slug;
-      const result = await api.post('/auth/login', loginData);
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(loginData),
+      });
+      if (!res.ok) return false;
+      const result = await res.json();
       if (result && result.success) {
         const token = result.token as string;
         const user = result.user as Record<string, unknown>;
-        setApiToken(token);
+        if (token) setApiToken(token);
         const currentUser: User = {
           id: String(user.id || ''),
           username: String(user.username || ''),
@@ -493,20 +498,36 @@ export const useAppStore = create<AppState>((set) => ({
               if (Array.isArray(cloud) && cloud.length > local.length) return cloud;
               return local;
             };
+            // Merge ALL entity types from cloud — cloud wins if larger
             set({
               students: mergeArray(currentState.students, 'students') as Student[],
               classes: mergeArray(currentState.classes, 'classes') as Class[],
+              modules: mergeArray(currentState.modules, 'modules') as Module[],
               attendance: mergeArray(currentState.attendance, 'attendance') as AttendanceRecord[],
+              grades: mergeArray(currentState.grades, 'grades') as Grade[],
+              behavior: mergeArray(currentState.behavior, 'behavior') as BehaviorRecord[],
+              tasks: mergeArray(currentState.tasks, 'tasks') as Task[],
+              incidents: mergeArray(currentState.incidents, 'incidents') as Incident[],
+              teachers: mergeArray(currentState.teachers, 'teachers') as Teacher[],
+              employees: mergeArray(currentState.employees, 'employees') as Employee[],
+              templates: mergeArray(currentState.templates, 'templates') as Template[],
+              academicYears: mergeArray(currentState.academicYears, 'academicYears') as AcademicYear[],
+              schedules: mergeArray(currentState.schedules, 'schedules') as ClassScheduleEntry[],
+              exams: mergeArray(currentState.exams, 'exams') as Exam[],
+              examGrades: mergeArray(currentState.examGrades, 'examGrades') as ExamGrade[],
+              curriculum: mergeArray(currentState.curriculum, 'curriculum') as CurriculumItem[],
             });
+            // Merge school info from cloud
+            if (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(cd.schoolInfo).length > Object.keys(currentState.schoolInfo).length) {
+              set({ schoolInfo: cd.schoolInfo as SchoolInfo });
+            }
             updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });
           }
         }
       } catch {}
 
-      console.log('[API] Data loading complete');
     } catch (e) {
-      // Only log unexpected errors, not 404-related issues
-      console.warn('[API] Unexpected error during data load:', e);
+      // Silently handle errors during data load
     } finally {
       // Re-enable API sync after loading is complete
       _loadingFromApi = false;

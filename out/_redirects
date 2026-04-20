@@ -1,0 +1,4 @@
+# Cloudflare Pages SPA routing
+# /api/* routes are handled by Pages Functions (via _routes.json), not by this file
+# All other non-static-file routes serve index.html for client-side routing
+/* /index.html 200

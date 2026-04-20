@@ -25,6 +25,10 @@
  *   { success: false, error: "..." }     on failure
  */
 
+export async function onRequest(context) {
+  return context.next();
+}
+
 export async function onRequestPost(context) {
   try {
     const corsHeaders = {
