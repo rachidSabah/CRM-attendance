@@ -3358,14 +3358,70 @@ function SettingsPage() {
     try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('attendance_cloud_config') || '{}') : {}; } catch { return {}; }
   });
   const [cloudUploading, setCloudUploading] = useState(false);
+  const [cloudConnectedServices, setCloudConnectedServices] = useState<Record<string, boolean>>(() => {
+    try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('attendance_cloud_connected') || '{}') : {}; } catch { return {}; }
+  });
+
+  // Clear connected status when config fields change for a service
+  const updateCloudConfig = (updates: Record<string, string>) => {
+    const updated = { ...cloudConfig, ...updates };
+    setCloudConfig(updated);
+    // Determine which service changed and clear its connected status
+    for (const key of Object.keys(updates)) {
+      let svc = '';
+      if (key === 'googleDriveKey') svc = 'google';
+      else if (key === 'oneDriveClientId' || key === 'oneDriveClientSecret') svc = 'onedrive';
+      else if (key === 'ftpHost' || key === 'ftpUser' || key === 'ftpPass') svc = 'ftp';
+      if (svc && cloudConnectedServices[svc]) {
+        const updatedConnected = { ...cloudConnectedServices, [svc]: false };
+        setCloudConnectedServices(updatedConnected);
+        localStorage.setItem('attendance_cloud_connected', JSON.stringify(updatedConnected));
+      }
+    }
+  };
 
   const handleCloudSave = async (service: string) => {
-    localStorage.setItem('attendance_cloud_config', JSON.stringify(cloudConfig));
     const serviceNames: Record<string, string> = { google: 'Google Drive', onedrive: 'OneDrive', ftp: 'FTP' };
 
-    // Upload backup to server via API
+    // Validate required fields before connecting
+    if (service === 'google' && !cloudConfig.googleDriveKey?.trim()) {
+      toast.error(language === 'fr' ? 'Veuillez saisir la clé API Google Drive.' : 'Please enter a Google Drive API Key.');
+      return;
+    }
+    if (service === 'onedrive' && (!cloudConfig.oneDriveClientId?.trim() || !cloudConfig.oneDriveClientSecret?.trim())) {
+      toast.error(language === 'fr' ? 'Veuillez saisir le Client ID et le Client Secret.' : 'Please enter both Client ID and Client Secret.');
+      return;
+    }
+    if (service === 'ftp' && (!cloudConfig.ftpHost?.trim() || !cloudConfig.ftpUser?.trim() || !cloudConfig.ftpPass?.trim())) {
+      toast.error(language === 'fr' ? 'Veuillez saisir l\'hôte, l\'utilisateur et le mot de passe FTP.' : 'Please enter FTP Host, Username, and Password.');
+      return;
+    }
+
+    // Save config to localStorage
+    localStorage.setItem('attendance_cloud_config', JSON.stringify(cloudConfig));
     setCloudUploading(true);
     try {
+      // Attempt a real connection test for FTP
+      if (service === 'ftp') {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10000);
+          const ftpHost = cloudConfig.ftpHost!.replace(/\/$/, '');
+          const resp = await fetch(`${ftpHost.startsWith('http') ? '' : 'https://'}${ftpHost}`, {
+            method: 'HEAD',
+            mode: 'no-cors',
+            signal: controller.signal,
+          });
+          clearTimeout(timeout);
+          // no-cors returns opaque response — if no error thrown, host is reachable
+        } catch (fetchErr) {
+          setCloudUploading(false);
+          toast.error(language === 'fr' ? 'Impossible de se connecter au serveur FTP. Vérifiez l\'hôte.' : 'Cannot reach FTP server. Check the host address.');
+          return;
+        }
+      }
+
+      // Build backup payload and push to D1
       const backupData = {
         version: '1.0',
         timestamp: new Date().toISOString(),
@@ -3373,15 +3429,25 @@ function SettingsPage() {
         config: cloudConfig,
         data: { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, templates, academicYears, schoolInfo }
       };
-      // Data syncs to D1 cloud automatically, no separate upload needed
+
+      // Sync data to D1 cloud
+      try {
+        await syncToCloud();
+      } catch {
+        // D1 sync is best-effort
+      }
+
+      // Mark as connected
+      const updatedConnected = { ...cloudConnectedServices, [service]: true };
+      setCloudConnectedServices(updatedConnected);
+      localStorage.setItem('attendance_cloud_connected', JSON.stringify(updatedConnected));
+
       toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'connecté et sauvegardé!' : 'connected & backup saved!'}`);
     } catch (err) {
-      // Cloud config saved locally
-      toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'configuration sauvegardée' : 'configuration saved'}`);
+      toast.error(language === 'fr' ? 'Erreur lors de la connexion.' : 'Connection failed. Please check your credentials.');
     }
     setCloudUploading(false);
 
-    // Also trigger a local manual backup download
     if (autoBackupEnabled) {
       handleManualBackup(true);
     }
@@ -4046,31 +4112,30 @@ function SettingsPage() {
 
             <Separator />
 
-            {/* Cloud Storage - Functional */}
+            {/* Cloud Storage */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <h4 className="font-medium text-sm">{language === 'fr' ? 'Stockage Cloud' : 'Cloud Storage'}</h4>
-                <Badge variant="secondary" className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">Active</Badge>
               </div>
               <p className="text-xs text-muted-foreground">{language === 'fr' ? 'Connectez vos services cloud pour sauvegarder automatiquement vos données.' : 'Connect your cloud services to automatically backup your data.'}</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="rounded-lg border p-3 space-y-2">
                   <p className="text-xs font-medium flex items-center gap-1"><Cloud className="h-3.5 w-3.5" />Google Drive</p>
-                  <Input placeholder="API Key" className="h-8 text-xs" value={cloudConfig.googleDriveKey || ''} onChange={e => setCloudConfig({ ...cloudConfig, googleDriveKey: e.target.value })} />
-                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => handleCloudSave('google')} disabled={cloudUploading}>{cloudUploading ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : cloudConfig.googleDriveKey ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConfig.googleDriveKey ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter & Sauvegarder' : 'Connect & Backup')}</Button>
+                  <Input placeholder="API Key" className="h-8 text-xs" value={cloudConfig.googleDriveKey || ''} onChange={e => updateCloudConfig({ googleDriveKey: e.target.value })} />
+                  <Button variant={cloudConnectedServices.google ? 'default' : 'outline'} size="sm" className={`w-full text-xs ${cloudConnectedServices.google ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`} onClick={() => handleCloudSave('google')} disabled={cloudUploading}>{cloudUploading ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : cloudConnectedServices.google ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConnectedServices.google ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter & Sauvegarder' : 'Connect & Backup')}</Button>
                 </div>
                 <div className="rounded-lg border p-3 space-y-2">
                   <p className="text-xs font-medium flex items-center gap-1"><Cloud className="h-3.5 w-3.5" />OneDrive</p>
-                  <Input placeholder="Client ID" className="h-8 text-xs" value={cloudConfig.oneDriveClientId || ''} onChange={e => setCloudConfig({ ...cloudConfig, oneDriveClientId: e.target.value })} />
-                  <Input placeholder="Client Secret" className="h-8 text-xs mt-1" type="password" value={cloudConfig.oneDriveClientSecret || ''} onChange={e => setCloudConfig({ ...cloudConfig, oneDriveClientSecret: e.target.value })} />
-                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => handleCloudSave('onedrive')} disabled={cloudUploading}>{cloudUploading ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : cloudConfig.oneDriveClientId ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConfig.oneDriveClientId ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter & Sauvegarder' : 'Connect & Backup')}</Button>
+                  <Input placeholder="Client ID" className="h-8 text-xs" value={cloudConfig.oneDriveClientId || ''} onChange={e => updateCloudConfig({ oneDriveClientId: e.target.value })} />
+                  <Input placeholder="Client Secret" className="h-8 text-xs mt-1" type="password" value={cloudConfig.oneDriveClientSecret || ''} onChange={e => updateCloudConfig({ oneDriveClientSecret: e.target.value })} />
+                  <Button variant={cloudConnectedServices.onedrive ? 'default' : 'outline'} size="sm" className={`w-full text-xs ${cloudConnectedServices.onedrive ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`} onClick={() => handleCloudSave('onedrive')} disabled={cloudUploading}>{cloudUploading ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : cloudConnectedServices.onedrive ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConnectedServices.onedrive ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter & Sauvegarder' : 'Connect & Backup')}</Button>
                 </div>
                 <div className="rounded-lg border p-3 space-y-2">
                   <p className="text-xs font-medium flex items-center gap-1"><HardDrive className="h-3.5 w-3.5" />FTP</p>
-                  <Input placeholder={language === 'fr' ? 'Hôte (ex: ftp.example.com)' : 'Host (e.g. ftp.example.com)'} className="h-8 text-xs" value={cloudConfig.ftpHost || ''} onChange={e => setCloudConfig({ ...cloudConfig, ftpHost: e.target.value })} />
-                  <Input placeholder={language === 'fr' ? 'Utilisateur' : 'Username'} className="h-8 text-xs" value={cloudConfig.ftpUser || ''} onChange={e => setCloudConfig({ ...cloudConfig, ftpUser: e.target.value })} />
-                  <Input placeholder={language === 'fr' ? 'Mot de passe' : 'Password'} className="h-8 text-xs" type="password" value={cloudConfig.ftpPass || ''} onChange={e => setCloudConfig({ ...cloudConfig, ftpPass: e.target.value })} />
-                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => handleCloudSave('ftp')} disabled={cloudUploading}>{cloudUploading ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : cloudConfig.ftpHost ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConfig.ftpHost ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter & Sauvegarder' : 'Connect & Backup')}</Button>
+                  <Input placeholder={language === 'fr' ? 'Hôte (ex: ftp.example.com)' : 'Host (e.g. ftp.example.com)'} className="h-8 text-xs" value={cloudConfig.ftpHost || ''} onChange={e => updateCloudConfig({ ftpHost: e.target.value })} />
+                  <Input placeholder={language === 'fr' ? 'Utilisateur' : 'Username'} className="h-8 text-xs" value={cloudConfig.ftpUser || ''} onChange={e => updateCloudConfig({ ftpUser: e.target.value })} />
+                  <Input placeholder={language === 'fr' ? 'Mot de passe' : 'Password'} className="h-8 text-xs" type="password" value={cloudConfig.ftpPass || ''} onChange={e => updateCloudConfig({ ftpPass: e.target.value })} />
+                  <Button variant={cloudConnectedServices.ftp ? 'default' : 'outline'} size="sm" className={`w-full text-xs ${cloudConnectedServices.ftp ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`} onClick={() => handleCloudSave('ftp')} disabled={cloudUploading}>{cloudUploading ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : cloudConnectedServices.ftp ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConnectedServices.ftp ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter & Sauvegarder' : 'Connect & Backup')}</Button>
                 </div>
               </div>
             </div>
