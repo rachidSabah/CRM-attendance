@@ -3473,9 +3473,25 @@ function SettingsPage() {
     }
     if (pwForm.newPw !== pwForm.confirm) { toast.error(language === 'fr' ? 'Mots de passe différents' : 'Passwords do not match'); return; }
     try {
-      await api.put('/auth/change-password', { currentPassword: pwForm.current, newPassword: pwForm.newPw });
-      toast.success(language === 'fr' ? 'Mot de passe changé' : 'Password changed');
-      addAuditLog('CHANGE_PASSWORD', 'user', currentUser?.id, currentUser?.fullName, 'Password changed');
+      // Get current user info for D1 storage
+      const auth = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('attendance_auth') || '{}') : {};
+      const res = await fetch('/api/change-password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: pwForm.current,
+          newPassword: pwForm.newPw,
+          username: currentUser?.username || auth.username || 'admin',
+          tenant_id: currentUser?.tenantId || auth.tenantId || 'default',
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(language === 'fr' ? 'Mot de passe changé' : 'Password changed');
+        addAuditLog('CHANGE_PASSWORD', 'user', currentUser?.id, currentUser?.fullName, 'Password changed');
+      } else {
+        toast.error(data.error || (language === 'fr' ? 'Échec du changement de mot de passe' : 'Failed to change password'));
+      }
     } catch (err) {
       toast.error(language === 'fr' ? 'Échec du changement de mot de passe' : 'Failed to change password');
     }
