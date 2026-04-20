@@ -44,11 +44,7 @@ async function apiRequest(method: string, endpoint: string, body?: unknown): Pro
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'API Error');
     return data;
-  } catch (e) {
-    // Only log real errors (network failures, etc.), not 404s
-    if (e instanceof TypeError && (e as TypeError).message.includes('Failed to fetch')) {
-      console.warn('[API] Network error for', endpoint);
-    }
+  } catch {
     return null;
   }
 }

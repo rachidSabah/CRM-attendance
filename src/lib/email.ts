@@ -89,8 +89,7 @@ export async function sendEmail(params: SendEmailParams): Promise<{ success: boo
 
     const data = await res.json();
     return data as { success: boolean; error?: string; messageId?: string };
-  } catch (err) {
-    console.error('[email] Failed to send:', err);
+  } catch {
     return { success: false, error: 'Network error — could not reach email service' };
   }
 }

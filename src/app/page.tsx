@@ -135,8 +135,8 @@ function GlobalSearchDialog({ open, onOpenChange }: { open: boolean; onOpenChang
     return {
       students: students.filter(s => s.fullName?.toLowerCase().includes(q) || s.studentId?.toLowerCase().includes(q)).slice(0, 5),
       classes: classes.filter(c => c.name?.toLowerCase().includes(q) || c.teacher?.toLowerCase().includes(q)).slice(0, 5),
-      tasks: tasks.filter(t => t.title?.toLowerCase().includes(q)).slice(0, 5),
-      teachers: teachers.filter(t => t.name?.toLowerCase().includes(q)).slice(0, 5),
+      tasks: tasks.filter(tk => tk.title?.toLowerCase().includes(q)).slice(0, 5),
+      teachers: teachers.filter(tc => tc.name?.toLowerCase().includes(q)).slice(0, 5),
     };
   }, [q, students, classes, tasks, teachers]);
 
@@ -277,10 +277,11 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
   const [tab, setTab] = useState('attendance');
   const statusColor = { active: 'text-emerald-600', abandoned: 'text-amber-600', terminated: 'text-red-600', graduated: 'text-blue-600' }[student.status] || 'text-gray-600';
 
+  const esc = (s: string) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const handleGenerateCard = () => {
     const win = window.open('', '_blank');
     if (!win) return;
-    win.document.write(`<!DOCTYPE html><html><head><title>Student Card - ${student.fullName}</title><style>
+    win.document.write(`<!DOCTYPE html><html><head><title>Student Card - ${esc(student.fullName)}</title><style>
       *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f0f0}
       .card{width:320px;height:200px;background:white;border-radius:16px;padding:20px;box-shadow:0 4px 20px rgba(0,0,0,0.1);display:flex;flex-direction:column;justify-content:space-between;border:2px solid #10b981}
       .header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #e5e7eb;padding-bottom:10px}
@@ -290,9 +291,9 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
       .info h3{font-size:16px;margin-bottom:4px}.info p{font-size:11px;color:#6b7280;margin:2px 0}
       .footer{display:flex;justify-content:space-between;font-size:10px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:8px}
     </style></head><body><div class="card">
-      <div class="header"><h2>INFOHAS</h2><span style="font-size:12px;color:#6b7280">${student.academicYear || ''}</span></div>
-      <div class="body"><div class="photo">${student.photo ? `<img src="${student.photo}" style="width:64px;height:64px;border-radius:50%;object-fit:cover">` : '👤'}</div>
-      <div class="info"><h3>${student.fullName}</h3><p>ID: ${student.studentId}</p><p>${studentClass?.name || '-'}</p><p>Year: ${student.academicYear || '-'}</p></div></div>
+      <div class="header"><h2>INFOHAS</h2><span style="font-size:12px;color:#6b7280">${esc(student.academicYear || '')}</span></div>
+      <div class="body"><div class="photo">${student.photo ? `<img src="${student.photo}" style="width:64px;height:64px;border-radius:50%;object-fit:cover">` : '&#128100;'}</div>
+      <div class="info"><h3>${esc(student.fullName)}</h3><p>ID: ${esc(student.studentId)}</p><p>${esc(studentClass?.name || '-')}</p><p>Year: ${esc(student.academicYear || '-')}</p></div></div>
       <div class="footer"><span>Attendance: ${rate}%</span><span>Generated: ${new Date().toLocaleDateString()}</span></div>
     </div></body></html>`);
     win.document.close();
@@ -754,7 +755,17 @@ function StudentsPage() {
     else { setStudents([...students, { ...form, id: genId(), className: classes.find(c => c.id === form.classId)?.name, createdAt: new Date().toISOString() }]); toast.success(language === 'fr' ? 'Étudiant ajouté' : 'Student added'); }
     setDialogOpen(false);
   };
-  const handleDelete = (id: string) => { setStudents(students.filter(s => s.id !== id)); toast.success(language === 'fr' ? 'Étudiant supprimé' : 'Student deleted'); };
+  const handleDelete = (id: string) => {
+    const studentName = students.find(s => s.id === id)?.fullName || '';
+    setStudents(students.filter(s => s.id !== id));
+    setAttendance(attendance.filter(a => a.studentId !== id));
+    setGrades(grades.filter(g => g.studentId !== id));
+    setBehavior(behavior.filter(b => b.studentId !== id));
+    setIncidents(incidents.filter(i => i.studentId !== id));
+    setExamGrades(examGrades.filter(eg => eg.studentId !== id));
+    toast.success(language === 'fr' ? 'Étudiant supprimé' : 'Student deleted');
+    useAppStore.getState().addAuditLog('DELETE_STUDENT', 'student', id, studentName);
+  };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) { if (f.size > 512000) { toast.error(language === 'fr' ? 'Image trop volumineuse (max 500 Ko)' : 'Image too large (max 500KB)'); return; } const r = new FileReader(); r.onload = (ev) => setForm({ ...form, photo: ev.target?.result as string }); r.readAsDataURL(f); } };
 
@@ -2282,9 +2293,12 @@ function TasksPage() {
     return t.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   }, [tasks, statusFilter, priorityFilter, currentUser?.role, currentUser?.fullName]);
 
-  const counts = useMemo(() => ({
-    all: tasks.length, pending: tasks.filter(t => t.status === 'pending').length, in_progress: tasks.filter(t => t.status === 'in_progress').length, completed: tasks.filter(t => t.status === 'completed').length, overdue: tasks.filter(t => t.status === 'overdue').length,
-  }), [tasks]);
+  const counts = useMemo(() => {
+    const base = currentUser?.role === 'teacher' && currentUser.fullName ? tasks.filter(tk => tk.assignedTo === currentUser.fullName) : tasks;
+    return {
+      all: base.length, pending: base.filter(tk => tk.status === 'pending').length, in_progress: base.filter(tk => tk.status === 'in_progress').length, completed: base.filter(tk => tk.status === 'completed').length, overdue: base.filter(tk => tk.status === 'overdue').length,
+    };
+  }, [tasks, currentUser?.role, currentUser?.fullName]);
 
   const openAdd = () => { setEditTask(null); setForm({ title: '', description: '', assignedTo: '', assignedToEmail: '', priority: 'medium', status: 'pending', category: '', dueDate: '', progress: '0' }); setSendEmailNotif(false); setFormAttachments([]); setDialogOpen(true); };
   const openEdit = (tk: Task) => {
@@ -2729,16 +2743,7 @@ function MessagingPage() {
     return groups;
   }, [templates]);
 
-  // Format phone number for WhatsApp
-  const formatWhatsAppPhone = (phone: string | undefined): string => {
-    if (!phone) return '';
-    let cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length === 10) cleaned = '1' + cleaned;
-    else if (cleaned.length === 11 && cleaned.startsWith('1')) { /* ok */ }
-    else if (cleaned.length === 9 && cleaned.startsWith('0')) cleaned = '44' + cleaned.substring(1);
-    else if (cleaned.length === 10 && cleaned.startsWith('0')) cleaned = '212' + cleaned.substring(1);
-    return cleaned;
-  };
+  // Uses the global formatWhatsAppPhone function (Morocco, UK, US support)
 
   // Build message from template + student data
   const buildMessage = (template: Template, student: Student): string => {
@@ -3103,7 +3108,7 @@ function ProgressReportsSection() {
     if (period === 'q3') return { from: `${y}-03-01`, to: `${y}-05-31` };
     if (period === 'q4') return { from: `${y}-06-01`, to: `${y}-08-31` };
     if (period === 'custom' && customFrom && customTo) return { from: customFrom, to: customTo };
-    return { from: `${y}-09-01`, to: `${y}-08-31` };
+    return { from: `${y}-09-01`, to: `${y + 1}-08-31` };
   }, [period, customFrom, customTo]);
 
   const studentReports = useMemo(() => {
@@ -3365,12 +3370,12 @@ function SettingsPage() {
         timestamp: new Date().toISOString(),
         service,
         config: cloudConfig,
-        data: { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, templates: [], academicYears, schoolInfo }
+        data: { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, templates, academicYears, schoolInfo }
       };
       // Data syncs to D1 cloud automatically, no separate upload needed
       toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'connecté et sauvegardé!' : 'connected & backup saved!'}`);
     } catch (err) {
-      console.warn('Cloud config error:', err);
+      // Cloud config saved locally
       toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'configuration sauvegardée' : 'configuration saved'}`);
     }
     setCloudUploading(false);
@@ -3412,13 +3417,12 @@ function SettingsPage() {
           tasks: state.tasks, incidents: state.incidents, teachers: state.teachers,
           employees: state.employees, schedules: state.schedules, exams: state.exams,
           examGrades: state.examGrades, curriculum: state.curriculum,
-          savedSchedules: state.savedSchedules, templates: [], academicYears: state.academicYears,
+          savedSchedules: state.savedSchedules, templates: state.templates, academicYears: state.academicYears,
           schoolInfo: state.schoolInfo,
         },
       };
       try {
         localStorage.setItem('attendance_auto_backup_data', JSON.stringify(backupData));
-        console.log('[Auto-Backup] Saved to localStorage at', new Date().toLocaleTimeString());
       } catch {}
     }, ms);
     return () => clearInterval(timer);
@@ -3532,7 +3536,7 @@ function SettingsPage() {
   const handleManualBackup = (silent: boolean = false, incremental: boolean = false) => {
     const allData = {
       students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees,
-      schedules, exams, examGrades, curriculum, savedSchedules, templates: [], academicYears, schoolInfo
+      schedules, exams, examGrades, curriculum, savedSchedules, templates, academicYears, schoolInfo
     };
 
     let backupData: Record<string, unknown>;
@@ -3548,7 +3552,7 @@ function SettingsPage() {
       const entityMap: Record<string, unknown[]> = {
         students, classes, modules, attendance, grades, behavior, tasks, incidents,
         teachers, employees, schedules, exams, examGrades, curriculum, savedSchedules,
-        templates: [], academicYears,
+        templates, academicYears,
       };
 
       for (const [key, currentArr] of Object.entries(entityMap)) {
@@ -5567,8 +5571,7 @@ function ImportWizardSection() {
         }).filter(r => r.row.some(c => c !== ''));
         setPreview(rows);
         setFileContent(`xlsx:${rows.length} rows`);
-      } catch (err) {
-        console.error('Excel parse error:', err);
+      } catch {
         toast.error(language === 'fr' ? 'Erreur de lecture du fichier Excel' : 'Error reading Excel file');
       }
     } else {
@@ -5927,7 +5930,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [profileStudent, setProfileStudent] = useState<Student | null>(null);
 
   // Load auth state and data on mount
@@ -5954,8 +5956,8 @@ export default function App() {
           }
         }
         await loadAllData();
-      } catch (e) {
-        console.warn('Init error:', e);
+      } catch {
+        // Init error handled silently
       } finally {
         setLoading(false);
       }
