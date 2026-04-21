@@ -127,7 +127,7 @@ function GlobalSearchDialog({ open, onOpenChange }: { open: boolean; onOpenChang
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (open) { setQuery(''); setTimeout(() => inputRef.current?.focus(), 100); } }, [open]);
+  useEffect(() => { if (open) { setTimeout(() => { setQuery(''); inputRef.current?.focus(); }, 100); } }, [open]);
 
   const q = query.toLowerCase();
   const results = useMemo(() => {
@@ -1082,7 +1082,7 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
   };
   const handleQuickBulk = (status: AttendanceRecord['status']) => {
     const m: Record<string, AttendanceRecord['status']> = {}; filteredStudents.forEach(s => { m[s.id] = status; }); setQuickBulk({ ...m });
-    Object.keys(m).length > 0 && toast.success(`${Object.keys(m).length} marked as ${status}`);
+    if (Object.keys(m).length > 0) toast.success(`${Object.keys(m).length} marked as ${status}`);
   };
   const handleQuickSave = () => {
     setSaving(true);
@@ -1099,9 +1099,10 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
   };
 
   const quickCounts = useMemo(() => {
-    const src = quickBulk; if (Object.keys(src).length > 0) return { present: Object.values(src).filter(s => s === 'present').length, absent: Object.values(src).filter(s => s === 'absent').length, late: Object.values(src).filter(s => s === 'late').length, excused: Object.values(src).filter(s => s === 'excused').length, unmarked: filteredStudents.length - Object.keys(src).length };
-    return counts;
-  }, [quickBulk, filteredStudents, counts]);
+    const src = quickBulk;
+    if (Object.keys(src).length > 0) return { present: Object.values(src).filter(s => s === 'present').length, absent: Object.values(src).filter(s => s === 'absent').length, late: Object.values(src).filter(s => s === 'late').length, excused: Object.values(src).filter(s => s === 'excused').length, unmarked: filteredStudents.length - Object.keys(src).length };
+    return { present: counts.present, absent: counts.absent, late: counts.late, excused: counts.excused, unmarked: counts.unmarked };
+  }, [quickBulk, filteredStudents.length, counts]);
 
   return (
     <div className="space-y-4">
@@ -1709,7 +1710,7 @@ function SchedulePage() {
                 <TableBody>
                   {classSchedules.map(entry => {
                     const teacher = teachers.find(tc => tc.id === entry.teacherId);
-                    const module = modules.find(m => m.id === entry.moduleId);
+                    const mod = modules.find(m => m.id === entry.moduleId);
                     const day = parseInt(entry.date.split('-')[2]);
                     return (
                       <TableRow key={entry.id}>
@@ -1717,7 +1718,7 @@ function SchedulePage() {
                         <TableCell><Badge variant="outline" className="text-xs">{entry.timeSlot}</Badge></TableCell>
                         <TableCell>{teacher?.name || '-'}</TableCell>
                         <TableCell><Badge variant="secondary" className="text-xs">{entry.roomId || '-'}</Badge></TableCell>
-                        <TableCell>{module?.name || '-'}</TableCell>
+                        <TableCell>{mod?.name || '-'}</TableCell>
                         <TableCell>
                           <div className="flex gap-1">
                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openDayEdit(day)}>
@@ -2977,7 +2978,7 @@ function MessagingPage() {
 
 // ==================== REPORTS PAGE ====================
 function ReportsPage() {
-  const { students, classes, attendance, grades, behavior, language, modules, tasks, incidents } = useAppStore();
+  const { students, classes, attendance, grades, behavior, language, modules, tasks, incidents, schoolInfo } = useAppStore();
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [reportType, setReportType] = useState('attendance');
@@ -3056,7 +3057,7 @@ function ReportsPage() {
             if (reportType === 'attendance') pdfUtils.exportAttendancePDF(filteredAttendance, students, classes, schoolInfo, dateFrom, dateTo);
             else if (reportType === 'grades') pdfUtils.exportGradesPDF(grades, students, modules, schoolInfo);
             else if (reportType === 'behavior') pdfUtils.exportBehaviorPDF(behavior, students, schoolInfo);
-            else if (reportType === 'progress') pdfUtils.exportProgressReportPDF([], {}, schoolInfo || {}, { from: dateFrom, to: dateTo }, '', language);
+            else if (reportType === 'progress') pdfUtils.exportProgressReportPDF([], {}, schoolInfo as unknown as Record<string, string | undefined>, { from: dateFrom, to: dateTo }, '', language);
             toast.success(language === 'fr' ? 'PDF exporté' : 'PDF exported');
           }}><FileText className="h-4 w-4 mr-1" />PDF</Button>
         </div>
@@ -3261,11 +3262,11 @@ function SettingsPage() {
   }, [students, promoteClass, promoteFromYear, fromYearName, classes]);
 
   // When eligible list changes, reset individual selection
-  useMemo(() => {
+  useEffect(() => {
     if (promoteSelectAll) {
       setPromoteSelectedIds(new Set(eligibleStudents.map(s => s.id)));
     }
-  }, [eligibleStudents]);
+  }, [eligibleStudents, promoteSelectAll]);
 
   const handlePromoteToggleStudent = (studentId: string) => {
     setPromoteSelectedIds(prev => {

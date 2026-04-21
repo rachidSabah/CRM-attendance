@@ -598,7 +598,7 @@ export function exportSchedulePDF(
   const tableHead = [['Date', 'Time', 'Teacher', 'Room', 'Module']];
   const tableBody = sorted.map(entry => {
     const teacher = teachers.find(tc => tc.id === entry.teacherId);
-    const module = modules.find(m => m.id === entry.moduleId);
+    const mod = modules.find(m => m.id === entry.moduleId);
     const dateObj = new Date(entry.date + 'T00:00:00');
     const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
     const dateStr = `${dayName} ${entry.date}`;
@@ -607,7 +607,7 @@ export function exportSchedulePDF(
       entry.timeSlot || '-',
       teacher?.name || entry.teacherId || '-',
       entry.roomId || '-',
-      module?.name || entry.moduleId || '-',
+      mod?.name || entry.moduleId || '-',
     ];
   });
 
@@ -731,13 +731,13 @@ export function exportAllSchedulesPDF(
     const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
     const tableBody = sorted.map(entry => {
       const teacher = teachers.find(tc => tc.id === entry.teacherId);
-      const module = modules.find(m => m.id === entry.moduleId);
+      const mod = modules.find(m => m.id === entry.moduleId);
       return [
         entry.date,
         entry.timeSlot || '-',
         teacher?.name || '-',
         entry.roomId || '-',
-        module?.name || '-',
+        mod?.name || '-',
       ];
     });
 
