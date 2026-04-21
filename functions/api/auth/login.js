@@ -36,7 +36,7 @@ async function handleLogin(context) {
       } catch {}
     }
 
-    // Step 2: If user exists in D1 → D1 is the authority
+    // Step 2: If user exists in D1 → try D1 password first
     if (d1User) {
       if (d1User.password === password) {
         // D1 login successful — generate session token
@@ -66,16 +66,12 @@ async function handleLogin(context) {
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
-      } else {
-        // Password wrong in D1 — reject immediately (D1 is authority)
-        return new Response(
-          JSON.stringify({ success: false, error: 'Invalid credentials' }),
-          { status: 401, headers: { 'Content-Type': 'application/json' } }
-        );
       }
+      // D1 password doesn't match — fall through to try external API
     }
 
-    // Step 3: User NOT in D1 → try external API and sync to D1
+    // Step 3: Try external API (user NOT in D1, or D1 password didn't match)
+    // This allows login even when D1 has an outdated password
     try {
       const loginData = { username, password };
       if (slug) loginData.slug = slug;
@@ -87,7 +83,7 @@ async function handleLogin(context) {
       if (extRes.ok) {
         const extData = await extRes.json();
         if (extData.success) {
-          // Sync full profile from external API to D1 for future D1-first logins
+          // Sync full profile from external API to D1 (updates password if it was wrong in D1)
           try {
             if (db && extData.token) {
               const extUser = extData.user || {};
