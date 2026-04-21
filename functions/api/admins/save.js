@@ -13,8 +13,8 @@
  * On delete: REMOVE the auth_{username}_{tenantId} entry
  */
 
-import { validateRequest } from '../_lib/auth.js';
-import { getCorsHeaders } from '../_lib/cors.js';
+import { validateRequest } from '../../_lib/auth.js';
+import { getCorsHeaders } from '../../_lib/cors.js';
 
 async function handleSave(context) {
   // Auth check
