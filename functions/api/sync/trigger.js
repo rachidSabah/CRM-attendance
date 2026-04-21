@@ -3,7 +3,19 @@
  * Manual sync trigger — runs push then pull
  */
 
+import { validateRequest } from '../../_lib/auth.js';
+import { getCorsHeaders } from '../../_lib/cors.js';
+
 async function handleTrigger(context) {
+  // Auth check
+  const auth = await validateRequest(context.request, context.env.DB);
+  if (!auth.authenticated) {
+    return new Response(
+      JSON.stringify({ success: false, error: auth.error }),
+      { status: 401, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+    );
+  }
+
   try {
     const body = await context.request.json();
     const tenantId = body.tenant_id || 'default';
@@ -98,15 +110,19 @@ async function handleTrigger(context) {
 
     return new Response(
       JSON.stringify(results),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { status: 200, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   } catch (err) {
     console.error('[sync/trigger] Error:', err);
     return new Response(
       JSON.stringify({ success: false, error: err.message }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   }
+}
+
+export async function onRequestOptions(context) {
+  return new Response(null, { headers: getCorsHeaders(context.request) });
 }
 
 export async function onRequest(context) {

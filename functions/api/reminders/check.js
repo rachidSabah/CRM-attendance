@@ -12,6 +12,9 @@
  * }
  */
 
+import { validateRequest } from '../../_lib/auth.js';
+import { getCorsHeaders } from '../../_lib/cors.js';
+
 function buildAbsenceEmailHtml(studentName, className, date, schoolName, language) {
   const isAr = language === 'ar';
   const isFr = language === 'fr';
@@ -131,7 +134,16 @@ async function sendBrevoEmail(apiKey, senderEmail, to, toName, subject, htmlCont
   return data;
 }
 
-export async function onRequestPost(context) {
+async function handleReminderCheck(context) {
+  // Auth check
+  const auth = await validateRequest(context.request, context.env.DB);
+  if (!auth.authenticated) {
+    return new Response(
+      JSON.stringify({ success: false, error: auth.error }),
+      { status: 401, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+    );
+  }
+
   try {
     const body = await context.request.json();
     const db = context.env.DB;
@@ -145,7 +157,7 @@ export async function onRequestPost(context) {
     if (!apiKey || !senderEmail) {
       return new Response(
         JSON.stringify({ success: false, error: 'Brevo API key and sender email are required. Configure them in Settings > Email (Brevo).' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
@@ -312,19 +324,27 @@ export async function onRequestPost(context) {
         skipped: skippedCount,
         errors,
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { status: 200, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   } catch (err) {
     console.error('[reminders/check] Error:', err);
     return new Response(
       JSON.stringify({ success: false, error: err.message }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   }
+}
+
+export async function onRequestOptions(context) {
+  return new Response(null, { headers: getCorsHeaders(context.request) });
 }
 
 export async function onRequest(context) {
   // Fallback: route to specific method handlers
   return context.next();
+}
+
+export async function onRequestPost(context) {
+  return handleReminderCheck(context);
 }
 

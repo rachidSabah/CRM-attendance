@@ -25,11 +25,19 @@
  *   { success: false, error: "..." }     on failure
  */
 
-export async function onRequest(context) {
-  return context.next();
-}
+import { validateRequest } from '../_lib/auth.js';
+import { getCorsHeaders } from '../_lib/cors.js';
 
-export async function onRequestPost(context) {
+async function handleSendEmail(context) {
+  // Auth check
+  const auth = await validateRequest(context.request, context.env.DB);
+  if (!auth.authenticated) {
+    return new Response(
+      JSON.stringify({ success: false, error: auth.error }),
+      { status: 401, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+    );
+  }
+
   try {
     // --- Parse request body ---
     let body;
@@ -38,7 +46,7 @@ export async function onRequestPost(context) {
     } catch {
       return new Response(
         JSON.stringify({ success: false, error: 'Invalid JSON body' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
@@ -49,14 +57,14 @@ export async function onRequestPost(context) {
     if (!apiKey) {
       return new Response(
         JSON.stringify({ success: false, error: 'Brevo API key not configured. Set it in Settings > Email (Brevo) or as BREVO_API_KEY env var.' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+        { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
     if (!senderEmail) {
       return new Response(
         JSON.stringify({ success: false, error: 'Sender email not configured. Set it in Settings > Email (Brevo) or as BREVO_SENDER env var.' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+        { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
@@ -66,21 +74,21 @@ export async function onRequestPost(context) {
     if (!to || typeof to !== 'string' || !to.includes('@')) {
       return new Response(
         JSON.stringify({ success: false, error: 'Valid "to" email is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
     if (!subject || typeof subject !== 'string') {
       return new Response(
         JSON.stringify({ success: false, error: '"subject" is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
     if (!htmlContent || typeof htmlContent !== 'string') {
       return new Response(
         JSON.stringify({ success: false, error: '"htmlContent" is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
@@ -110,7 +118,7 @@ export async function onRequestPost(context) {
           error: responseData.message || `Brevo API error ${brevoResponse.status}`,
           code: responseData.code,
         }),
-        { status: 502, headers: { 'Content-Type': 'application/json' } }
+        { status: 502, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
@@ -120,16 +128,29 @@ export async function onRequestPost(context) {
         success: true,
         messageId: responseData.messageId || null,
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { status: 200, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
 
   } catch (err) {
     console.error('[send-email] Unexpected error:', err);
     return new Response(
       JSON.stringify({ success: false, error: 'Internal server error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   }
+}
+
+
+export async function onRequestOptions(context) {
+  return new Response(null, { headers: getCorsHeaders(context.request) });
+}
+
+export async function onRequest(context) {
+  return context.next();
+}
+
+export async function onRequestPost(context) {
+  return handleSendEmail(context);
 }
 
 

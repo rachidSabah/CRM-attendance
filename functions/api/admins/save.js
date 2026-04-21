@@ -13,7 +13,19 @@
  * On delete: REMOVE the auth_{username}_{tenantId} entry
  */
 
+import { validateRequest } from '../_lib/auth.js';
+import { getCorsHeaders } from '../_lib/cors.js';
+
 async function handleSave(context) {
+  // Auth check
+  const auth = await validateRequest(context.request, context.env.DB);
+  if (!auth.authenticated) {
+    return new Response(
+      JSON.stringify({ success: false, error: auth.error }),
+      { status: 401, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+    );
+  }
+
   try {
     const body = await context.request.json();
     const { action, tenant_id, admin } = body;
@@ -21,7 +33,7 @@ async function handleSave(context) {
     if (!action || !admin || !admin.username) {
       return new Response(
         JSON.stringify({ success: false, error: 'Missing action, admin data, or username' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
@@ -31,7 +43,7 @@ async function handleSave(context) {
     if (!db) {
       return new Response(
         JSON.stringify({ success: false, error: 'Database not available' }),
-        { status: 503, headers: { 'Content-Type': 'application/json' } }
+        { status: 503, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
@@ -48,7 +60,7 @@ async function handleSave(context) {
 
       return new Response(
         JSON.stringify({ success: true, message: `User "${username}" removed from auth` }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
+        { status: 200, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
@@ -57,7 +69,7 @@ async function handleSave(context) {
       if (action === 'create' && !admin.password) {
         return new Response(
           JSON.stringify({ success: false, error: 'Password is required for new users' }),
-          { status: 400, headers: { 'Content-Type': 'application/json' } }
+          { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
         );
       }
 
@@ -96,20 +108,24 @@ async function handleSave(context) {
 
       return new Response(
         JSON.stringify({ success: true, message: `User "${username}" saved to D1 auth` }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
+        { status: 200, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
     return new Response(
       JSON.stringify({ success: false, error: 'Invalid action. Use create, update, or delete.' }),
-      { status: 400, headers: { 'Content-Type': 'application/json' } }
+      { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   } catch (err) {
     return new Response(
       JSON.stringify({ success: false, error: err.message }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   }
+}
+
+export async function onRequestOptions(context) {
+  return new Response(null, { headers: getCorsHeaders(context.request) });
 }
 
 export async function onRequest(context) {

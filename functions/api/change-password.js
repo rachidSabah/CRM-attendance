@@ -5,9 +5,21 @@
  * and preserves all other profile data (role, fullName, email, etc.).
  */
 
+import { validateRequest } from '../_lib/auth.js';
+import { getCorsHeaders } from '../_lib/cors.js';
+
 const EXTERNAL_API = 'https://infohas-attendance-api.rachidelsabah.workers.dev/api';
 
 async function handleChangePassword(context) {
+  // Auth check
+  const auth = await validateRequest(context.request, context.env.DB);
+  if (!auth.authenticated) {
+    return new Response(
+      JSON.stringify({ success: false, error: auth.error }),
+      { status: 401, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+    );
+  }
+
   try {
     const body = await context.request.json();
     const { currentPassword, newPassword, username, tenant_id } = body;
@@ -15,14 +27,14 @@ async function handleChangePassword(context) {
     if (!newPassword || newPassword.length < 4) {
       return new Response(
         JSON.stringify({ success: false, error: 'Password must be at least 4 characters' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
     if (!currentPassword) {
       return new Response(
         JSON.stringify({ success: false, error: 'Current password is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
       );
     }
 
@@ -110,15 +122,19 @@ async function handleChangePassword(context) {
 
     return new Response(
       JSON.stringify({ success: true, message: 'Password changed successfully', d1Updated }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { status: 200, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   } catch (err) {
     console.error('[change-password] Error:', err);
     return new Response(
       JSON.stringify({ success: false, error: String(err?.message || err) }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   }
+}
+
+export async function onRequestOptions(context) {
+  return new Response(null, { headers: getCorsHeaders(context.request) });
 }
 
 export async function onRequest(context) {
