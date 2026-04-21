@@ -31,12 +31,6 @@ export async function onRequest(context) {
 
 export async function onRequestPost(context) {
   try {
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    };
-
     // --- Parse request body ---
     let body;
     try {
@@ -44,7 +38,7 @@ export async function onRequestPost(context) {
     } catch {
       return new Response(
         JSON.stringify({ success: false, error: 'Invalid JSON body' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
@@ -55,14 +49,14 @@ export async function onRequestPost(context) {
     if (!apiKey) {
       return new Response(
         JSON.stringify({ success: false, error: 'Brevo API key not configured. Set it in Settings > Email (Brevo) or as BREVO_API_KEY env var.' }),
-        { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
     if (!senderEmail) {
       return new Response(
         JSON.stringify({ success: false, error: 'Sender email not configured. Set it in Settings > Email (Brevo) or as BREVO_SENDER env var.' }),
-        { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
@@ -72,21 +66,21 @@ export async function onRequestPost(context) {
     if (!to || typeof to !== 'string' || !to.includes('@')) {
       return new Response(
         JSON.stringify({ success: false, error: 'Valid "to" email is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
     if (!subject || typeof subject !== 'string') {
       return new Response(
         JSON.stringify({ success: false, error: '"subject" is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
     if (!htmlContent || typeof htmlContent !== 'string') {
       return new Response(
         JSON.stringify({ success: false, error: '"htmlContent" is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
@@ -116,7 +110,7 @@ export async function onRequestPost(context) {
           error: responseData.message || `Brevo API error ${brevoResponse.status}`,
           code: responseData.code,
         }),
-        { status: 502, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        { status: 502, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
@@ -126,7 +120,7 @@ export async function onRequestPost(context) {
         success: true,
         messageId: responseData.messageId || null,
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
 
   } catch (err) {
@@ -138,17 +132,6 @@ export async function onRequestPost(context) {
   }
 }
 
-// Handle CORS preflight
-export async function onRequestOptions() {
-  return new Response(null, {
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Max-Age': '86400',
-    },
-  });
-}
 
 // --- Utility: strip HTML tags for plain text fallback ---
 function stripHtml(html) {

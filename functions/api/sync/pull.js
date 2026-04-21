@@ -22,12 +22,6 @@ const ENTITY_TYPE_MAP = {
   curriculum_items: 'curriculum',
 };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
 async function handlePull(context) {
   try {
     const url = new URL(context.request.url);
@@ -76,13 +70,13 @@ async function handlePull(context) {
 
     return new Response(
       JSON.stringify(result),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err) {
     console.error('[sync/pull] Error:', err);
     return new Response(
       JSON.stringify({ success: false, error: err.message }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
@@ -95,11 +89,3 @@ export async function onRequestGet(context) {
   return handlePull(context);
 }
 
-export async function onRequestOptions() {
-  return new Response(null, {
-    headers: {
-      ...corsHeaders,
-      'Access-Control-Max-Age': '86400',
-    },
-  });
-}

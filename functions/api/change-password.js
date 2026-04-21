@@ -5,12 +5,6 @@
  * and preserves all other profile data (role, fullName, email, etc.).
  */
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, PUT, POST, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
 const EXTERNAL_API = 'https://infohas-attendance-api.rachidelsabah.workers.dev/api';
 
 async function handleChangePassword(context) {
@@ -21,14 +15,14 @@ async function handleChangePassword(context) {
     if (!newPassword || newPassword.length < 4) {
       return new Response(
         JSON.stringify({ success: false, error: 'Password must be at least 4 characters' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
     if (!currentPassword) {
       return new Response(
         JSON.stringify({ success: false, error: 'Current password is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
@@ -116,13 +110,13 @@ async function handleChangePassword(context) {
 
     return new Response(
       JSON.stringify({ success: true, message: 'Password changed successfully', d1Updated }),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err) {
     console.error('[change-password] Error:', err);
     return new Response(
       JSON.stringify({ success: false, error: String(err?.message || err) }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
@@ -135,8 +129,3 @@ export async function onRequestPut(context) {
   return handleChangePassword(context);
 }
 
-export async function onRequestOptions() {
-  return new Response(null, {
-    headers: { ...corsHeaders, 'Access-Control-Max-Age': '86400' },
-  });
-}

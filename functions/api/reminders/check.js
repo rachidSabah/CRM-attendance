@@ -12,12 +12,6 @@
  * }
  */
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
 function buildAbsenceEmailHtml(studentName, className, date, schoolName, language) {
   const isAr = language === 'ar';
   const isFr = language === 'fr';
@@ -151,7 +145,7 @@ export async function onRequestPost(context) {
     if (!apiKey || !senderEmail) {
       return new Response(
         JSON.stringify({ success: false, error: 'Brevo API key and sender email are required. Configure them in Settings > Email (Brevo).' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
@@ -318,13 +312,13 @@ export async function onRequestPost(context) {
         skipped: skippedCount,
         errors,
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err) {
     console.error('[reminders/check] Error:', err);
     return new Response(
       JSON.stringify({ success: false, error: err.message }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
@@ -334,11 +328,3 @@ export async function onRequest(context) {
   return context.next();
 }
 
-export async function onRequestOptions() {
-  return new Response(null, {
-    headers: {
-      ...corsHeaders,
-      'Access-Control-Max-Age': '86400',
-    },
-  });
-}

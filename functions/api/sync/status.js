@@ -3,12 +3,6 @@
  * Return sync status, last sync time, entity counts
  */
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
 async function handleStatus(context) {
   try {
     const url = new URL(context.request.url);
@@ -55,13 +49,13 @@ async function handleStatus(context) {
         last_pull: lastPull?.created_at || null,
         recent_syncs: recentSyncs.results || [],
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err) {
     console.error('[sync/status] Error:', err);
     return new Response(
       JSON.stringify({ success: false, error: err.message, connected: false }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
@@ -74,11 +68,3 @@ export async function onRequestGet(context) {
   return handleStatus(context);
 }
 
-export async function onRequestOptions() {
-  return new Response(null, {
-    headers: {
-      ...corsHeaders,
-      'Access-Control-Max-Age': '86400',
-    },
-  });
-}

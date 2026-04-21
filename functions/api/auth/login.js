@@ -5,12 +5,6 @@
  *   2. If user NOT in D1 → try external API, then sync profile to D1 for future use
  */
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
 const EXTERNAL_API = 'https://infohas-attendance-api.rachidelsabah.workers.dev/api';
 
 async function handleLogin(context) {
@@ -21,7 +15,7 @@ async function handleLogin(context) {
     if (!username || !password) {
       return new Response(
         JSON.stringify({ success: false, error: 'Username and password are required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
@@ -70,13 +64,13 @@ async function handleLogin(context) {
               is_super_admin: Boolean(d1User.is_super_admin),
             },
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
       } else {
         // Password wrong in D1 — reject immediately (D1 is authority)
         return new Response(
           JSON.stringify({ success: false, error: 'Invalid credentials' }),
-          { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+          { status: 401, headers: { 'Content-Type': 'application/json' } }
         );
       }
     }
@@ -117,7 +111,7 @@ async function handleLogin(context) {
 
           return new Response(
             JSON.stringify(extData),
-            { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
           );
         }
       }
@@ -128,13 +122,13 @@ async function handleLogin(context) {
     // Step 4: No match anywhere
     return new Response(
       JSON.stringify({ success: false, error: 'Invalid credentials' }),
-      { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 401, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err) {
     console.error('[auth/login] Error:', err);
     return new Response(
       JSON.stringify({ success: false, error: 'Internal server error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
@@ -147,8 +141,3 @@ export async function onRequestPost(context) {
   return handleLogin(context);
 }
 
-export async function onRequestOptions() {
-  return new Response(null, {
-    headers: { ...corsHeaders, 'Access-Control-Max-Age': '86400' },
-  });
-}

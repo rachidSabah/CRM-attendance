@@ -3358,9 +3358,9 @@ function SettingsPage() {
     try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('attendance_cloud_config') || '{}') : {}; } catch { return {}; }
   });
   const [cloudUploading, setCloudUploading] = useState(false);
-  const [cloudConnectedServices, setCloudConnectedServices] = useState<Record<string, boolean>>(() => {
-    try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('attendance_cloud_connected') || '{}') : {}; } catch { return {}; }
-  });
+  // Never persist 'Connected' status — always start fresh per session
+  // This prevents stale status from localStorage showing as demo/fake
+  const [cloudConnectedServices, setCloudConnectedServices] = useState<Record<string, boolean>>({});
 
   // Clear connected status when config fields change for a service
   const updateCloudConfig = (updates: Record<string, string>) => {
@@ -3375,7 +3375,6 @@ function SettingsPage() {
       if (svc && cloudConnectedServices[svc]) {
         const updatedConnected = { ...cloudConnectedServices, [svc]: false };
         setCloudConnectedServices(updatedConnected);
-        localStorage.setItem('attendance_cloud_connected', JSON.stringify(updatedConnected));
       }
     }
   };
@@ -3402,19 +3401,23 @@ function SettingsPage() {
     setCloudUploading(true);
     try {
       // Attempt a real connection test for FTP
+      // Use 'cors' mode so we get a real error if the host is unreachable or not an HTTP server
+      // (no-cors always returns an opaque response, making it a fake test)
       if (service === 'ftp') {
         try {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 10000);
           const ftpHost = cloudConfig.ftpHost!.replace(/\/$/, '');
-          const resp = await fetch(`${ftpHost.startsWith('http') ? '' : 'https://'}${ftpHost}`, {
+          const testUrl = `${ftpHost.startsWith('http') ? '' : 'https://'}${ftpHost}`;
+          const resp = await fetch(testUrl, {
             method: 'HEAD',
-            mode: 'no-cors',
+            mode: 'cors',
             signal: controller.signal,
           });
           clearTimeout(timeout);
-          // no-cors returns opaque response — if no error thrown, host is reachable
+          // If we get here with cors mode, the host is reachable and supports HTTP
         } catch (fetchErr) {
+          clearTimeout((fetchErr as Error & { cause?: { timeout?: boolean } }).cause?.timeout ? undefined : undefined);
           setCloudUploading(false);
           toast.error(language === 'fr' ? 'Impossible de se connecter au serveur FTP. Vérifiez l\'hôte.' : 'Cannot reach FTP server. Check the host address.');
           return;
@@ -3437,10 +3440,9 @@ function SettingsPage() {
         // D1 sync is best-effort
       }
 
-      // Mark as connected
+      // Mark as connected (in-memory only — NOT persisted to localStorage)
       const updatedConnected = { ...cloudConnectedServices, [service]: true };
       setCloudConnectedServices(updatedConnected);
-      localStorage.setItem('attendance_cloud_connected', JSON.stringify(updatedConnected));
 
       toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'connecté et sauvegardé!' : 'connected & backup saved!'}`);
     } catch (err) {

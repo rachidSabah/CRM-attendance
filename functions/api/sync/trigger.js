@@ -3,12 +3,6 @@
  * Manual sync trigger — runs push then pull
  */
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
 async function handleTrigger(context) {
   try {
     const body = await context.request.json();
@@ -104,13 +98,13 @@ async function handleTrigger(context) {
 
     return new Response(
       JSON.stringify(results),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err) {
     console.error('[sync/trigger] Error:', err);
     return new Response(
       JSON.stringify({ success: false, error: err.message }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
@@ -123,11 +117,3 @@ export async function onRequestPost(context) {
   return handleTrigger(context);
 }
 
-export async function onRequestOptions() {
-  return new Response(null, {
-    headers: {
-      ...corsHeaders,
-      'Access-Control-Max-Age': '86400',
-    },
-  });
-}

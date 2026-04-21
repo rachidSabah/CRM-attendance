@@ -23,12 +23,6 @@ const ENTITY_TYPES = {
   curriculum: 'curriculum_items',
 };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
 async function handlePush(context) {
   try {
     const body = await context.request.json();
@@ -125,13 +119,13 @@ async function handlePush(context) {
 
     return new Response(
       JSON.stringify({ success: true, upserted: totalUpserted }),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err) {
     console.error('[sync/push] Error:', err);
     return new Response(
       JSON.stringify({ success: false, error: err.message }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
@@ -144,11 +138,3 @@ export async function onRequestPost(context) {
   return handlePush(context);
 }
 
-export async function onRequestOptions() {
-  return new Response(null, {
-    headers: {
-      ...corsHeaders,
-      'Access-Control-Max-Age': '86400',
-    },
-  });
-}
