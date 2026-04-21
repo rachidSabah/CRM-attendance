@@ -3238,42 +3238,110 @@ function SettingsPage() {
   const [promoteFromYear, setPromoteFromYear] = useState('');
   const [promoteToYear, setPromoteToYear] = useState('');
   const [promoteStatus, setPromoteStatus] = useState('active');
+  const [promoteSelectedIds, setPromoteSelectedIds] = useState<Set<string>>(new Set());
+  const [promoteSelectAll, setPromoteSelectAll] = useState(false);
 
   const fromYearName = academicYears.find(ay => ay.id === promoteFromYear)?.name || '';
   const toYearName = academicYears.find(ay => ay.id === promoteToYear)?.name || '';
+
+  // Eligible students: match by class academicYear (ID comparison), or student's own academicYear (name or ID)
   const eligibleStudents = useMemo(() => {
     return students.filter(s => {
+      // Class filter
       if (promoteClass !== '__all__' && s.classId !== promoteClass) return false;
-      if (promoteFromYear && s.academicYear !== fromYearName) return false;
+      // Academic year filter: check student's class academicYear (ID) OR student's own academicYear (name or ID)
+      if (promoteFromYear) {
+        const studentClass = classes.find(c => c.id === s.classId);
+        const classAyMatches = studentClass?.academicYear === promoteFromYear;
+        const studentAyMatches = s.academicYear === fromYearName || s.academicYear === promoteFromYear;
+        if (!classAyMatches && !studentAyMatches) return false;
+      }
       return true;
     });
-  }, [students, promoteClass, promoteFromYear, fromYearName]);
+  }, [students, promoteClass, promoteFromYear, fromYearName, classes]);
+
+  // When eligible list changes, reset individual selection
+  useMemo(() => {
+    if (promoteSelectAll) {
+      setPromoteSelectedIds(new Set(eligibleStudents.map(s => s.id)));
+    }
+  }, [eligibleStudents]);
+
+  const handlePromoteToggleStudent = (studentId: string) => {
+    setPromoteSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      setPromoteSelectAll(next.size === eligibleStudents.length && eligibleStudents.length > 0);
+      return next;
+    });
+  };
+
+  const handlePromoteSelectAll = () => {
+    if (promoteSelectAll) {
+      setPromoteSelectedIds(new Set());
+      setPromoteSelectAll(false);
+    } else {
+      setPromoteSelectedIds(new Set(eligibleStudents.map(s => s.id)));
+      setPromoteSelectAll(true);
+    }
+  };
+
+  // Students actually selected for promotion
+  const studentsToPromote = promoteSelectedIds.size > 0
+    ? eligibleStudents.filter(s => promoteSelectedIds.has(s.id))
+    : eligibleStudents;
 
   const handleMassPromotion = () => {
     if (!promoteFromYear || !promoteToYear || promoteFromYear === promoteToYear) return;
-    if (eligibleStudents.length === 0) { toast.warning(language === 'fr' ? 'Aucun étudiant éligible' : 'No eligible students'); return; }
+    const targets = studentsToPromote;
+    if (targets.length === 0) { toast.warning(language === 'fr' ? 'Aucun étudiant éligible' : 'No eligible students'); return; }
     const updated = students.map(s => {
-      if (eligibleStudents.includes(s)) {
+      if (targets.some(t => t.id === s.id)) {
         return { ...s, academicYear: toYearName };
       }
       return s;
     });
     setStudents(updated);
-    addAuditLog('MASS_PROMOTE', 'student', '', '', `Promoted ${eligibleStudents.length} students from ${fromYearName} to ${toYearName}`);
-    toast.success(`${language === 'fr' ? 'Promotion terminée' : 'Promotion complete'}: ${eligibleStudents.length} ${language === 'fr' ? 'étudiants' : 'students'} ${fromYearName} → ${toYearName}`);
+    addAuditLog('MASS_PROMOTE', 'student', '', '', `Promoted ${targets.length} students from ${fromYearName} to ${toYearName}`);
+    toast.success(`${language === 'fr' ? 'Promotion terminée' : 'Promotion complete'}: ${targets.length} ${language === 'fr' ? 'étudiants' : 'students'} ${fromYearName} → ${toYearName}`);
+    setPromoteSelectedIds(new Set());
+    setPromoteSelectAll(false);
   };
 
   const handleChangeStatus = () => {
-    if (eligibleStudents.length === 0) return;
+    const targets = studentsToPromote;
+    if (targets.length === 0) return;
     const updated = students.map(s => {
-      if (eligibleStudents.includes(s)) {
+      if (targets.some(t => t.id === s.id)) {
         return { ...s, status: promoteStatus as Student['status'] };
       }
       return s;
     });
     setStudents(updated);
-    addAuditLog('CHANGE_STATUS', 'student', '', '', `Changed status of ${eligibleStudents.length} students to ${promoteStatus}`);
-    toast.success(`${language === 'fr' ? 'Statut mis à jour' : 'Status updated'}: ${eligibleStudents.length} ${language === 'fr' ? 'étudiants' : 'students'} → ${promoteStatus}`);
+    addAuditLog('CHANGE_STATUS', 'student', '', '', `Changed status of ${targets.length} students to ${promoteStatus}`);
+    toast.success(`${language === 'fr' ? 'Statut mis à jour' : 'Status updated'}: ${targets.length} ${language === 'fr' ? 'étudiants' : 'students'} → ${promoteStatus}`);
+    setPromoteSelectedIds(new Set());
+    setPromoteSelectAll(false);
+  };
+
+  const handlePromoteToClass = (targetClassId: string) => {
+    if (!targetClassId) return;
+    const targets = studentsToPromote;
+    if (targets.length === 0) return;
+    const updated = students.map(s => {
+      if (targets.some(t => t.id === s.id)) {
+        const targetClass = classes.find(c => c.id === targetClassId);
+        return { ...s, classId: targetClassId, className: targetClass?.name || s.className, academicYear: toYearName || s.academicYear };
+      }
+      return s;
+    });
+    setStudents(updated);
+    const targetClassName = classes.find(c => c.id === targetClassId)?.name || '';
+    addAuditLog('PROMOTE_TO_CLASS', 'student', '', '', `Moved ${targets.length} students to class ${targetClassName}`);
+    toast.success(`${language === 'fr' ? 'Déplacement terminé' : 'Move complete'}: ${targets.length} ${language === 'fr' ? 'étudiants' : 'students'} → ${targetClassName}`);
+    setPromoteSelectedIds(new Set());
+    setPromoteSelectAll(false);
   };
 
   // Password state
@@ -3975,18 +4043,50 @@ function SettingsPage() {
           {/* Promote Students Section */}
           <Card><CardHeader><CardTitle className="text-base flex items-center gap-2"><TrendingUp className="h-4 w-4 text-emerald-600" />{language === 'fr' ? 'Promouvoir Étudiants' : 'Promote Students'}</CardTitle></CardHeader><CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="space-y-2"><Label>{language === 'fr' ? 'Sélectionner Classe' : 'Select Class'}</Label><Select value={promoteClass} onValueChange={setPromoteClass}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__all__">{language === 'fr' ? 'Toutes les Classes' : 'All Classes'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-2"><Label>{language === 'fr' ? 'De l\'année' : 'From Year'}</Label><Select value={promoteFromYear || '__none__'} onValueChange={v => setPromoteFromYear(v === '__none__' ? '' : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none__">{language === 'fr' ? 'Sélectionner' : 'Select'}</SelectItem>{academicYears.map(ay => <SelectItem key={ay.id} value={ay.id}>{ay.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'Sélectionner Classe' : 'Select Class'}</Label><Select value={promoteClass} onValueChange={v => { setPromoteClass(v); setPromoteSelectedIds(new Set()); setPromoteSelectAll(false); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__all__">{language === 'fr' ? 'Toutes les Classes' : 'All Classes'}</SelectItem>{classes.map(c => { const ay = academicYears.find(a => a.id === c.academicYear); return <SelectItem key={c.id} value={c.id}>{c.name}{ay ? ` (${ay.name})` : ''}</SelectItem>; })}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>{language === 'fr' ? 'De l\'année' : 'From Year'}</Label><Select value={promoteFromYear || '__none__'} onValueChange={v => { setPromoteFromYear(v === '__none__' ? '' : v); setPromoteSelectedIds(new Set()); setPromoteSelectAll(false); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none__">{language === 'fr' ? 'Sélectionner' : 'Select'}</SelectItem>{academicYears.map(ay => <SelectItem key={ay.id} value={ay.id}>{ay.name}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-2"><Label>{language === 'fr' ? 'Vers l\'année' : 'To Year'}</Label><Select value={promoteToYear || '__none__'} onValueChange={v => setPromoteToYear(v === '__none__' ? '' : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none__">{language === 'fr' ? 'Sélectionner' : 'Select'}</SelectItem>{academicYears.map(ay => <SelectItem key={ay.id} value={ay.id}>{ay.name}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-2"><Label>{language === 'fr' ? 'Statut Étudiant' : 'Student Status'}</Label><Select value={promoteStatus} onValueChange={setPromoteStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">{language === 'fr' ? 'Actif' : 'Active'}</SelectItem><SelectItem value="inactive">{language === 'fr' ? 'Inactif' : 'Inactive'}</SelectItem><SelectItem value="graduated">{language === 'fr' ? 'Diplômé' : 'Graduated'}</SelectItem><SelectItem value="transferred">{language === 'fr' ? 'Transféré' : 'Transferred'}</SelectItem><SelectItem value="dropped">{language === 'fr' ? 'Abandon' : 'Dropped Out'}</SelectItem></SelectContent></Select></div>
             </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Info className="h-4 w-4" />
-              <span>{language === 'fr' ? `${eligibleStudents.length} étudiant(s) éligible(s) pour la promotion` : `${eligibleStudents.length} student(s) eligible for promotion`}</span>
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Info className="h-4 w-4" />
+                <span>{eligibleStudents.length} {language === 'fr' ? 'étudiant(s) éligible(s)' : 'student(s) eligible'}</span>
+                {studentsToPromote.length !== eligibleStudents.length && eligibleStudents.length > 0 && (
+                  <span className="text-emerald-600 font-medium">— {studentsToPromote.length} {language === 'fr' ? 'sélectionné(s)' : 'selected'}</span>
+                )}
+              </div>
+              {eligibleStudents.length > 0 && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handlePromoteSelectAll}>
+                  {promoteSelectAll ? (language === 'fr' ? 'Tout désélectionner' : 'Deselect All') : (language === 'fr' ? 'Tout sélectionner' : 'Select All')}
+                </Button>
+              )}
             </div>
+            {/* Eligible Students List with Checkboxes */}
+            {eligibleStudents.length > 0 && (
+              <div className="max-h-48 overflow-y-auto rounded-lg border">
+                <Table><TableHeader><TableRow><TableHead className="w-8 py-2 px-2"></TableHead><TableHead className="py-2 text-xs">{language === 'fr' ? 'Étudiant' : 'Student'}</TableHead><TableHead className="py-2 text-xs">{language === 'fr' ? 'Classe' : 'Class'}</TableHead><TableHead className="py-2 text-xs">{language === 'fr' ? 'Année' : 'Year'}</TableHead></TableRow></TableHeader><TableBody>
+                  {eligibleStudents.map(s => {
+                    const cls = classes.find(c => c.id === s.classId);
+                    const clsAy = cls ? academicYears.find(a => a.id === cls.academicYear) : null;
+                    const isSelected = promoteSelectedIds.size === 0 || promoteSelectedIds.has(s.id);
+                    return <TableRow key={s.id} className={isSelected ? 'bg-emerald-50 dark:bg-emerald-900/10' : 'opacity-60'}>
+                      <TableCell className="py-1.5 px-2"><Checkbox checked={isSelected} onCheckedChange={() => handlePromoteToggleStudent(s.id)} /></TableCell>
+                      <TableCell className="py-1.5 text-xs font-medium">{s.fullName}</TableCell>
+                      <TableCell className="py-1.5 text-xs">{cls?.name || '-'}</TableCell>
+                      <TableCell className="py-1.5 text-xs">{clsAy?.name || s.academicYear || '-'}</TableCell>
+                    </TableRow>;
+                  })}
+                </TableBody></Table>
+              </div>
+            )}
             <div className="flex flex-wrap gap-3">
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleMassPromotion} disabled={!promoteFromYear || !promoteToYear || promoteFromYear === promoteToYear}><TrendingUp className="h-4 w-4 mr-1" />{language === 'fr' ? 'Promotion en Masse' : 'Mass Promotion'}</Button>
-              <Button variant="outline" className="text-amber-600 border-amber-300 hover:bg-amber-50" onClick={handleChangeStatus} disabled={eligibleStudents.length === 0}><RefreshCw className="h-4 w-4 mr-1" />{language === 'fr' ? 'Changer Statut' : 'Change Status'}</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleMassPromotion} disabled={!promoteFromYear || !promoteToYear || promoteFromYear === promoteToYear || studentsToPromote.length === 0}><TrendingUp className="h-4 w-4 mr-1" />{language === 'fr' ? 'Promouvoir' : 'Promote'} ({studentsToPromote.length})</Button>
+              <Button variant="outline" className="text-amber-600 border-amber-300 hover:bg-amber-50" onClick={handleChangeStatus} disabled={studentsToPromote.length === 0}><RefreshCw className="h-4 w-4 mr-1" />{language === 'fr' ? 'Changer Statut' : 'Change Status'} ({studentsToPromote.length})</Button>
+              {/* Move to Class */}
+              <div className="flex items-center gap-2">
+                <Select onValueChange={handlePromoteToClass}><SelectTrigger className="w-44 h-9 text-xs"><SelectValue placeholder={language === 'fr' ? 'Déplacer vers classe...' : 'Move to class...'} /></SelectTrigger><SelectContent>{classes.filter(c => c.id !== promoteClass || promoteClass === '__all__').map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+              </div>
             </div>
           </CardContent></Card>
         </TabsContent>
