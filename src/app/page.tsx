@@ -924,14 +924,16 @@ function CrudPage<T extends { id: string; createdAt: string }>({ title, items, s
 
 // ==================== CLASSES PAGE ====================
 function ClassesPage() {
-  const { classes, setClasses, students, language } = useAppStore();
+  const { classes, setClasses, students, language, academicYears } = useAppStore();
   return <CrudPage<Class> title={t('classes', language)} items={classes} setItems={setClasses} columns={[
     { key: 'name', label: t('classes', language) }, { key: 'description', label: language === 'fr' ? 'Description' : 'Description' },
     { key: 'teacher', label: language === 'fr' ? 'Enseignant' : 'Teacher' }, { key: 'room', label: language === 'fr' ? 'Salle' : 'Room' }, { key: 'capacity', label: language === 'fr' ? 'Capacité' : 'Capacity' },
+    { key: 'academicYear', label: language === 'fr' ? 'Année Scolaire' : 'Academic Year', render: (item) => { const ay = academicYears.find(y => y.id === item.academicYear); return <Badge variant="outline">{ay?.name || item.academicYear || '-'}</Badge>; } },
     { key: '_students', label: t('students', language), render: (item) => <Badge variant="secondary">{students.filter(s => s.classId === item.id).length}</Badge> },
   ]} renderForm={(item, onChange) => (
     <div className="grid gap-4">
       <div className="space-y-2"><Label>{t('classes', language)} *</Label><Input value={String(item.name || '')} onChange={e => onChange({ ...item, name: e.target.value })} /></div>
+      <div className="space-y-2"><Label>{language === 'fr' ? 'Année Scolaire' : 'Academic Year'}</Label><Select value={String(item.academicYear || '')} onValueChange={v => onChange({ ...item, academicYear: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner...' : 'Select...'} /></SelectTrigger><SelectContent>{academicYears.map(ay => <SelectItem key={ay.id} value={ay.id}>{ay.name}{ay.isCurrent ? ' ★' : ''}</SelectItem>)}</SelectContent></Select></div>
       <div className="space-y-2"><Label>Description</Label><Textarea value={String(item.description || '')} onChange={e => onChange({ ...item, description: e.target.value })} rows={2} /></div>
       <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Enseignant' : 'Teacher'}</Label><Input value={String(item.teacher || '')} onChange={e => onChange({ ...item, teacher: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Salle' : 'Room'}</Label><Input value={String(item.room || '')} onChange={e => onChange({ ...item, room: e.target.value })} /></div></div>
       <div className="space-y-2"><Label>{language === 'fr' ? 'Capacité' : 'Capacity'}</Label><Input type="number" value={String(item.capacity || 30)} onChange={e => onChange({ ...item, capacity: parseInt(e.target.value) || 30 })} /></div>
@@ -3048,7 +3050,16 @@ function ReportsPage() {
           <Select value={reportType} onValueChange={setReportType}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="attendance">{t('attendance', language)}</SelectItem><SelectItem value="grades">{t('grades', language)}</SelectItem><SelectItem value="behavior">{t('behavior', language)}</SelectItem><SelectItem value="progress">{t('progress_reports', language)}</SelectItem></SelectContent></Select>
           <div className="flex items-center gap-2"><Label className="text-xs whitespace-nowrap">{t('date_range', language)}:</Label><Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36" /><span className="text-xs">→</span><Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36" /></div>
         </div>
-        <Button variant="outline" onClick={handleExportReport}><FileDown className="h-4 w-4 mr-1" />{t('export_csv', language)}</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExportReport}><FileDown className="h-4 w-4 mr-1" />{t('export_csv', language)}</Button>
+          <Button variant="outline" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800" onClick={() => {
+            if (reportType === 'attendance') pdfUtils.exportAttendancePDF(filteredAttendance, students, classes, schoolInfo, dateFrom, dateTo);
+            else if (reportType === 'grades') pdfUtils.exportGradesPDF(grades, students, modules, schoolInfo);
+            else if (reportType === 'behavior') pdfUtils.exportBehaviorPDF(behavior, students, schoolInfo);
+            else if (reportType === 'progress') pdfUtils.exportProgressReportPDF([], {}, schoolInfo || {}, { from: dateFrom, to: dateTo }, '', language);
+            toast.success(language === 'fr' ? 'PDF exporté' : 'PDF exported');
+          }}><FileText className="h-4 w-4 mr-1" />PDF</Button>
+        </div>
       </div>
 
       {reportType === 'attendance' && (<>
@@ -3400,6 +3411,26 @@ function SettingsPage() {
     localStorage.setItem('attendance_cloud_config', JSON.stringify(cloudConfig));
     setCloudUploading(true);
     try {
+      // Attempt a real connection test for Google Drive API key
+      if (service === 'google') {
+        try {
+          const gdTest = await fetch(`https://www.googleapis.com/drive/v3/about?fields=user&key=${encodeURIComponent(cloudConfig.googleDriveKey!.trim())}`);
+          if (!gdTest.ok) {
+            const errData = await gdTest.json().catch(() => ({}));
+            const errMsg = (errData as Record<string, unknown>).error
+              ? `Google Drive API error: ${((errData.error as Record<string, unknown>).message as string) || gdTest.status}`
+              : `Google Drive API returned ${gdTest.status}`;
+            setCloudUploading(false);
+            toast.error(errMsg);
+            return;
+          }
+        } catch (gdErr) {
+          setCloudUploading(false);
+          toast.error(language === 'fr' ? 'Impossible de vérifier la clé API Google Drive.' : 'Cannot verify Google Drive API key.');
+          return;
+        }
+      }
+
       // Attempt a real connection test for FTP
       // Use 'cors' mode so we get a real error if the host is unreachable or not an HTTP server
       // (no-cors always returns an opaque response, making it a fake test)
