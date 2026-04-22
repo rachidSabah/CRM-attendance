@@ -3743,6 +3743,9 @@ function SettingsPage() {
   // Never persist 'Connected' status — always start fresh per session
   // This prevents stale status from localStorage showing as demo/fake
   const [cloudConnectedServices, setCloudConnectedServices] = useState<Record<string, boolean>>({});
+  // Google OAuth2 state (kept in memory only, never persisted for security)
+  const googleAccessTokenRef = useRef<string | null>(null);
+  const googleDriveFileIdRef = useRef<string | null>(null);
 
   // Clear connected status when config fields change for a service
   const updateCloudConfig = (updates: Record<string, string>) => {
@@ -3751,22 +3754,78 @@ function SettingsPage() {
     // Determine which service changed and clear its connected status
     for (const key of Object.keys(updates)) {
       let svc = '';
-      if (key === 'googleDriveKey') svc = 'google';
+      if (key === 'googleClientId') svc = 'google';
       else if (key === 'oneDriveClientId' || key === 'oneDriveClientSecret') svc = 'onedrive';
       else if (key === 'ftpHost' || key === 'ftpUser' || key === 'ftpPass') svc = 'ftp';
       if (svc && cloudConnectedServices[svc]) {
         const updatedConnected = { ...cloudConnectedServices, [svc]: false };
         setCloudConnectedServices(updatedConnected);
+        if (svc === 'google') { googleAccessTokenRef.current = null; googleDriveFileIdRef.current = null; }
       }
     }
+  };
+
+  // Load Google Identity Services script dynamically
+  const loadGIS = (): Promise<void> => new Promise((resolve, reject) => {
+    if (typeof window === 'undefined') return reject(new Error('No window'));
+    const w = window as unknown as Record<string, unknown>;
+    if (w.google?.accounts?.oauth2) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.defer = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Failed to load Google Identity Services'));
+    document.head.appendChild(s);
+  });
+
+  // Upload a file to Google Drive using OAuth2 access token
+  const uploadToGoogleDrive = async (accessToken: string, fileName: string, data: string, existingFileId?: string | null): Promise<string> => {
+    const metadata = {
+      name: fileName,
+      mimeType: 'application/json',
+      description: 'CRM Attendance Backup',
+    };
+    const boundary = 'crm_backup_' + Date.now();
+    const body =
+      '--' + boundary + '\r\n' +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      JSON.stringify(metadata) + '\r\n' +
+      '--' + boundary + '\r\n' +
+      'Content-Type: application/json\r\n\r\n' +
+      data + '\r\n' +
+      '--' + boundary + '--';
+
+    // If we have an existing file ID, update it; otherwise create new
+    const url = existingFileId
+      ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`
+      : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+    const method = existingFileId ? 'PATCH' : 'POST';
+
+    const res = await fetch(url, {
+      method,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as Record<string, unknown>).error
+        ? ((err.error as Record<string, unknown>).message as string) || `Drive API ${res.status}`
+        : `Drive API ${res.status}`);
+    }
+    const result = await res.json();
+    return result.id as string;
   };
 
   const handleCloudSave = async (service: string) => {
     const serviceNames: Record<string, string> = { google: 'Google Drive', onedrive: 'OneDrive', ftp: 'FTP' };
 
     // Validate required fields before connecting
-    if (service === 'google' && !cloudConfig.googleDriveKey?.trim()) {
-      toast.error(language === 'fr' ? 'Veuillez saisir la clé API Google Drive.' : 'Please enter a Google Drive API Key.');
+    if (service === 'google' && !cloudConfig.googleClientId?.trim()) {
+      toast.error(language === 'fr' ? 'Veuillez saisir le Client ID OAuth2 Google.' : 'Please enter a Google OAuth2 Client ID.');
       return;
     }
     if (service === 'onedrive' && (!cloudConfig.oneDriveClientId?.trim() || !cloudConfig.oneDriveClientSecret?.trim())) {
@@ -3778,26 +3837,65 @@ function SettingsPage() {
       return;
     }
 
-    // Save config to localStorage
-    localStorage.setItem('attendance_cloud_config', JSON.stringify(cloudConfig));
+    // Save config to localStorage (never includes tokens)
+    const configToSave = { ...cloudConfig };
+    delete (configToSave as Record<string, unknown>)._accessToken;
+    delete (configToSave as Record<string, unknown>)._driveFileId;
+    localStorage.setItem('attendance_cloud_config', JSON.stringify(configToSave));
     setCloudUploading(true);
     try {
-      // Attempt a real connection test for Google Drive API key
+      // Google Drive — OAuth2 flow
       if (service === 'google') {
         try {
-          const gdTest = await fetch(`https://www.googleapis.com/drive/v3/about?fields=user&key=${encodeURIComponent(cloudConfig.googleDriveKey!.trim())}`);
-          if (!gdTest.ok) {
-            const errData = await gdTest.json().catch(() => ({}));
-            const errMsg = (errData as Record<string, unknown>).error
-              ? `Google Drive API error: ${((errData.error as Record<string, unknown>).message as string) || gdTest.status}`
-              : `Google Drive API returned ${gdTest.status}`;
-            setCloudUploading(false);
-            toast.error(errMsg);
-            return;
-          }
-        } catch (gdErr) {
+          await loadGIS();
+          const w = window as unknown as Record<string, unknown>;
+          const tokenClient = (w.google as Record<string, unknown>).accounts as Record<string, unknown>;
+          const initTokenClient = tokenClient.oauth2 as {
+            init: (config: Record<string, unknown>) => { requestAccessToken: (config: Record<string, unknown>) => void };
+          };
+          const client = initTokenClient.init({
+            client_id: cloudConfig.googleClientId!.trim(),
+            scope: 'https://www.googleapis.com/auth/drive.file',
+            callback: '', // handled via promise below
+          });
+
+          // Request token via popup — wrap in promise
+          const accessToken = await new Promise<string>((resolve, reject) => {
+            const popup = window.open('about:blank', 'googleAuth', 'width=500,height=600');
+            if (!popup) { reject(new Error('Popup blocked')); return; }
+            client.requestAccessToken({
+              prompt: '',
+              callback: (resp: Record<string, unknown>) => {
+                popup.close();
+                if (resp.error) reject(new Error(String(resp.error)));
+                else resolve(resp.access_token as string);
+              },
+            });
+          });
+          googleAccessTokenRef.current = accessToken;
+
+          // Build and upload backup to Google Drive
+          const backupPayload = {
+            version: '1.1',
+            timestamp: new Date().toISOString(),
+            data: { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, templates, academicYears, schoolInfo },
+          };
+          const fileName = `CRM_Attendance_Backup_${new Date().toISOString().split('T')[0]}.json`;
+          const fileId = await uploadToGoogleDrive(accessToken, fileName, JSON.stringify(backupPayload, null, 2), googleDriveFileIdRef.current);
+          googleDriveFileIdRef.current = fileId;
+          toast.success(language === 'fr'
+            ? `Sauvegarde envoyée à Google Drive (${(JSON.stringify(backupPayload).length / 1024).toFixed(1)} KB)`
+            : `Backup uploaded to Google Drive (${(JSON.stringify(backupPayload).length / 1024).toFixed(1)} KB)`);
+        } catch (gErr) {
           setCloudUploading(false);
-          toast.error(language === 'fr' ? 'Impossible de vérifier la clé API Google Drive.' : 'Cannot verify Google Drive API key.');
+          const msg = gErr instanceof Error ? gErr.message : String(gErr);
+          if (msg.includes('Popup blocked')) {
+            toast.error(language === 'fr' ? 'Popup bloqué. Veuillez autoriser les popups.' : 'Popup blocked. Please allow popups for this site.');
+          } else if (msg.includes('access_denied') || msg.includes('popup_closed')) {
+            toast.error(language === 'fr' ? 'Autorisation refusée.' : 'Authorization denied.');
+          } else {
+            toast.error(`${language === 'fr' ? 'Google Drive' : 'Google Drive'}: ${msg}`);
+          }
           return;
         }
       }
@@ -3826,27 +3924,29 @@ function SettingsPage() {
         }
       }
 
-      // Build backup payload and push to D1
-      const backupData = {
-        version: '1.0',
-        timestamp: new Date().toISOString(),
-        service,
-        config: cloudConfig,
-        data: { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, templates, academicYears, schoolInfo }
-      };
-
-      // Sync data to D1 cloud
-      try {
-        await syncToCloud();
-      } catch {
-        // D1 sync is best-effort
+      // Build backup payload and push to D1 (for non-google services)
+      if (service !== 'google') {
+        const backupData = {
+          version: '1.0',
+          timestamp: new Date().toISOString(),
+          service,
+          config: cloudConfig,
+          data: { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, templates, academicYears, schoolInfo }
+        };
+        try {
+          await syncToCloud();
+        } catch {
+          // D1 sync is best-effort
+        }
       }
 
       // Mark as connected (in-memory only — NOT persisted to localStorage)
       const updatedConnected = { ...cloudConnectedServices, [service]: true };
       setCloudConnectedServices(updatedConnected);
 
-      toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'connecté et sauvegardé!' : 'connected & backup saved!'}`);
+      if (service !== 'google') {
+        toast.success(`${serviceNames[service] || service} ${language === 'fr' ? 'connecté et sauvegardé!' : 'connected & backup saved!'}`);
+      }
     } catch (err) {
       toast.error(language === 'fr' ? 'Erreur lors de la connexion.' : 'Connection failed. Please check your credentials.');
     }
@@ -4561,7 +4661,11 @@ function SettingsPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="rounded-lg border p-3 space-y-2">
                   <p className="text-xs font-medium flex items-center gap-1"><Cloud className="h-3.5 w-3.5" />Google Drive</p>
-                  <Input placeholder="API Key" className="h-8 text-xs" value={cloudConfig.googleDriveKey || ''} onChange={e => updateCloudConfig({ googleDriveKey: e.target.value })} />
+                  <Input placeholder="OAuth2 Client ID" className="h-8 text-xs" value={cloudConfig.googleClientId || ''} onChange={e => updateCloudConfig({ googleClientId: e.target.value })} />
+                  <p className="text-[10px] text-muted-foreground leading-tight">{language === 'fr'
+                    ? <>Créez un Client ID OAuth2 dans la <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline text-blue-500">Console Google Cloud</a>. Activez l'API Google Drive. Autorisez ce site comme origine JavaScript.</>
+                    : <>Create an OAuth2 Client ID in <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline text-blue-500">Google Cloud Console</a>. Enable Google Drive API. Add this site as authorized JavaScript origin.</>
+                  }</p>
                   <Button variant={cloudConnectedServices.google ? 'default' : 'outline'} size="sm" className={`w-full text-xs ${cloudConnectedServices.google ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`} onClick={() => handleCloudSave('google')} disabled={cloudUploading}>{cloudUploading ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : cloudConnectedServices.google ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}{cloudConnectedServices.google ? (language === 'fr' ? 'Connecté' : 'Connected') : (language === 'fr' ? 'Connecter & Sauvegarder' : 'Connect & Backup')}</Button>
                 </div>
                 <div className="rounded-lg border p-3 space-y-2">
