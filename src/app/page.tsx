@@ -1025,15 +1025,18 @@ function ModulesPage() {
 
   const extractModulesFromText = (text: string): Array<Record<string, unknown>> => {
     const results: Array<Record<string, unknown>> = [];
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    // Filter out garbage lines (non-printable chars, binary data)
+    const isReadable = (s: string) => /^[\x20-\x7E\u00C0-\u024F\s]+$/.test(s) && /[A-Za-z\u00C0-\u024F]/.test(s);
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l && isReadable(l) && l.length > 2);
     for (const line of lines) {
       if (line.includes('|')) {
         const parts = line.split('|').map(p => p.trim()).filter(Boolean);
         if (parts.length >= 2) {
-          const name = parts.find(p => !/^\d/.test(p) && p.length > 2) || parts[1];
+          const name = parts.find(p => !/^\d/.test(p) && p.length > 2 && /[A-Za-z\u00C0-\u024F]/.test(p)) || '';
+          if (!name) continue;
           const code = parts[0]?.replace(/[^A-Za-z0-9]/g, '') || '';
           const hours = parseFloat(parts.find(p => /^\d+(\.\d+)?$/.test(p)) || '0') || 0;
-          if (name && name.length > 1) { results.push({ name, code, hours, year: '', semester: '', description: '' }); continue; }
+          results.push({ name, code, hours, year: '', semester: '', description: '' }); continue;
         }
       }
     }
@@ -1041,7 +1044,7 @@ function ModulesPage() {
       const moduleRegex = /^([A-Za-z]{2,5}\d{2,4}[-\s]*)?([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\s\-&']+?)(?:\s+(\d+(?:\.\d+)?)\s*(?:h|heures|hours|cr|credits?|cm|td|tp)?)/i;
       for (const line of lines) {
         const match = line.match(moduleRegex);
-        if (match && match[2]) {
+        if (match && match[2] && match[2].trim().length > 2) {
           results.push({ name: match[2].trim(), code: (match[1] || '').replace(/[-\s]+$/, '').trim(), hours: parseFloat(match[3]) || 0, year: '', semester: '', description: '' });
         }
       }
@@ -1052,7 +1055,7 @@ function ModulesPage() {
         if (/^(module|code|nom|intitul|ann|semestre|total|programme|#|page)/i.test(line)) continue;
         const hoursMatch = line.match(/(\d+(?:\.\d+)?)\s*(?:h|heures|hours|cr|cm)/i);
         const name = line.replace(/\d+\s*(?:h|heures|hours|cr|cm|td|tp).*$/i, '').replace(/[-|]/g, '').trim();
-        if (name.length > 2) { results.push({ name, code: '', hours: hoursMatch ? parseFloat(hoursMatch[1]) : 0, year: '', semester: '', description: '' }); }
+        if (name.length > 2 && /[A-Za-z\u00C0-\u024F]/.test(name)) { results.push({ name, code: '', hours: hoursMatch ? parseFloat(hoursMatch[1]) : 0, year: '', semester: '', description: '' }); }
       }
     }
     return results;
@@ -1084,9 +1087,25 @@ function ModulesPage() {
         const sortedYs = Array.from(itemsByY.keys()).sort((a, b) => b - a);
         for (const y of sortedYs) { const lineItems = itemsByY.get(y)!.sort((a, b) => a.x - b.x); fullText += lineItems.map(i => i.text).join(' ') + '\n'; }
       }
-      setImportPreview(extractModulesFromText(fullText));
-    } catch {
-      try { const text = await file.text(); setImportPreview(extractModulesFromText(text)); } catch { toast.error(language === 'fr' ? 'Impossible de lire le fichier PDF' : 'Unable to read PDF file'); }
+      // Validate extracted text - check if it contains real readable content
+      const cleanedText = fullText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').trim();
+      const readableChars = (cleanedText.match(/[A-Za-z\u00C0-\u024F0-9]/g) || []).length;
+      const totalChars = cleanedText.length;
+      const readabilityRatio = totalChars > 0 ? readableChars / totalChars : 0;
+      if (!cleanedText || readabilityRatio < 0.3 || readableChars < 10) {
+        toast.error(language === 'fr' ? 'Ce PDF est une image scannée. L\'import OCR ne supporte que les PDF contenant du texte extractible. Utilisez un CSV à la place.' : 'This PDF appears to be a scanned image. PDF import only works with text-based PDFs. Please use CSV instead.');
+        setImportPreview([]); setImportSource(null); setImporting(false); e.target.value = '';
+        return;
+      }
+      const modules = extractModulesFromText(cleanedText);
+      if (modules.length === 0) {
+        toast.warning(language === 'fr' ? 'Aucun module détecté dans ce PDF. Vérifiez que le fichier contient une liste de modules.' : 'No modules detected in this PDF. Make sure it contains a module list.');
+      }
+      setImportPreview(modules);
+    } catch (err) {
+      console.error('PDF import error:', err);
+      toast.error(language === 'fr' ? 'Impossible de lire le fichier PDF. Assurez-vous qu\'il s\'agit d\'un PDF texte (non scanné).' : 'Unable to read PDF file. Make sure it is a text-based PDF (not scanned).');
+      setImportPreview([]); setImportSource(null);
     }
     setImporting(false);
     e.target.value = '';
