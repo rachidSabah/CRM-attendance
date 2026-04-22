@@ -3848,25 +3848,23 @@ function SettingsPage() {
       if (service === 'google') {
         try {
           await loadGIS();
-          const w = window as unknown as Record<string, unknown>;
-          const tokenClient = (w.google as Record<string, unknown>).accounts as Record<string, unknown>;
-          const initTokenClient = tokenClient.oauth2 as {
-            init: (config: Record<string, unknown>) => { requestAccessToken: (config: Record<string, unknown>) => void };
+          const gapi = (window as unknown as Record<string, unknown>).google as Record<string, unknown>;
+          const accounts = gapi.accounts as Record<string, unknown>;
+          const oauth2 = accounts.oauth2 as Record<string, unknown>;
+          const initTokenClient = oauth2.initTokenClient as (config: Record<string, unknown>) => {
+            requestAccessToken: (override?: Record<string, unknown>) => void;
           };
-          const client = initTokenClient.init({
+          const client = initTokenClient({
             client_id: cloudConfig.googleClientId!.trim(),
             scope: 'https://www.googleapis.com/auth/drive.file',
-            callback: '', // handled via promise below
+            callback: '', // placeholder — overridden below via requestAccessToken callback
           });
 
           // Request token via popup — wrap in promise
           const accessToken = await new Promise<string>((resolve, reject) => {
-            const popup = window.open('about:blank', 'googleAuth', 'width=500,height=600');
-            if (!popup) { reject(new Error('Popup blocked')); return; }
             client.requestAccessToken({
               prompt: '',
               callback: (resp: Record<string, unknown>) => {
-                popup.close();
                 if (resp.error) reject(new Error(String(resp.error)));
                 else resolve(resp.access_token as string);
               },
