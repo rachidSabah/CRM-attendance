@@ -48,7 +48,7 @@ export interface Module {
   code?: string;
   year?: string;
   semester?: string;
-  credits?: number;
+  hours?: number;
   description?: string;
   createdAt: string;
 }

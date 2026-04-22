@@ -945,11 +945,11 @@ function ClassesPage() {
 function ModulesPage() {
   const { modules, setModules, language } = useAppStore();
   return <CrudPage<Module> title={t('modules', language)} items={modules} setItems={setModules} columns={[
-    { key: 'name', label: language === 'fr' ? 'Nom' : 'Name' }, { key: 'code', label: 'Code' }, { key: 'year', label: language === 'fr' ? 'Année' : 'Year' }, { key: 'semester', label: language === 'fr' ? 'Semestre' : 'Semester' }, { key: 'credits', label: language === 'fr' ? 'Crédits' : 'Credits' },
+    { key: 'name', label: language === 'fr' ? 'Nom' : 'Name' }, { key: 'code', label: 'Code' }, { key: 'year', label: language === 'fr' ? 'Année' : 'Year' }, { key: 'semester', label: language === 'fr' ? 'Semestre' : 'Semester' }, { key: 'hours', label: language === 'fr' ? 'Heures' : 'Hours' },
   ]} renderForm={(item, onChange) => (
     <div className="grid gap-4">
       <div className="space-y-2"><Label>{language === 'fr' ? 'Nom du Module' : 'Module Name'} *</Label><Input value={String(item.name || '')} onChange={e => onChange({ ...item, name: e.target.value })} /></div>
-      <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>Code</Label><Input value={String(item.code || '')} onChange={e => onChange({ ...item, code: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Crédits' : 'Credits'}</Label><Input type="number" value={String(item.credits || '')} onChange={e => onChange({ ...item, credits: parseInt(e.target.value) || 0 })} /></div></div>
+      <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>Code</Label><Input value={String(item.code || '')} onChange={e => onChange({ ...item, code: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Heures' : 'Hours'}</Label><Input type="number" value={String(item.hours || '')} onChange={e => onChange({ ...item, hours: parseInt(e.target.value) || 0 })} /></div></div>
       <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Année' : 'Year'}</Label><Input value={String(item.year || '')} onChange={e => onChange({ ...item, year: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Semestre' : 'Semester'}</Label><Input value={String(item.semester || '')} onChange={e => onChange({ ...item, semester: e.target.value })} /></div></div>
       <div className="space-y-2"><Label>Description</Label><Textarea value={String(item.description || '')} onChange={e => onChange({ ...item, description: e.target.value })} rows={2} /></div>
     </div>
