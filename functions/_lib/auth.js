@@ -16,16 +16,14 @@ const EXTERNAL_API = 'https://infohas-attendance-api.rachidelsabah.workers.dev/a
 const PUBLIC_PATHS = [
   '/api/auth/login',
   '/api/change-password',  // Handler validates currentPassword itself
-  '/api/sync/status',
-  '/api/sync/pull',
 ];
 
 export async function validateRequest(request, db) {
   const url = new URL(request.url);
   const path = url.pathname;
 
-  // Public endpoints — no auth needed
-  if (PUBLIC_PATHS.some(p => path.startsWith(p))) {
+  // Public endpoints — no auth needed (exact match to prevent path confusion)
+  if (PUBLIC_PATHS.includes(path)) {
     return { authenticated: true, skipAuth: true };
   }
 
@@ -40,8 +38,7 @@ export async function validateRequest(request, db) {
     return { authenticated: false, error: 'Database not available' };
   }
 
-  // Step 1: Try D1 token lookup — also try matching by Authorization header
-  // directly against any stored token (handles cases where token was refreshed)
+  // Step 1: Try D1 token lookup
   try {
     const result = await db.prepare(
       `SELECT key, data, tenant_id FROM school_settings WHERE key LIKE 'auth_%'`
@@ -78,7 +75,6 @@ export async function validateRequest(request, db) {
   //   - Token was overwritten by a login on another device
   //   - D1 was recently cleared/reset
   try {
-    // Try to verify the token against the external API by calling a protected endpoint
     const extRes = await fetch(`${EXTERNAL_API}/auth/me`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -89,20 +85,34 @@ export async function validateRequest(request, db) {
       if (extData && (extData.user || extData.success)) {
         const extUser = extData.user || {};
 
-        // Sync to D1 for future fast lookups
+        // Sync to D1 for future fast lookups — preserve existing password
         try {
           const tid = extUser.tenant_id || 'default';
           const uname = extUser.username || 'admin';
           const authKey = `auth_${uname}_${tid}`;
+
+          // Read existing D1 record to preserve password and other fields
+          let existingData = {};
+          try {
+            const existing = await db.prepare(
+              'SELECT data FROM school_settings WHERE tenant_id = ? AND key = ?'
+            ).bind(tid, authKey).first();
+            if (existing && existing.data) {
+              try { existingData = JSON.parse(existing.data); } catch {}
+            }
+          } catch {}
+
           const syncData = {
             id: extUser.id || uname,
             username: uname,
             tenantId: tid,
             token: token,
-            fullName: extUser.fullName || extUser.full_name || uname,
-            email: extUser.email || '',
-            role: extUser.role || 'user',
-            is_super_admin: Boolean(extUser.is_super_admin),
+            // Preserve existing password from D1 (don't overwrite with undefined)
+            password: existingData.password || '',
+            fullName: extUser.fullName || extUser.full_name || existingData.fullName || uname,
+            email: extUser.email || existingData.email || '',
+            role: extUser.role || existingData.role || 'user',
+            is_super_admin: Boolean(extUser.is_super_admin || existingData.is_super_admin),
             updatedAt: new Date().toISOString(),
           };
           await db.prepare(

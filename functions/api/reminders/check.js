@@ -249,17 +249,18 @@ async function handleReminderCheck(context) {
       const student = allStudents[record.studentId];
       if (!student) continue;
 
-      const guardianEmail = student.guardianEmail || student.email;
+      const studentName = student.fullName || student.full_name || student.name || 'Student';
+      const guardianEmail = student.guardianEmail;
       if (!guardianEmail || !guardianEmail.includes('@')) { skippedCount++; continue; }
 
       const className = student.className || (student.classId ? allClasses[student.classId]?.name : '') || '';
       const isFr = language === 'fr';
       const subject = isFr
-        ? `[${schoolName}] Absence de ${student.fullName} - ${targetDate}`
-        : `[${schoolName}] Absence of ${student.fullName} - ${targetDate}`;
+        ? `[${schoolName}] Absence de ${studentName} - ${targetDate}`
+        : `[${schoolName}] Absence of ${studentName} - ${targetDate}`;
 
       try {
-        const html = buildAbsenceEmailHtml(student.fullName, className, targetDate, schoolName, language);
+        const html = buildAbsenceEmailHtml(studentName, className, targetDate, schoolName, language);
         await sendBrevoEmail(apiKey, senderEmail, guardianEmail, student.guardianName, subject, html);
 
         // Log reminder
@@ -270,7 +271,7 @@ async function handleReminderCheck(context) {
 
         sentCount++;
       } catch (err) {
-        errors.push({ student: student.fullName, error: err.message });
+        errors.push({ student: studentName, error: err.message });
         await db.prepare(
           `INSERT OR IGNORE INTO reminder_log (tenant_id, student_id, date, reminder_type, recipient_email, status, created_at)
            VALUES (?, ?, ?, 'absence', ?, 'failed', datetime('now'))`
@@ -286,17 +287,18 @@ async function handleReminderCheck(context) {
       const student = allStudents[record.studentId];
       if (!student) continue;
 
-      const guardianEmail = student.guardianEmail || student.email;
+      const studentName = student.fullName || student.full_name || student.name || 'Student';
+      const guardianEmail = student.guardianEmail;
       if (!guardianEmail || !guardianEmail.includes('@')) { skippedCount++; continue; }
 
       const className = student.className || (student.classId ? allClasses[student.classId]?.name : '') || '';
       const isFr = language === 'fr';
       const subject = isFr
-        ? `[${schoolName}] Retard de ${student.fullName} - ${targetDate}`
-        : `[${schoolName}] Late Arrival of ${student.fullName} - ${targetDate}`;
+        ? `[${schoolName}] Retard de ${studentName} - ${targetDate}`
+        : `[${schoolName}] Late Arrival of ${studentName} - ${targetDate}`;
 
       try {
-        const html = buildLateEmailHtml(student.fullName, className, targetDate, schoolName, language);
+        const html = buildLateEmailHtml(studentName, className, targetDate, schoolName, language);
         await sendBrevoEmail(apiKey, senderEmail, guardianEmail, student.guardianName, subject, html);
 
         await db.prepare(
@@ -306,7 +308,7 @@ async function handleReminderCheck(context) {
 
         sentCount++;
       } catch (err) {
-        errors.push({ student: student.fullName, error: err.message });
+        errors.push({ student: studentName, error: err.message });
         await db.prepare(
           `INSERT OR IGNORE INTO reminder_log (tenant_id, student_id, date, reminder_type, recipient_email, status, created_at)
            VALUES (?, ?, ?, 'late', ?, 'failed', datetime('now'))`

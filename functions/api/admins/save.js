@@ -26,6 +26,14 @@ async function handleSave(context) {
     );
   }
 
+  // RBAC check: only super_admins can manage admin users
+  if (!auth.user?.is_super_admin) {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Super admin access required' }),
+      { status: 403, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+    );
+  }
+
   try {
     const body = await context.request.json();
     const { action, tenant_id, admin } = body;
@@ -96,7 +104,7 @@ async function handleSave(context) {
         role: admin.role || existingData.role || 'admin',
         department: admin.department || existingData.department || '',
         tenantId: admin.tenantId || tid,
-        is_super_admin: (admin.role === 'super_admin') ? true : Boolean(existingData.is_super_admin),
+        is_super_admin: admin.role === 'super_admin',
         updatedAt: new Date().toISOString(),
       };
 

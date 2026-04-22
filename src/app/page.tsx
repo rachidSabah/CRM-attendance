@@ -752,7 +752,7 @@ function StudentsPage() {
   const handleSave = () => {
     if (!form.fullName || !form.studentId) { toast.error('Name and Student ID are required'); return; }
     if (editing) { setStudents(students.map(s => s.id === editing.id ? { ...s, ...form, className: classes.find(c => c.id === form.classId)?.name } : s)); toast.success(language === 'fr' ? 'Étudiant modifié' : 'Student updated'); }
-    else { setStudents([...students, { ...form, id: genId(), className: classes.find(c => c.id === form.classId)?.name, createdAt: new Date().toISOString() }]); toast.success(language === 'fr' ? 'Étudiant ajouté' : 'Student added'); }
+    else { setStudents([...students, { ...form, id: genId(), className: classes.find(c => c.id === form.classId)?.name, academicYear: classes.find(c => c.id === form.classId)?.academicYear || '', createdAt: new Date().toISOString() }]); toast.success(language === 'fr' ? 'Étudiant ajouté' : 'Student added'); }
     setDialogOpen(false);
   };
   const handleDelete = (id: string) => {
@@ -833,7 +833,7 @@ function StudentsPage() {
             <Select value={batchClassId} onValueChange={setBatchClassId}><SelectTrigger className="w-40 h-8 text-xs"><SelectValue placeholder={language === 'fr' ? 'Assigner classe...' : 'Assign class...'} /></SelectTrigger><SelectContent>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
             <Button variant="outline" size="sm" onClick={handleBatchAssign} disabled={!batchClassId}><GraduationCap className="h-4 w-4 mr-1" />{language === 'fr' ? 'Assigner' : 'Assign'}</Button>
             <Button variant="outline" size="sm" onClick={() => { const ex = students.filter(s => selectedIds.has(s.id)); exportUtils.exportStudentsCSV(ex, classes); toast.success('Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
-            <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => { if (confirm(`Delete ${selectedIds.size} students?`)) { setStudents(students.filter(s => !selectedIds.has(s.id))); setSelectedIds(new Set()); toast.success('Deleted'); } }}><Trash2 className="h-4 w-4 mr-1" />{t('delete', language)}</Button>
+            <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => { if (confirm(`Delete ${selectedIds.size} students?`)) { const st = useAppStore.getState(); st.setAttendance(st.attendance.filter(a => !selectedIds.has(a.studentId))); st.setGrades(st.grades.filter(g => !selectedIds.has(g.studentId))); st.setBehavior(st.behavior.filter(b => !selectedIds.has(b.studentId))); st.setIncidents(st.incidents.filter(i => !selectedIds.has(i.studentId))); st.setExamGrades(st.examGrades.filter(eg => !selectedIds.has(eg.studentId))); setStudents(students.filter(s => !selectedIds.has(s.id))); setSelectedIds(new Set()); toast.success(`${selectedIds.size} deleted`); } }}><Trash2 className="h-4 w-4 mr-1" />{t('delete', language)}</Button>
             <Button variant="ghost" size="sm" onClick={() => { setSelectedIds(new Set()); setMultiSelect(false); }}><X className="h-4 w-4" /></Button>
           </div>
         </div>
@@ -986,7 +986,150 @@ function ClassesPage() {
 // ==================== MODULES PAGE ====================
 function ModulesPage() {
   const { modules, setModules, language } = useAppStore();
-  return <CrudPage<Module> title={t('modules', language)} items={modules} setItems={setModules} columns={[
+  const [importing, setImporting] = useState(false);
+  const [importPreview, setImportPreview] = useState<Array<Record<string, unknown>>>([]);
+  const [importSource, setImportSource] = useState<'csv' | 'pdf' | null>(null);
+
+  const parseModuleCSV = (text: string): Array<Record<string, unknown>> => {
+    const raw = text.replace(/^\uFEFF/, '');
+    const lines = raw.split('\n').filter(l => l.trim());
+    if (lines.length < 2) return [];
+    const parseRow = (row: string): string[] => {
+      const fields: string[] = []; let current = ''; let inQuotes = false;
+      for (let i = 0; i < row.length; i++) {
+        const ch = row[i];
+        if (inQuotes) { if (ch === '"' && row[i + 1] === '"') { current += '"'; i++; } else if (ch === '"') inQuotes = false; else current += ch; }
+        else { if (ch === '"') inQuotes = true; else if (ch === ',') { fields.push(current.trim()); current = ''; } else current += ch; }
+      }
+      fields.push(current.trim());
+      return fields;
+    };
+    const header = parseRow(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const results: Array<Record<string, unknown>> = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseRow(lines[i]);
+      if (cols.length < 2) continue;
+      const row: Record<string, unknown> = {};
+      header.forEach((h, idx) => { row[h] = cols[idx] || ''; });
+      const name = row['name'] || row['module'] || row['modulename'] || row['title'] || cols[0] || '';
+      const code = row['code'] || row['modulecode'] || row['codemodule'] || '';
+      const hours = parseFloat(String(row['hours'] || row['heures'] || row['credit'] || row['credits'] || row['volume'] || row['cm'] || '0')) || 0;
+      const year = row['year'] || row['annee'] || row['niveau'] || row['level'] || row['grade'] || '';
+      const semester = row['semester'] || row['semestre'] || row['sem'] || '';
+      const description = row['description'] || row['desc'] || row['objectifs'] || '';
+      if (!name) continue;
+      results.push({ name, code, hours, year, semester, description });
+    }
+    return results;
+  };
+
+  const extractModulesFromText = (text: string): Array<Record<string, unknown>> => {
+    const results: Array<Record<string, unknown>> = [];
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (line.includes('|')) {
+        const parts = line.split('|').map(p => p.trim()).filter(Boolean);
+        if (parts.length >= 2) {
+          const name = parts.find(p => !/^\d/.test(p) && p.length > 2) || parts[1];
+          const code = parts[0]?.replace(/[^A-Za-z0-9]/g, '') || '';
+          const hours = parseFloat(parts.find(p => /^\d+(\.\d+)?$/.test(p)) || '0') || 0;
+          if (name && name.length > 1) { results.push({ name, code, hours, year: '', semester: '', description: '' }); continue; }
+        }
+      }
+    }
+    if (results.length === 0) {
+      const moduleRegex = /^([A-Za-z]{2,5}\d{2,4}[-\s]*)?([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\s\-&']+?)(?:\s+(\d+(?:\.\d+)?)\s*(?:h|heures|hours|cr|credits?|cm|td|tp)?)/i;
+      for (const line of lines) {
+        const match = line.match(moduleRegex);
+        if (match && match[2]) {
+          results.push({ name: match[2].trim(), code: (match[1] || '').replace(/[-\s]+$/, '').trim(), hours: parseFloat(match[3]) || 0, year: '', semester: '', description: '' });
+        }
+      }
+    }
+    if (results.length === 0) {
+      for (const line of lines) {
+        if (line.length < 3 || line.length > 200) continue;
+        if (/^(module|code|nom|intitul|ann|semestre|total|programme|#|page)/i.test(line)) continue;
+        const hoursMatch = line.match(/(\d+(?:\.\d+)?)\s*(?:h|heures|hours|cr|cm)/i);
+        const name = line.replace(/\d+\s*(?:h|heures|hours|cr|cm|td|tp).*$/i, '').replace(/[-|]/g, '').trim();
+        if (name.length > 2) { results.push({ name, code: '', hours: hoursMatch ? parseFloat(hoursMatch[1]) : 0, year: '', semester: '', description: '' }); }
+      }
+    }
+    return results;
+  };
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setImporting(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => { const text = ev.target?.result as string; setImportSource('csv'); setImportPreview(parseModuleCSV(text)); setImporting(false); };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleImportPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setImporting(true); setImportSource('pdf');
+    try {
+      const pdfjsLib = await import('pdfjs-dist' as unknown as Promise<typeof import('pdfjs-dist')>);
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const itemsByY = new Map<number, Array<{ x: number; text: string }>>();
+        for (const item of content.items) { if ('str' in item && item.str) { const y = Math.round(item.transform[5]); const x = item.transform[4]; if (!itemsByY.has(y)) itemsByY.set(y, []); itemsByY.get(y)!.push({ x, text: item.str }); } }
+        const sortedYs = Array.from(itemsByY.keys()).sort((a, b) => b - a);
+        for (const y of sortedYs) { const lineItems = itemsByY.get(y)!.sort((a, b) => a.x - b.x); fullText += lineItems.map(i => i.text).join(' ') + '\n'; }
+      }
+      setImportPreview(extractModulesFromText(fullText));
+    } catch {
+      try { const text = await file.text(); setImportPreview(extractModulesFromText(text)); } catch { toast.error(language === 'fr' ? 'Impossible de lire le fichier PDF' : 'Unable to read PDF file'); }
+    }
+    setImporting(false);
+    e.target.value = '';
+  };
+
+  const confirmImport = () => {
+    if (importPreview.length === 0) return;
+    const newModules: Module[] = importPreview.map(m => ({ id: genId(), name: String(m.name || ''), code: String(m.code || ''), hours: Number(m.hours) || 0, year: String(m.year || ''), semester: String(m.semester || ''), description: String(m.description || ''), createdAt: new Date().toISOString() }));
+    const existingKeys = new Set(modules.map(m => `${m.code || ''}_${m.name || ''}`.toLowerCase()));
+    const unique = newModules.filter(m => !existingKeys.has(`${m.code || ''}_${m.name || ''}`.toLowerCase()));
+    setModules([...modules, ...unique]);
+    toast.success(`${unique.length} ${language === 'fr' ? 'modules import\u00e9s' : 'modules imported'}${newModules.length - unique.length > 0 ? ` (${newModules.length - unique.length} ${language === 'fr' ? 'doublons ignor\u00e9s' : 'duplicates skipped'})` : ''}`);
+    setImportPreview([]); setImportSource(null);
+  };
+
+  const cancelImport = () => { setImportPreview([]); setImportSource(null); };
+
+  return (
+    <div className="space-y-4">
+      <Dialog open={importPreview.length > 0} onOpenChange={(open) => { if (!open) cancelImport(); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{language === 'fr' ? 'Aper\u00e7u de l\'import' : 'Import Preview'} &mdash; {importPreview.length} {language === 'fr' ? 'modules d\u00e9tect\u00e9s' : 'modules detected'}</DialogTitle>
+            <DialogDescription>{importSource === 'csv' ? 'CSV' : 'PDF/OCR'} &mdash; {language === 'fr' ? 'V\u00e9rifiez les donn\u00e9es avant de confirmer' : 'Review data before confirming'}</DialogDescription>
+          </DialogHeader>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead><tr className="border-b bg-muted/50"><th className="px-2 py-1.5 text-left">{language === 'fr' ? 'Nom' : 'Name'}</th><th className="px-2 py-1.5 text-left">Code</th><th className="px-2 py-1.5 text-left">{language === 'fr' ? 'Heures' : 'Hours'}</th><th className="px-2 py-1.5 text-left">{language === 'fr' ? 'Ann\u00e9e' : 'Year'}</th><th className="px-2 py-1.5 text-left">{language === 'fr' ? 'Semestre' : 'Semester'}</th><th className="px-2 py-1.5 text-left">Description</th></tr></thead>
+              <tbody>{importPreview.map((m, i) => (<tr key={i} className="border-b hover:bg-muted/30"><td className="px-2 py-1.5 font-medium">{String(m.name || '-')}</td><td className="px-2 py-1.5 text-muted-foreground">{String(m.code || '-')}</td><td className="px-2 py-1.5">{String(m.hours || 0)}</td><td className="px-2 py-1.5">{String(m.year || '-')}</td><td className="px-2 py-1.5">{String(m.semester || '-')}</td><td className="px-2 py-1.5 text-xs text-muted-foreground max-w-[200px] truncate">{String(m.description || '-')}</td></tr>))}</tbody>
+            </table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={cancelImport}>{t('cancel', language)}</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={confirmImport}><Upload className="h-4 w-4 mr-1" />{language === 'fr' ? 'Confirmer l\'import' : 'Confirm Import'} ({importPreview.length})</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <div className="flex gap-2 flex-wrap">
+        <label className="cursor-pointer"><input type="file" accept=".csv,.txt" className="hidden" onChange={handleImportCSV} /><Button variant="outline" size="sm" className="border-blue-400 text-blue-600" asChild disabled={importing}><span><Upload className="h-4 w-4 mr-1" />CSV Import</span></Button></label>
+        <label className="cursor-pointer"><input type="file" accept=".pdf" className="hidden" onChange={handleImportPDF} /><Button variant="outline" size="sm" className="border-purple-400 text-purple-600" asChild disabled={importing}><span><FileText className="h-4 w-4 mr-1" />PDF Import (OCR)</span></Button></label>
+        {importing && <span className="text-sm text-muted-foreground flex items-center gap-1"><RefreshCw className="h-3 w-3 animate-spin" />{language === 'fr' ? 'Traitement en cours...' : 'Processing...'}</span>}
+      </div>
+      <CrudPage<Module> title={t('modules', language)} items={modules} setItems={setModules} columns={[
     { key: 'name', label: language === 'fr' ? 'Nom' : 'Name' }, { key: 'code', label: 'Code' }, { key: 'year', label: language === 'fr' ? 'Année' : 'Year' }, { key: 'semester', label: language === 'fr' ? 'Semestre' : 'Semester' }, { key: 'hours', label: language === 'fr' ? 'Heures' : 'Hours' },
   ]} renderForm={(item, onChange) => (
     <div className="grid gap-4">
@@ -2132,7 +2275,7 @@ function BehaviorPage() {
       const s = students.find(st => st.id === b.studentId);
       if (!s) return;
       const d = map.get(b.studentId) || { pos: 0, neg: 0, name: s.fullName };
-      if (b.type === 'positive') d.pos += b.points || 1; else d.neg += b.points || 1;
+      if (b.type === 'positive') d.pos += (b.points ?? 1); else d.neg += (b.points ?? 1);
       map.set(b.studentId, d);
     });
     return Array.from(map.entries()).map(([id, d]) => ({ id, ...d, total: d.pos + d.neg })).sort((a, b) => b.total - a.total);
@@ -4571,7 +4714,7 @@ function CloudSyncSettings() {
       if (Array.isArray(result.data.attendance)) { setAttendance(result.data.attendance as AttendanceRecord[]); localStorage.setItem('attendance_records', JSON.stringify(result.data.attendance)); }
       if (Array.isArray(result.data.grades)) { setGrades(result.data.grades as Grade[]); localStorage.setItem('attendance_grades', JSON.stringify(result.data.grades)); }
       if (Array.isArray(result.data.tasks)) { setTasks(result.data.tasks as Task[]); localStorage.setItem('attendance_tasks', JSON.stringify(result.data.tasks)); }
-      if (Array.isArray(result.data.schoolInfo)) { setSchoolInfo(result.data.schoolInfo as SchoolInfo); localStorage.setItem('attendance_school_info', JSON.stringify(result.data.schoolInfo)); }
+      if (result.data.schoolInfo && typeof result.data.schoolInfo === 'object' && !Array.isArray(result.data.schoolInfo)) { setSchoolInfo(result.data.schoolInfo as SchoolInfo); localStorage.setItem('attendance_school_info', JSON.stringify(result.data.schoolInfo)); }
       setLastSyncResult(`${language === 'fr' ? 'Données récupérées du cloud' : 'Data pulled from cloud'}`);
       toast.success(language === 'fr' ? 'Données chargées depuis le cloud' : 'Data loaded from cloud');
     } else {

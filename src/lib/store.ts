@@ -139,6 +139,8 @@ function scheduleApiSync() {
 
 // ========== D1 Cloud Sync System ==========
 function scheduleD1Push() {
+  // Don't push while loading from API — prevents overwriting cloud data with stale local data
+  if (_loadingFromApi) return;
   if (_d1PushTimer) clearTimeout(_d1PushTimer);
   _d1PushTimer = setTimeout(pushToD1, 5000); // 5 second debounce
 }
@@ -484,9 +486,11 @@ export const useAppStore = create<AppState>((set) => ({
           if (cloudData?.success && cloudData.data) {
             const cd = cloudData.data;
             const currentState = useAppStore.getState();
+            // Merge: prefer local data (user may have made intentional deletions)
+            // Only use cloud data if local is empty (fresh install or purged cache)
             const mergeArray = (local: unknown[], cloudKey: string) => {
               const cloud = cd[cloudKey];
-              if (Array.isArray(cloud) && cloud.length > local.length) return cloud;
+              if (Array.isArray(cloud) && local.length === 0) return cloud;
               return local;
             };
             // Merge ALL entity types from cloud — cloud wins if larger
@@ -508,8 +512,8 @@ export const useAppStore = create<AppState>((set) => ({
               examGrades: mergeArray(currentState.examGrades, 'examGrades') as ExamGrade[],
               curriculum: mergeArray(currentState.curriculum, 'curriculum') as CurriculumItem[],
             });
-            // Merge school info from cloud
-            if (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(cd.schoolInfo).length > Object.keys(currentState.schoolInfo).length) {
+            // Merge school info — prefer local, use cloud only if local is empty
+            if (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(currentState.schoolInfo).length === 0) {
               set({ schoolInfo: cd.schoolInfo as SchoolInfo });
             }
             updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });

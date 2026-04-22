@@ -32,13 +32,13 @@ function addHeader(doc: jsPDF, opts: PdfOptions) {
         const mimeMatch = parts[0].match(/data:image\/(png|jpeg|jpg|gif|webp)/i);
         if (mimeMatch) {
           const fmt = mimeMatch[1].toUpperCase();
-          imgFormat = fmt === 'JPG' ? 'JPEG' : (fmt === 'PNG' ? 'PNG' : 'JPEG');
+          imgFormat = fmt === 'JPG' ? 'JPEG' : (fmt === 'PNG' ? 'PNG' : '');
         }
       } else {
         imgData = logoStr;
       }
 
-      doc.addImage(imgData, imgFormat, 14, yPos, 15, 15);
+      if (imgData && imgFormat) doc.addImage(imgData, imgFormat, 14, yPos, 15, 15);
     } catch (e) {
       // Logo failed, skip
     }
@@ -455,7 +455,7 @@ export function exportFullReportPDF(
     margin: { left: 14, right: 14 },
   });
 
-  yPos = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 12;
+  yPos = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 32) + 12;
 
   // ---- ATTENDANCE SUMMARY ----
   const present = allData.attendance.filter(r => r.status === 'present').length;
@@ -563,12 +563,12 @@ export function exportSchedulePDF(
         const mimeMatch = parts[0].match(/data:image\/(png|jpeg|jpg|gif|webp)/i);
         if (mimeMatch) {
           const fmt = mimeMatch[1].toUpperCase();
-          imgFormat = fmt === 'JPG' ? 'JPEG' : (fmt === 'PNG' ? 'PNG' : 'JPEG');
+          imgFormat = fmt === 'JPG' ? 'JPEG' : (fmt === 'PNG' ? 'PNG' : '');
         }
       } else {
         imgData = logoStr;
       }
-      doc.addImage(imgData, imgFormat, 14, yPos, 12, 12);
+      if (imgData && imgFormat) doc.addImage(imgData, imgFormat, 14, yPos, 12, 12);
     } catch {}
   }
   const textX = schoolInfo.logo ? 28 : 14;
@@ -686,7 +686,7 @@ export function exportAllSchedulesPDF(
         const m = parts[0].match(/data:image\/(png|jpeg|jpg|gif|webp)/i);
         if (m) { const f = m[1].toUpperCase(); imgFormat = f === 'JPG' ? 'JPEG' : (f === 'PNG' ? 'PNG' : 'JPEG'); }
       } else { imgData = logoStr; }
-      doc.addImage(imgData, imgFormat, 14, yPos, 15, 15);
+      if (imgData && imgFormat) doc.addImage(imgData, imgFormat, 14, yPos, 15, 15);
     } catch {}
   }
   const textX = schoolInfo.logo ? 32 : 14;
@@ -761,7 +761,7 @@ export function exportAllSchedulesPDF(
       },
     });
 
-    yPos = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
+    yPos = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 20) + 10;
   });
 
   // Footer on all pages

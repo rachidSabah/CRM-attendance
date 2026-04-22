@@ -1,7 +1,11 @@
 /**
  * GET /api/sync/pull?tenant_id=default
  * Pull all entity data from D1 to frontend
+ * REQUIRES AUTHENTICATION
  */
+
+import { validateRequest } from '../../_lib/auth.js';
+import { getCorsHeaders } from '../../_lib/cors.js';
 
 const ENTITY_TYPE_MAP = {
   students: 'students',
@@ -23,9 +27,18 @@ const ENTITY_TYPE_MAP = {
 };
 
 async function handlePull(context) {
+  // Auth check — pull requires authentication
+  const auth = await validateRequest(context.request, context.env.DB);
+  if (!auth.authenticated) {
+    return new Response(
+      JSON.stringify({ success: false, error: auth.error }),
+      { status: 401, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+    );
+  }
+
   try {
     const url = new URL(context.request.url);
-    const tenantId = url.searchParams.get('tenant_id') || 'default';
+    const tenantId = url.searchParams.get('tenant_id') || auth.user?.tenantId || 'default';
     const db = context.env.DB;
 
     const result = { success: true, tenant_id: tenantId, data: {}, synced_at: new Date().toISOString() };
@@ -70,22 +83,21 @@ async function handlePull(context) {
 
     return new Response(
       JSON.stringify(result),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { status: 200, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   } catch (err) {
     console.error('[sync/pull] Error:', err);
     return new Response(
-      JSON.stringify({ success: false, error: err.message }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      JSON.stringify({ success: false, error: 'Internal server error' }),
+      { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   }
 }
 
-export async function onRequest(context) {
-  return handlePull(context);
+export async function onRequestOptions(context) {
+  return new Response(null, { headers: getCorsHeaders(context.request) });
 }
 
 export async function onRequestGet(context) {
   return handlePull(context);
 }
-

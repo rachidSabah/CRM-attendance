@@ -104,7 +104,7 @@ async function handleTrigger(context) {
         `INSERT INTO sync_log (tenant_id, operation, record_count, status, details) VALUES (?, 'pull', ?, 'success', ?)`
       ).bind(tenantId, Object.values(data).reduce((a, v) => a + (Array.isArray(v) ? v.length : 1), 0), 'Manual trigger pull').run();
 
-      results.operations.push({ operation: 'pull', count: Object.keys(data).length, status: 'success' });
+      results.operations.push({ operation: 'pull', count: Object.values(data).reduce((a, v) => a + (Array.isArray(v) ? v.length : 1), 0), status: 'success' });
       results.data = data;
     }
 

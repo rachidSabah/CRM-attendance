@@ -99,28 +99,40 @@ async function handlePush(context) {
         const username = String(admin.username || '').trim();
         if (!username) continue;
         const authKey = `auth_${username}_${tenantId}`;
-        // Build the user record in the same format the login endpoint reads
+
+        // Read existing D1 record to preserve token and password
+        let existingData = {};
+        try {
+          const existing = await db.prepare(
+            `SELECT data FROM school_settings WHERE tenant_id = ? AND key = ?`
+          ).bind(tenantId, authKey).first();
+          if (existing && existing.data) {
+            try { existingData = JSON.parse(existing.data); } catch {}
+          }
+        } catch {}
+
+        // Build the user record — preserve existing token/password
         const authData = {
-          id: admin.id || username,
+          id: admin.id || existingData.id || username,
           username: username,
-          password: admin.password || '',
-          fullName: admin.fullName || admin.name || username,
-          email: admin.email || '',
-          role: admin.role || 'admin',
-          department: admin.department || '',
-          tenantId: admin.tenantId || tenantId,
-          is_super_admin: admin.role === 'super_admin' ? true : false,
+          // Preserve existing password/token if admin body doesn't have them
+          password: admin.password || existingData.password || '',
+          token: existingData.token || '',
+          fullName: admin.fullName || admin.name || existingData.fullName || username,
+          email: admin.email || existingData.email || '',
+          role: admin.role || existingData.role || 'admin',
+          department: admin.department || existingData.department || '',
+          tenantId: admin.tenantId || existingData.tenantId || tenantId,
+          is_super_admin: admin.role === 'super_admin' ? true : Boolean(existingData.is_super_admin),
           updatedAt: new Date().toISOString(),
         };
-        // Only write if there's a password (skip entries without credentials)
-        if (authData.password) {
-          await db.prepare(
-            `INSERT INTO school_settings (id, tenant_id, key, data, updated_at)
-             VALUES (?, ?, ?, ?, datetime('now'))
-             ON CONFLICT(tenant_id, key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
-          ).bind(authKey, tenantId, authKey, JSON.stringify(authData)).run();
-          totalUpserted++;
-        }
+
+        await db.prepare(
+          `INSERT INTO school_settings (id, tenant_id, key, data, updated_at)
+           VALUES (?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(tenant_id, key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
+        ).bind(authKey, tenantId, authKey, JSON.stringify(authData)).run();
+        totalUpserted++;
       }
     }
 
