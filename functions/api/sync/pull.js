@@ -43,16 +43,34 @@ async function handlePull(context) {
 
     const result = { success: true, tenant_id: tenantId, data: {}, synced_at: new Date().toISOString() };
 
-    // Pull school settings
+    // Pull school settings (including admin user records without sensitive fields)
     const settings = await db.prepare(
       `SELECT key, data FROM school_settings WHERE tenant_id = ?`
     ).bind(tenantId).all();
     if (settings.results) {
+      const admins = [];
       for (const row of settings.results) {
         if (row.key === 'school_info') {
           try { result.data.schoolInfo = JSON.parse(row.data); } catch {}
+        } else if (row.key.startsWith('auth_')) {
+          // Include admin records for frontend sync (strip password & token)
+          try {
+            const userData = JSON.parse(row.data);
+            admins.push({
+              id: userData.id || userData.username,
+              username: userData.username,
+              fullName: userData.fullName || userData.full_name || userData.username,
+              name: userData.fullName || userData.full_name || userData.username,
+              email: userData.email || '',
+              role: userData.role || 'admin',
+              department: userData.department || '',
+              tenantId: userData.tenantId || tenantId,
+              is_super_admin: Boolean(userData.is_super_admin),
+            });
+          } catch {}
         }
       }
+      if (admins.length > 0) result.data.admins = admins;
     }
 
     // Pull entities by type

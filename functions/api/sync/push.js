@@ -75,25 +75,34 @@ async function handlePush(context) {
     // Sync admin users to school_settings so login endpoint can authenticate them
     // Key format: auth_{username}_{tenantId} — matches what /api/auth/login expects
     if (Array.isArray(body.admins)) {
+      // CRITICAL: Never delete the currently authenticated user's auth record.
+      // If admins array is empty (e.g., fresh browser/incognito), skip cleanup entirely.
+      const safeToDelete = body.admins.length > 0 && auth.user?.username;
+
       // First, clean up any stale auth_ entries that no longer exist in the admins list
-      try {
-        const existingAuths = await db.prepare(
-          `SELECT key FROM school_settings WHERE tenant_id = ? AND key LIKE 'auth_%'`
-        ).bind(tenantId).all();
-        if (existingAuths && existingAuths.results) {
-          const currentAdminUsernames = new Set(
-            body.admins.map(a => `auth_${String(a.username || '').trim()}_${tenantId}`)
-          );
-          for (const row of existingAuths.results) {
-            if (!currentAdminUsernames.has(row.key)) {
-              await db.prepare(
-                `DELETE FROM school_settings WHERE tenant_id = ? AND key = ?`
-              ).bind(tenantId, row.key).run();
-              totalUpserted++;
+      // (only when admins array is non-empty and the authenticated user is known)
+      if (safeToDelete) {
+        try {
+          const existingAuths = await db.prepare(
+            `SELECT key FROM school_settings WHERE tenant_id = ? AND key LIKE 'auth_%'`
+          ).bind(tenantId).all();
+          if (existingAuths && existingAuths.results) {
+            const currentAdminUsernames = new Set(
+              body.admins.map(a => `auth_${String(a.username || '').trim()}_${tenantId}`)
+            );
+            // Always protect the currently authenticated user's entry
+            const protectedKey = `auth_${auth.user.username}_${auth.user.tenantId || tenantId}`;
+            for (const row of existingAuths.results) {
+              if (!currentAdminUsernames.has(row.key) && row.key !== protectedKey) {
+                await db.prepare(
+                  `DELETE FROM school_settings WHERE tenant_id = ? AND key = ?`
+                ).bind(tenantId, row.key).run();
+                totalUpserted++;
+              }
             }
           }
-        }
-      } catch {}
+        } catch {}
+      }
 
       for (const admin of body.admins) {
         const username = String(admin.username || '').trim();

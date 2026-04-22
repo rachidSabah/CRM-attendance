@@ -349,8 +349,6 @@ export const useAppStore = create<AppState>((set) => ({
 
   login: async (username, password, slug) => {
     try {
-      // Use local /api/auth/login which tries external API first, then D1 fallback
-      // This ensures password changes (saved to D1) are properly recognized on next login
       const loginData: Record<string, string> = { username, password };
       if (slug) loginData.slug = slug;
       const res = await fetch('/api/auth/login', {
@@ -364,8 +362,8 @@ export const useAppStore = create<AppState>((set) => ({
         const token = result.token as string;
         const user = result.user as Record<string, unknown>;
         if (token) setApiToken(token);
-        _lastPull401Time = 0; // Reset cooldown on successful login
-        _loadingFromApi = false; // Ensure push is not blocked
+        _lastPull401Time = 0;
+        _loadingFromApi = false;
         const currentUser: User = {
           id: String(user.id || ''),
           username: String(user.username || ''),
@@ -384,8 +382,8 @@ export const useAppStore = create<AppState>((set) => ({
           tenantId: currentUser.tenantId,
           isSuperAdmin: currentUser.is_super_admin || false,
         }));
-        // Push current state to D1 after login to ensure cloud is in sync
-        setTimeout(() => { pushToD1(); }, 1500);
+        // CRITICAL: Load data from D1 after login so incognito/new sessions get persisted data
+        setTimeout(() => { useAppStore.getState().loadAllData(); }, 300);
         return true;
       }
       return false;
@@ -438,7 +436,7 @@ export const useAppStore = create<AppState>((set) => ({
   },
   setAuditLog: (logs) => { set({ auditLog: logs }); localStorage.setItem('attendance_audit_log', JSON.stringify(logs)); },
   setSavedSchedules: (s) => { set({ savedSchedules: s }); localStorage.setItem('attendance_saved_schedules', JSON.stringify(s)); scheduleApiSync(); },
-  setAdmins: (a) => { set({ admins: a }); localStorage.setItem('attendance_admins', JSON.stringify(a)); },
+  setAdmins: (a) => { set({ admins: a }); localStorage.setItem('attendance_admins', JSON.stringify(a)); scheduleD1Push(); },
   purgeCache: () => {
     const keep = ['attendance_auth', 'attendance_primary_color'];
     const keys = Object.keys(localStorage);
@@ -503,6 +501,15 @@ export const useAppStore = create<AppState>((set) => ({
           if (!cloudRes.ok) {
             if (cloudRes.status === 401) {
               _lastPull401Time = Date.now();
+              // If we had a saved token, it's stale/invalid — force re-login
+              if (token && typeof window !== 'undefined') {
+                console.warn('[store] Saved token rejected by D1 (401), forcing re-login');
+                setApiToken(null);
+                localStorage.removeItem('api_token');
+                localStorage.removeItem('attendance_auth');
+                set({ currentUser: null, isAuthenticated: false });
+                return; // Stop loading — user will see login screen
+              }
             }
           } else {
             const cloudData = await cloudRes.json();
@@ -552,6 +559,12 @@ export const useAppStore = create<AppState>((set) => ({
               };
               set(merged);
 
+              // Populate admins from cloud (stripped of passwords/tokens by server)
+              if (Array.isArray(cd.admins) && cd.admins.length > 0) {
+                set({ admins: cd.admins as Record<string, unknown>[] });
+                localStorage.setItem('attendance_admins', JSON.stringify(cd.admins));
+              }
+
               // Also persist merged data to localStorage so it's available on next load
               localStorage.setItem('attendance_students', JSON.stringify(merged.students));
               localStorage.setItem('attendance_classes', JSON.stringify(merged.classes));
@@ -586,13 +599,9 @@ export const useAppStore = create<AppState>((set) => ({
     } catch (e) {
       // Silently handle errors during data load
     } finally {
-      // Re-enable API sync after loading is complete
       _loadingFromApi = false;
-      // After loading, push current state to D1 to ensure it's up to date
-      // This syncs any data that was only in localStorage to D1
-      if (typeof window !== 'undefined' && localStorage.getItem('api_token')) {
-        setTimeout(() => { pushToD1(); }, 2000);
-      }
+      // DO NOT auto-push after load — the push.js admin cleanup can delete tokens.
+      // Only push when the user makes actual data changes (via setStudents, etc.)
     }
   },
 }));
