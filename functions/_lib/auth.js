@@ -40,7 +40,8 @@ export async function validateRequest(request, db) {
     return { authenticated: false, error: 'Database not available' };
   }
 
-  // Step 1: Try D1 token lookup
+  // Step 1: Try D1 token lookup — also try matching by Authorization header
+  // directly against any stored token (handles cases where token was refreshed)
   try {
     const result = await db.prepare(
       `SELECT key, data, tenant_id FROM school_settings WHERE key LIKE 'auth_%'`

@@ -309,15 +309,15 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden p-0">
-        <div className="flex items-center gap-4 p-4 border-b bg-muted/30">
-          <div className="w-14 h-14 rounded-full flex items-center justify-center text-2xl shrink-0 overflow-hidden bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600">
+      <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] overflow-hidden p-0 sm:p-0">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 border-b bg-muted/30">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center text-xl sm:text-2xl shrink-0 overflow-hidden bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600">
             {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" /> : student.fullName.charAt(0)}
           </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-lg truncate">{student.fullName}</h3>
-            <p className="text-sm text-muted-foreground">{student.studentId} • {studentClass?.name || '-'}</p>
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
+          <div className="flex-1 min-w-0 w-full">
+            <h3 className="font-bold text-base sm:text-lg truncate">{student.fullName}</h3>
+            <p className="text-xs sm:text-sm text-muted-foreground">{student.studentId} • {studentClass?.name || '-'}</p>
+            <div className="flex flex-wrap gap-1 mt-1">
               <Badge variant="secondary" className={statusColor}>{student.status}</Badge>
               <Badge variant="secondary">{student.academicYear || '-'}</Badge>
               {curStreak > 0 && <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">🔥 {curStreak}</Badge>}
@@ -326,95 +326,95 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
               {totalBp !== 0 && <Badge className={totalBp > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}>{totalBp > 0 ? '+' : ''}{totalBp} pts</Badge>}
             </div>
           </div>
-          <div className="flex gap-1.5 shrink-0">
-            <Button variant="outline" size="sm" onClick={handleReport}><FileText className="h-4 w-4 mr-1" />{t('report', language) || 'Report'}</Button>
-            <Button variant="outline" size="sm" onClick={handleGenerateCard}><IdCard className="h-4 w-4 mr-1" />{t('generate_card', language) || 'Card'}</Button>
+          <div className="flex gap-1.5 shrink-0 w-full sm:w-auto">
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleReport}><FileText className="h-4 w-4 mr-1" />{t('report', language) || 'Report'}</Button>
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleGenerateCard}><IdCard className="h-4 w-4 mr-1" />{t('generate_card', language) || 'Card'}</Button>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 px-4 py-3 text-sm border-b">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm border-b">
           <div><span className="text-muted-foreground">{t('guardian', language)}:</span> <span className="font-medium ml-1">{student.guardianName || '-'}</span></div>
           <div><span className="text-muted-foreground">{t('phone', language)}:</span> <span className="font-medium ml-1">{student.guardianPhone || '-'}</span></div>
           <div><span className="text-muted-foreground">Email:</span> <span className="font-medium ml-1 break-all">{student.email || '-'}</span></div>
           <div><span className="text-muted-foreground">{language === 'fr' ? 'Adresse' : 'Address'}:</span> <span className="font-medium ml-1">{student.address || '-'}</span></div>
         </div>
 
-        <Tabs value={tab} onValueChange={setTab} className="px-4">
+        <Tabs value={tab} onValueChange={setTab} className="px-3 sm:px-4">
           <TabsList className="w-full grid grid-cols-5">
-            <TabsTrigger value="attendance">{t('attendance', language)}</TabsTrigger>
-            <TabsTrigger value="trends">{t('trends', language) || 'Trends'}</TabsTrigger>
-            <TabsTrigger value="grades">{t('grades', language)}</TabsTrigger>
-            <TabsTrigger value="behavior">{t('behavior', language)}</TabsTrigger>
-            <TabsTrigger value="incidents">{t('incidents', language)}</TabsTrigger>
+            <TabsTrigger value="attendance" className="text-[10px] sm:text-xs px-1">{t('attendance', language)}</TabsTrigger>
+            <TabsTrigger value="trends" className="text-[10px] sm:text-xs px-1">{t('trends', language) || 'Trends'}</TabsTrigger>
+            <TabsTrigger value="grades" className="text-[10px] sm:text-xs px-1">{t('grades', language)}</TabsTrigger>
+            <TabsTrigger value="behavior" className="text-[10px] sm:text-xs px-1">{t('behavior', language)}</TabsTrigger>
+            <TabsTrigger value="incidents" className="text-[10px] sm:text-xs px-1">{t('incidents', language)}</TabsTrigger>
           </TabsList>
         </Tabs>
 
-        <ScrollArea className="h-[350px] px-4 pb-4">
+        <ScrollArea className="h-[350px] px-3 sm:px-4 pb-4">
           {tab === 'attendance' && <>
-            <div className="grid grid-cols-5 gap-2 mb-4">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2 mb-4">
               {[{ label: t('present', language), val: present, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30' }, { label: t('absent', language), val: absent, color: 'bg-red-100 text-red-700 dark:bg-red-900/30' }, { label: t('late', language), val: late, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30' }, { label: t('excused', language), val: excused, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30' }, { label: 'Rate', val: `${rate}%`, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30' }].map((s, i) => (
-                <div key={i} className={`rounded-lg p-3 text-center ${s.color}`}><p className="text-xl font-bold">{s.val}</p><p className="text-xs opacity-70">{s.label}</p></div>
+                <div key={i} className={`rounded-lg p-2 sm:p-3 text-center ${s.color}`}><p className="text-lg sm:text-xl font-bold">{s.val}</p><p className="text-[10px] sm:text-xs opacity-70">{s.label}</p></div>
               ))}
             </div>
             {sa.length > 0 ? sa.slice(0, 30).map(a => (
-              <div key={a.id} className="flex items-center justify-between py-1.5 border-b border-border/50 text-sm">
-                <span className="text-muted-foreground text-xs">{a.date}</span>
-                <div className="flex items-center gap-1"><StatusBadge status={a.status} /><span className="text-xs">{a.notes && `• ${a.notes}`}</span></div>
+              <div key={a.id} className="flex items-center justify-between py-1.5 border-b border-border/50 text-xs sm:text-sm">
+                <span className="text-muted-foreground text-[10px] sm:text-xs">{a.date}</span>
+                <div className="flex items-center gap-1"><StatusBadge status={a.status} /><span className="text-[10px] sm:text-xs">{a.notes && `• ${a.notes}`}</span></div>
               </div>
             )) : <EmptyState message={t('no_data', language)} />}
           </>}
 
           {tab === 'trends' && <>
-            <div className="grid grid-cols-3 gap-3 mb-6">
-              <div className="rounded-lg p-3 text-center bg-amber-100 dark:bg-amber-900/20"><p className="text-2xl font-bold text-amber-700">🔥 {curStreak}</p><p className="text-xs text-amber-600">Current Streak</p></div>
-              <div className="rounded-lg p-3 text-center bg-emerald-100 dark:bg-emerald-900/20"><p className="text-2xl font-bold text-emerald-700">⭐ {bestStreak}</p><p className="text-xs text-emerald-600">Best Streak</p></div>
-              <div className="rounded-lg p-3 text-center bg-purple-100 dark:bg-purple-900/20"><p className="text-2xl font-bold text-purple-700">{rate}%</p><p className="text-xs text-purple-600">Attendance Rate</p></div>
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-6">
+              <div className="rounded-lg p-2 sm:p-3 text-center bg-amber-100 dark:bg-amber-900/20"><p className="text-xl sm:text-2xl font-bold text-amber-700">🔥 {curStreak}</p><p className="text-[10px] sm:text-xs text-amber-600">Current Streak</p></div>
+              <div className="rounded-lg p-2 sm:p-3 text-center bg-emerald-100 dark:bg-emerald-900/20"><p className="text-xl sm:text-2xl font-bold text-emerald-700">⭐ {bestStreak}</p><p className="text-[10px] sm:text-xs text-emerald-600">Best Streak</p></div>
+              <div className="rounded-lg p-2 sm:p-3 text-center bg-purple-100 dark:bg-purple-900/20"><p className="text-xl sm:text-2xl font-bold text-purple-700">{rate}%</p><p className="text-[10px] sm:text-xs text-purple-600">Attendance Rate</p></div>
             </div>
-            <p className="text-sm font-semibold mb-3">{language === 'fr' ? '4 dernières semaines' : 'Last 4 Weeks'}</p>
-            <div className="flex gap-3 items-end h-28 mb-6">
+            <p className="text-xs sm:text-sm font-semibold mb-3">{language === 'fr' ? '4 dernières semaines' : 'Last 4 Weeks'}</p>
+            <div className="flex gap-2 sm:gap-3 items-end h-24 sm:h-28 mb-6">
               {weeklyTrend.map(w => (
                 <div key={w.label} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-xs font-bold">{w.rate}%</span>
+                  <span className="text-[10px] sm:text-xs font-bold">{w.rate}%</span>
                   <div className="w-full rounded-t-md transition-all" style={{ height: `${Math.max(w.rate, 5)}%`, minHeight: '8px', backgroundColor: w.rate >= 80 ? '#10b981' : w.rate >= 50 ? '#f59e0b' : '#ef4444' }} />
-                  <span className="text-[10px] text-muted-foreground">{w.label}</span>
+                  <span className="text-[9px] sm:text-[10px] text-muted-foreground">{w.label}</span>
                 </div>
               ))}
             </div>
-            <p className="text-sm font-semibold mb-3">{language === 'fr' ? 'Résumé mensuel' : 'Monthly Summary'}</p>
-            <div className="grid grid-cols-3 gap-2">
+            <p className="text-xs sm:text-sm font-semibold mb-3">{language === 'fr' ? 'Résumé mensuel' : 'Monthly Summary'}</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {monthlyData.length > 0 ? monthlyData.map(m => (
-                <div key={m.month} className="rounded-lg border p-2.5 text-center">
-                  <p className="text-xs text-muted-foreground">{m.month}</p>
-                  <p className="text-lg font-bold" style={{ color: m.rate >= 80 ? '#10b981' : m.rate >= 50 ? '#f59e0b' : '#ef4444' }}>{m.rate}%</p>
-                  <p className="text-[10px] text-muted-foreground">{m.present}/{m.total}</p>
+                <div key={m.month} className="rounded-lg border p-2 sm:p-2.5 text-center">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">{m.month}</p>
+                  <p className="text-base sm:text-lg font-bold" style={{ color: m.rate >= 80 ? '#10b981' : m.rate >= 50 ? '#f59e0b' : '#ef4444' }}>{m.rate}%</p>
+                  <p className="text-[10px] sm:text-[10px] text-muted-foreground">{m.present}/{m.total}</p>
                 </div>
-              )) : <p className="text-sm text-muted-foreground col-span-3">{t('no_data', language)}</p>}
+              )) : <p className="text-xs sm:text-sm text-muted-foreground col-span-3">{t('no_data', language)}</p>}
             </div>
           </>}
 
           {tab === 'grades' && (sg.length > 0 ? sg.map(g => {
             const mod = modules.find(m => m.id === g.moduleId);
             const pct = g.percentage ? parseFloat(String(g.percentage)) : 0;
-            return <div key={g.id} className="flex items-center justify-between py-1.5 border-b border-border/50 text-sm">
-              <span className="text-xs text-muted-foreground">{g.date || '-'}</span>
-              <span>{mod?.name || '-'} — <strong>{g.grade || '-'}</strong> <span style={{ color: pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444' }} className="font-semibold">({g.percentage || '-'}%)</span></span>
+            return <div key={g.id} className="flex flex-col sm:flex-row sm:items-center justify-between py-1.5 border-b border-border/50 text-xs sm:text-sm gap-0.5 sm:gap-0">
+              <span className="text-[10px] sm:text-xs text-muted-foreground">{g.date || '-'}</span>
+              <span><span className="text-[10px] sm:text-xs text-muted-foreground">{mod?.name || '-'} — </span><strong>{g.grade || '-'}</strong> <span style={{ color: pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444' }} className="font-semibold">({g.percentage || '-'}%)</span></span>
             </div>;
           }) : <EmptyState message={t('no_data', language)} />)}
 
           {tab === 'behavior' && (sb.length > 0 ? sb.map(b => {
             const icon = b.type === 'positive' ? '👍' : '👎';
             const col = b.type === 'positive' ? 'text-emerald-600' : 'text-red-600';
-            return <div key={b.id} className="flex items-center justify-between py-1.5 border-b border-border/50 text-sm">
-              <span className="text-xs text-muted-foreground">{b.date || '-'}</span>
-              <span>{icon} <span className={`font-semibold ${col}`}>{b.type}</span> — {b.description || '-'} <span className="font-semibold">{b.points && b.points > 0 ? '+' : ''}{b.points || 0} pts</span></span>
+            return <div key={b.id} className="flex flex-col sm:flex-row sm:items-center justify-between py-1.5 border-b border-border/50 text-xs sm:text-sm gap-0.5 sm:gap-0">
+              <span className="text-[10px] sm:text-xs text-muted-foreground">{b.date || '-'}</span>
+              <span className="text-right sm:text-left">{icon} <span className={`font-semibold ${col}`}>{b.type}</span> — {b.description || '-'} <span className="font-semibold">{b.points && b.points > 0 ? '+' : ''}{b.points || 0} pts</span></span>
             </div>;
           }) : <EmptyState message={t('no_data', language)} />)}
 
           {tab === 'incidents' && (si.length > 0 ? si.map(inc => {
             const sevCol = { low: 'text-amber-600', medium: 'text-orange-600', high: 'text-red-600', critical: 'text-red-700' }[inc.severity] || 'text-gray-600';
-            return <div key={inc.id} className="flex items-center justify-between py-1.5 border-b border-border/50 text-sm">
-              <span className="text-xs text-muted-foreground">{inc.date || '-'}</span>
-              <span><span className={`font-semibold ${sevCol}`}>{inc.severity}</span> — {inc.description || '-'} <StatusBadge status={inc.status} /></span>
+            return <div key={inc.id} className="flex flex-col sm:flex-row sm:items-center justify-between py-1.5 border-b border-border/50 text-xs sm:text-sm gap-0.5 sm:gap-0">
+              <span className="text-[10px] sm:text-xs text-muted-foreground">{inc.date || '-'}</span>
+              <span className="text-right sm:text-left"><span className={`font-semibold ${sevCol}`}>{inc.severity}</span> — {inc.description || '-'} <StatusBadge status={inc.status} /></span>
             </div>;
           }) : <EmptyState message={t('no_data', language)} />)}
         </ScrollArea>
@@ -3703,12 +3703,20 @@ function SettingsPage() {
       if (data.success) {
         toast.success(language === 'fr' ? 'Mot de passe changé' : 'Password changed');
         addAuditLog('CHANGE_PASSWORD', 'user', currentUser?.id, currentUser?.fullName, 'Password changed');
-        // Re-login with new password to refresh auth token (best-effort)
-        try {
-          const uName = currentUser?.username || auth.username || 'admin';
-          const relogin = await login(uName, pwForm.newPw, auth.tenantId);
-          // Re-login may fail if external API is unreachable — that's fine
-        } catch {}
+        // Update token immediately from the response (no re-login needed)
+        if (data.token) {
+          setApiToken(data.token);
+          localStorage.setItem('attendance_auth', JSON.stringify({
+            ...auth,
+            token: data.token,
+          }));
+        } else {
+          // Fallback: re-login with new password (best-effort)
+          try {
+            const uName = currentUser?.username || auth.username || 'admin';
+            await login(uName, pwForm.newPw, auth.tenantId);
+          } catch {}
+        }
       } else {
         toast.error(data.error || (language === 'fr' ? 'Échec du changement de mot de passe' : 'Failed to change password'));
       }
@@ -5540,12 +5548,12 @@ function SuperAdminPage() {
               </div>
               <div className="space-y-2"><Label>{language === 'fr' ? 'École (Tenant)' : 'School (Tenant)'}</Label><Input value={userForm.tenantId} onChange={e => setUserForm({ ...userForm, tenantId: e.target.value })} placeholder={language === 'fr' ? 'Ex: infohas-academy' : 'e.g. infohas-academy'} /></div>
             </div>
-            <DialogFooter><Button variant="outline" onClick={() => setUserDialog(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => {
+            <DialogFooter><Button variant="outline" onClick={() => setUserDialog(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={async () => {
               if (!userForm.fullName || !userForm.username) { toast.error(language === 'fr' ? 'Nom et identifiant requis' : 'Name and username required'); return; }
               if (!editUser && !userForm.password) { toast.error(language === 'fr' ? 'Le mot de passe est requis' : 'Password is required'); return; }
               const userData = { ...userForm, id: editUser ? (editUser as Record<string, unknown>).id : genId(), fullName: userForm.fullName, name: userForm.fullName, username: userForm.username, role: userForm.role, department: userForm.department, tenantId: userForm.tenantId };
-              if (editUser) { const idx = admins.indexOf(editUser); const updated = [...admins]; updated[idx] = { ...updated[idx], ...userData }; if (!userForm.password) delete (userData as Record<string, unknown>).password; else (userData as Record<string, unknown>).password = userForm.password; setAdmins(updated); addAuditLog('UPDATE_USER', 'user', String((editUser as Record<string, unknown>).id), userForm.fullName, `Updated user: ${userForm.username}`); saveAdminToD1('update', userData); toast.success(language === 'fr' ? 'Utilisateur mis à jour' : 'User updated'); }
-              else { setAdmins([...admins, userData]); addAuditLog('CREATE_USER', 'user', String(userData.id), userForm.fullName, `Created user: ${userForm.username} (${userForm.role})`); saveAdminToD1('create', userData); toast.success(language === 'fr' ? 'Utilisateur ajouté' : 'User added'); }
+              if (editUser) { const idx = admins.indexOf(editUser); const updated = [...admins]; updated[idx] = { ...updated[idx], ...userData }; if (!userForm.password) delete (userData as Record<string, unknown>).password; else (userData as Record<string, unknown>).password = userForm.password; setAdmins(updated); addAuditLog('UPDATE_USER', 'user', String((editUser as Record<string, unknown>).id), userForm.fullName, `Updated user: ${userForm.username}`); const saved = await saveAdminToD1('update', userData); if (!saved) { toast.error(language === 'fr' ? 'Échec de la sauvegarde — session peut être expirée, veuillez vous reconnecter' : 'Save failed — session may have expired, please log in again'); } else { toast.success(language === 'fr' ? 'Utilisateur mis à jour' : 'User updated'); } }
+              else { const saved = await saveAdminToD1('create', userData); if (!saved) { toast.error(language === 'fr' ? 'Échec de la sauvegarde — session peut être expirée, veuillez vous reconnecter' : 'Save failed — session may have expired, please log in again'); return; } setAdmins([...admins, userData]); addAuditLog('CREATE_USER', 'user', String(userData.id), userForm.fullName, `Created user: ${userForm.username} (${userForm.role})`); toast.success(language === 'fr' ? 'Utilisateur ajouté' : 'User added'); }
               setUserDialog(false);
             }}>{editUser ? <><Save className="h-4 w-4 mr-1" />{t('save', language)}</> : <><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter' : 'Add'}</>}</Button></DialogFooter>
           </DialogContent></Dialog>

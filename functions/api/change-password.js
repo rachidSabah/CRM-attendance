@@ -80,6 +80,9 @@ async function handleChangePassword(context) {
       return jsonResponse({ success: false, error: 'Current password is incorrect' }, 401, context.request);
     }
 
+    // Generate a new session token so the frontend stays authenticated
+    const newSessionToken = 'd1_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 15);
+
     // Step 4: Update password in D1 — preserve all existing profile fields
     if (db) {
       try {
@@ -104,13 +107,11 @@ async function handleChangePassword(context) {
           userData.is_super_admin = Boolean(extUser.is_super_admin);
         }
 
-        // Update only the password
+        // Update password AND token
         userData.password = newPassword;
         userData.username = uname;
         userData.tenantId = tid;
-        if (extLoginData && extLoginData.token) {
-          userData.token = extLoginData.token;
-        }
+        userData.token = newSessionToken;
         userData.updatedAt = new Date().toISOString();
 
         await db.prepare(
@@ -132,7 +133,7 @@ async function handleChangePassword(context) {
       } catch {}
     }
 
-    return jsonResponse({ success: true, message: 'Password changed successfully' }, 200, context.request);
+    return jsonResponse({ success: true, message: 'Password changed successfully', token: newSessionToken }, 200, context.request);
   } catch (err) {
     console.error('[change-password] Error:', err);
     return jsonResponse({ success: false, error: String(err?.message || err) }, 500, context.request);
