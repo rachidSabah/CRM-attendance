@@ -153,6 +153,8 @@ export interface Template {
   name: string;
   content: string;
   category?: string;
+  lang?: string;       // 'en' | 'fr' | 'ar'
+  isDefault?: boolean;  // default template for this category
   createdAt: string;
 }
 

@@ -1216,7 +1216,10 @@ function AttendancePage() {
 
   const sendAbsenceWhatsApp = (sid: string, forceStatus?: AttendanceRecord['status']) => {
     const s = students.find(st => st.id === sid); if (!s?.guardianPhone) return;
-    const st = forceStatus || localRecords[sid]; let tmpl = templates.find(t => { const n = t.name.toLowerCase(); if (st === 'late') return n.includes('late'); return n.includes('absence'); });
+    const st = forceStatus || localRecords[sid];
+    const cat = st === 'late' ? 'late' : 'absence';
+    let tmpl = templates.find(t => t.category === cat && t.isDefault);
+    if (!tmpl) tmpl = templates.find(t => t.category === cat);
     if (!tmpl) tmpl = st === 'late' ? { id: '', name: 'Late', category: 'late', content: 'Hello {guardian_name}, {student_name} arrived late today ({date}).', createdAt: '' } : { id: '', name: 'Absence', category: 'absence', content: 'Dear {guardian_name}, {student_name} was marked absent today ({date}). Please contact us.', createdAt: '' };
     const msg = tmpl.content.replace(/{student_name}/g, s.fullName).replace(/{guardian_name}/g, s.guardianName || 'Guardian').replace(/{date}/g, new Date().toLocaleDateString()).replace(/{school_name}/g, schoolInfo?.name || 'School').replace(/{class}/g, classes.find(c => c.id === s.classId)?.name || 'class');
     window.open(`https://wa.me/${formatWhatsAppPhone(s.guardianPhone)}?text=${encodeURIComponent(msg)}`, '_blank');
@@ -2896,28 +2899,56 @@ function MessagingPage() {
   const { templates, setTemplates, students, classes, schoolInfo, language } = useAppStore();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Template | null>(null);
-  const [form, setForm] = useState({ name: '', content: '', category: '' });
+  const [form, setForm] = useState({ name: '', content: '', category: '', lang: language === 'fr' ? 'fr' : language === 'ar' ? 'ar' : 'en', isDefault: false });
   const [quickStudentId, setQuickStudentId] = useState('');
   const [quickTemplateId, setQuickTemplateId] = useState('');
   const [bulkClassId, setBulkClassId] = useState('');
   const [bulkTemplateId, setBulkTemplateId] = useState('');
+  const [langFilter, setLangFilter] = useState<string>('all');
+
+  // Set default template for a category
+  const handleSetDefault = (tmplId: string) => {
+    const tmpl = templates.find(t => t.id === tmplId);
+    if (!tmpl) return;
+    const cat = tmpl.category || 'custom';
+    const updated = templates.map(t => ({
+      ...t,
+      isDefault: t.id === tmplId ? true : (t.category === cat ? false : t.isDefault),
+    }));
+    setTemplates(updated);
+    toast.success(language === 'fr' ? 'Modèle par défaut défini' : 'Default template set');
+  };
+
+  // Get default template for a category
+  const getDefaultForCategory = (cat: string): Template | undefined => {
+    return templates.find(t => t.category === cat && t.isDefault);
+  };
 
   // Initialize default templates if empty
   useEffect(() => {
     if (templates.length === 0) {
       const defaults: Template[] = [
-        { id: genId(), name: 'Absence Notification', category: 'absence', content: 'Dear {guardian_name}, we would like to inform you that {student_name} was marked absent from {class} today ({date}). If this absence was planned, please disregard this message. Otherwise, please contact {school_name} to discuss. Thank you.', createdAt: new Date().toISOString() },
-        { id: genId(), name: 'Late Arrival', category: 'late', content: 'Hello {guardian_name}, {student_name} arrived late to {class} today ({date}). Please ensure punctuality.', createdAt: new Date().toISOString() },
-        { id: genId(), name: 'Guardian Meeting Request', category: 'meeting', content: "Dear {guardian_name}, we would like to schedule a meeting with you to discuss {student_name}'s progress in {class}. Please contact {school_name} at your earliest convenience.", createdAt: new Date().toISOString() },
-        { id: genId(), name: 'Academic Progress Update', category: 'academic', content: "Dear {guardian_name}, this is an update regarding {student_name}'s academic progress in {class}. Please feel free to contact us if you have any questions.", createdAt: new Date().toISOString() },
-        { id: genId(), name: 'Student Achievement', category: 'achievement', content: 'Dear {guardian_name}, we are pleased to inform you that {student_name} has shown excellent progress in {class}. Congratulations!', createdAt: new Date().toISOString() },
-        { id: genId(), name: 'General Reminder', category: 'reminder', content: 'Dear {guardian_name}, this is a reminder regarding {student_name} in {class}. Please contact us if you have any questions.', createdAt: new Date().toISOString() },
-        { id: genId(), name: 'إشعار غياب', category: 'absence', content: 'عزيزي/عزيزتي {guardian_name}، نود إعلامكم بأن {student_name} تم تسجيله/ها غائباً/غائبة عن قسم {class} اليوم ({date}). إذا كان الغياب مبرراً، يرجى تجاهل هذه الرسالة. وإلا يرجى الاتصال بـ {school_name} لمناقشة الموضوع. شكراً لتفهمكم.', createdAt: new Date().toISOString() },
-        { id: genId(), name: 'إشعار تأخر', category: 'late', content: 'عزيزي/عزيزتي {guardian_name}، الطالب/ة {student_name} وصل/ت متأخراً/ة إلى قسم {class} اليوم ({date}). نرجو منكم التأكد من الالتزام بالمواعيد.', createdAt: new Date().toISOString() },
-        { id: genId(), name: 'طلب اجتماع ولي الأمر', category: 'meeting', content: 'عزيزي/عزيزتي {guardian_name}، نود ترتيب اجتماع معكم لمناقشة مستوى {student_name} في قسم {class}. يرجى الاتصال بـ {school_name} في أقرب وقت ممكن.', createdAt: new Date().toISOString() },
-        { id: genId(), name: 'تحديث المستوى الدراسي', category: 'academic', content: 'عزيزي/عزيزتي {guardian_name}، نود إطلاعكم على آخر المستجدات المتعلقة بمستوى {student_name} في قسم {class}. لا تترددوا في الاتصال بنا إذا كان لديكم أي استفسار.', createdAt: new Date().toISOString() },
-        { id: genId(), name: 'إنجاز الطالب', category: 'achievement', content: 'عزيزي/عزيزتي {guardian_name}، يسعدنا إعلامكم بأن {student_name} أظهر/ت تحسناً متميزاً في قسم {class}. تهانينا!', createdAt: new Date().toISOString() },
-        { id: genId(), name: 'تذكير عام', category: 'reminder', content: 'عزيزي/عزيزتي {guardian_name}، هذه رسالة تذكير بخصوص {student_name} في قسم {class}. يرجى الاتصال بنا إذا كان لديكم أي استفسار.', createdAt: new Date().toISOString() },
+        // === English templates ===
+        { id: genId(), name: 'Absence Notification', category: 'absence', lang: 'en', isDefault: true, content: 'Dear {guardian_name}, we would like to inform you that {student_name} was marked absent from {class} today ({date}). If this absence was planned, please disregard this message. Otherwise, please contact {school_name} to discuss. Thank you.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Late Arrival', category: 'late', lang: 'en', isDefault: true, content: 'Hello {guardian_name}, {student_name} arrived late to {class} today ({date}). Please ensure punctuality.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Guardian Meeting Request', category: 'meeting', lang: 'en', isDefault: true, content: "Dear {guardian_name}, we would like to schedule a meeting with you to discuss {student_name}'s progress in {class}. Please contact {school_name} at your earliest convenience.", createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Academic Progress Update', category: 'academic', lang: 'en', isDefault: true, content: "Dear {guardian_name}, this is an update regarding {student_name}'s academic progress in {class}. Please feel free to contact us if you have any questions.", createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Student Achievement', category: 'achievement', lang: 'en', isDefault: true, content: 'Dear {guardian_name}, we are pleased to inform you that {student_name} has shown excellent progress in {class}. Congratulations!', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'General Reminder', category: 'reminder', lang: 'en', isDefault: true, content: 'Dear {guardian_name}, this is a reminder regarding {student_name} in {class}. Please contact us if you have any questions.', createdAt: new Date().toISOString() },
+        // === French templates ===
+        { id: genId(), name: 'Notification d\'absence', category: 'absence', lang: 'fr', content: 'Cher/Chère {guardian_name}, nous souhaitons vous informer que {student_name} a été signalé(e) absent(e) du cours de {class} aujourd\'hui ({date}). Si cette absence était prévue, veuillez ignorer ce message. Dans le cas contraire, veuillez contacter {school_name} pour en discuter. Merci.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Retard', category: 'late', lang: 'fr', content: 'Bonjour {guardian_name}, {student_name} est arrivé(e) en retard au cours de {class} aujourd\'hui ({date}). Nous vous prions de veiller à la ponctualité de votre enfant.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Demande de rendez-vous parent', category: 'meeting', lang: 'fr', content: 'Cher/Chère {guardian_name}, nous souhaitons fixer un rendez-vous avec vous pour discuter des résultats de {student_name} en {class}. Veuillez contacter {school_name} dès que possible.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Bilan académique', category: 'academic', lang: 'fr', content: 'Cher/Chère {guardian_name}, voici une mise à jour concernant les résultats scolaires de {student_name} en {class}. N\'hésitez pas à nous contacter si vous avez des questions.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Réussite de l\'élève', category: 'achievement', lang: 'fr', content: 'Cher/Chère {guardian_name}, nous sommes ravis de vous informer que {student_name} a fait preuve d\'un excellent travail en {class}. Félicitations !', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'Rappel général', category: 'reminder', lang: 'fr', content: 'Cher/Chère {guardian_name}, ceci est un rappel concernant {student_name} en {class}. Veuillez nous contacter si vous avez des questions.', createdAt: new Date().toISOString() },
+        // === Arabic templates ===
+        { id: genId(), name: 'إشعار غياب', category: 'absence', lang: 'ar', content: 'عزيزي/عزيزتي {guardian_name}، نود إعلامكم بأن {student_name} تم تسجيله/ها غائباً/غائبة عن قسم {class} اليوم ({date}). إذا كان الغياب مبرراً، يرجى تجاهل هذه الرسالة. وإلا يرجى الاتصال بـ {school_name} لمناقشة الموضوع. شكراً لتفهمكم.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'إشعار تأخر', category: 'late', lang: 'ar', content: 'عزيزي/عزيزتي {guardian_name}، الطالب/ة {student_name} وصل/ت متأخراً/ة إلى قسم {class} اليوم ({date}). نرجو منكم التأكد من الالتزام بالمواعيد.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'طلب اجتماع ولي الأمر', category: 'meeting', lang: 'ar', content: 'عزيزي/عزيزتي {guardian_name}، نود ترتيب اجتماع معكم لمناقشة مستوى {student_name} في قسم {class}. يرجى الاتصال بـ {school_name} في أقرب وقت ممكن.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'تحديث المستوى الدراسي', category: 'academic', lang: 'ar', content: 'عزيزي/عزيزتي {guardian_name}، نود إطلاعكم على آخر المستجدات المتعلقة بمستوى {student_name} في قسم {class}. لا تترددوا في الاتصال بنا إذا كان لديكم أي استفسار.', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'إنجاز الطالب', category: 'achievement', lang: 'ar', content: 'عزيزي/عزيزتي {guardian_name}، يسعدنا إعلامكم بأن {student_name} أظهر/ت تحسناً متميزاً في قسم {class}. تهانينا!', createdAt: new Date().toISOString() },
+        { id: genId(), name: 'تذكير عام', category: 'reminder', lang: 'ar', content: 'عزيزي/عزيزتي {guardian_name}، هذه رسالة تذكير بخصوص {student_name} في قسم {class}. يرجى الاتصال بنا إذا كان لديكم أي استفسار.', createdAt: new Date().toISOString() },
       ];
       setTemplates(defaults);
     }
@@ -2942,16 +2973,17 @@ function MessagingPage() {
     achievement: 'border-l-yellow-500', reminder: 'border-l-sky-500', custom: 'border-l-gray-400',
   };
 
-  // Group templates by category
+  // Group templates by category (filtered by language)
   const groupedTemplates = useMemo(() => {
     const groups: Record<string, Template[]> = {};
-    templates.forEach(tmpl => {
+    const filtered = langFilter === 'all' ? templates : templates.filter(tmpl => tmpl.lang === langFilter);
+    filtered.forEach(tmpl => {
       const cat = tmpl.category || 'custom';
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(tmpl);
     });
     return groups;
-  }, [templates]);
+  }, [templates, langFilter]);
 
   // Uses the global formatWhatsAppPhone function (Morocco, UK, US support)
 
@@ -3004,12 +3036,21 @@ function MessagingPage() {
   };
 
   // Template CRUD
-  const openAddTemplate = () => { setEditing(null); setForm({ name: '', content: '', category: '' }); setDialogOpen(true); };
-  const openEditTemplate = (t: Template) => { setEditing(t); setForm({ name: t.name, content: t.content, category: t.category || '' }); setDialogOpen(true); };
+  const openAddTemplate = () => { setEditing(null); setForm({ name: '', content: '', category: '', lang: language === 'fr' ? 'fr' : language === 'ar' ? 'ar' : 'en', isDefault: false }); setDialogOpen(true); };
+  const openEditTemplate = (t: Template) => { setEditing(t); setForm({ name: t.name, content: t.content, category: t.category || '', lang: t.lang || 'en', isDefault: !!t.isDefault }); setDialogOpen(true); };
   const handleSaveTemplate = () => {
     if (!form.name || !form.content) { toast.error('Name and content required'); return; }
-    if (editing) { setTemplates(templates.map(t => t.id === editing.id ? { ...t, ...form } : t)); }
-    else { setTemplates([...templates, { ...form, id: genId(), createdAt: new Date().toISOString() }]); }
+    if (form.isDefault) {
+      // Unset other defaults in same category
+      const base = templates.filter(t => !editing || t.id !== editing.id);
+      const updated = base.map(t => t.category === form.category ? { ...t, isDefault: false } : t);
+      const newTmpl = { ...form, id: editing?.id || genId(), createdAt: editing?.createdAt || new Date().toISOString() };
+      if (editing) { setTemplates(updated.map(t => t.id === editing.id ? newTmpl : t)); }
+      else { setTemplates([...updated, newTmpl]); }
+    } else {
+      if (editing) { setTemplates(templates.map(t => t.id === editing.id ? { ...t, ...form } : t)); }
+      else { setTemplates([...templates, { ...form, id: genId(), createdAt: new Date().toISOString() }]); }
+    }
     toast.success(language === 'fr' ? 'Modèle sauvegardé' : 'Template saved');
     setDialogOpen(false);
   };
@@ -3029,28 +3070,54 @@ function MessagingPage() {
           <div className="grid lg:grid-cols-2 gap-6">
             {/* Left: Templates */}
             <div>
-              <h3 className="font-semibold text-sm text-muted-foreground mb-3">{language === 'fr' ? 'Modèles de Message' : 'Message Templates'}</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-sm text-muted-foreground">{language === 'fr' ? 'Modèles de Message' : 'Message Templates'}</h3>
+                <div className="flex gap-1">
+                  {(['all', 'en', 'fr', 'ar'] as const).map(l => (
+                    <Button key={l} variant={langFilter === l ? 'default' : 'outline'} size="sm" className="h-7 px-2 text-xs" onClick={() => setLangFilter(l)}>
+                      {l === 'all' ? '🌐' : l === 'en' ? '🇬🇧' : l === 'fr' ? '🇫🇷' : '🇲🇦'} {l === 'all' ? (language === 'fr' ? 'Tous' : 'All') : l.toUpperCase()}
+                    </Button>
+                  ))}
+                </div>
+              </div>
               {Object.keys(groupedTemplates).length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">{t('no_data', language)}</div>
               ) : (
                 <div className="max-h-[60vh] overflow-y-auto custom-scrollbar space-y-4">
-                  {Object.entries(groupedTemplates).map(([category, tmpls]) => (
+                  {Object.entries(groupedTemplates).map(([category, tmpls]) => {
+                    const catDefault = tmpls.find(t => t.isDefault);
+                    return (
                     <div key={category}>
-                      <h4 className="text-xs font-semibold text-primary mb-2 pb-1 border-b border-primary/20">
-                        {categoryLabels[category] || category}
+                      <h4 className="text-xs font-semibold text-primary mb-2 pb-1 border-b border-primary/20 flex items-center justify-between">
+                        <span>{categoryLabels[category] || category}</span>
+                        {catDefault && (
+                          <span className="text-[10px] text-amber-600 font-normal flex items-center gap-1">
+                            <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                            {language === 'fr' ? 'Par défaut' : 'Default'}: {catDefault.name}
+                          </span>
+                        )}
                       </h4>
                       <div className="space-y-2">
                         {tmpls.map(tmpl => (
-                          <div key={tmpl.id} className={`p-3 border border-border rounded-lg border-l-4 ${categoryColors[category] || 'border-l-gray-400'} hover:bg-muted/50 transition-colors`}>
+                          <div key={tmpl.id} className={`p-3 border border-border rounded-lg border-l-4 ${categoryColors[category] || 'border-l-gray-400'} ${tmpl.isDefault ? 'bg-amber-50 dark:bg-amber-950/20 ring-1 ring-amber-200 dark:ring-amber-800' : ''} hover:bg-muted/50 transition-colors`}>
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1 min-w-0">
-                                <h4 className="font-medium text-sm">{tmpl.name}</h4>
+                                <div className="flex items-center gap-2">
+                                  {tmpl.isDefault && <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />}
+                                  <h4 className="font-medium text-sm">{tmpl.name}</h4>
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 shrink-0">
+                                    {tmpl.lang === 'fr' ? '🇫🇷 FR' : tmpl.lang === 'ar' ? '🇲🇦 AR' : '🇬🇧 EN'}
+                                  </Badge>
+                                </div>
                                 <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{tmpl.content}</p>
                                 <p className="text-[10px] text-muted-foreground mt-1">
                                   {'{student_name}'} {'{guardian_name}'} {'{class}'} {'{date}'} {'{school_name}'}
                                 </p>
                               </div>
                               <div className="flex gap-1 shrink-0">
+                                <Button variant="ghost" size="icon" className={`h-7 w-7 ${tmpl.isDefault ? 'text-amber-500' : 'text-muted-foreground'}`} onClick={() => handleSetDefault(tmpl.id)} title={language === 'fr' ? 'Définir par défaut' : 'Set as default'}>
+                                  <Star className={`h-3.5 w-3.5 ${tmpl.isDefault ? 'fill-amber-400' : ''}`} />
+                                </Button>
                                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditTemplate(tmpl)}><Pencil className="h-3.5 w-3.5" /></Button>
                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDeleteTemplate(tmpl.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                               </div>
@@ -3059,7 +3126,8 @@ function MessagingPage() {
                         ))}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -3147,23 +3215,51 @@ function MessagingPage() {
               <Label>{language === 'fr' ? 'Nom' : 'Name'}</Label>
               <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Absence Notification" />
             </div>
-            <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Catégorie' : 'Category'}</Label>
-              <Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}>
-                <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner...' : 'Select...'} /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="absence">{language === 'fr' ? 'Absence' : 'Absence'}</SelectItem>
-                  <SelectItem value="late">{language === 'fr' ? 'Retard' : 'Late'}</SelectItem>
-                  <SelectItem value="meeting">{language === 'fr' ? 'Réunion' : 'Meeting'}</SelectItem>
-                  <SelectItem value="academic">{language === 'fr' ? 'Académique' : 'Academic'}</SelectItem>
-                  <SelectItem value="announcement">{language === 'fr' ? 'Annonce' : 'Announcement'}</SelectItem>
-                  <SelectItem value="behavioral">{language === 'fr' ? 'Comportement' : 'Behavioral'}</SelectItem>
-                  <SelectItem value="achievement">{language === 'fr' ? 'Réalisation' : 'Achievement'}</SelectItem>
-                  <SelectItem value="reminder">{language === 'fr' ? 'Rappel' : 'Reminder'}</SelectItem>
-                  <SelectItem value="custom">{language === 'fr' ? 'Personnalisé' : 'Custom'}</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>{language === 'fr' ? 'Catégorie' : 'Category'}</Label>
+                <Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}>
+                  <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner...' : 'Select...'} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="absence">{language === 'fr' ? 'Absence' : 'Absence'}</SelectItem>
+                    <SelectItem value="late">{language === 'fr' ? 'Retard' : 'Late'}</SelectItem>
+                    <SelectItem value="meeting">{language === 'fr' ? 'Réunion' : 'Meeting'}</SelectItem>
+                    <SelectItem value="academic">{language === 'fr' ? 'Académique' : 'Academic'}</SelectItem>
+                    <SelectItem value="announcement">{language === 'fr' ? 'Annonce' : 'Announcement'}</SelectItem>
+                    <SelectItem value="behavioral">{language === 'fr' ? 'Comportement' : 'Behavioral'}</SelectItem>
+                    <SelectItem value="achievement">{language === 'fr' ? 'Réalisation' : 'Achievement'}</SelectItem>
+                    <SelectItem value="reminder">{language === 'fr' ? 'Rappel' : 'Reminder'}</SelectItem>
+                    <SelectItem value="custom">{language === 'fr' ? 'Personnalisé' : 'Custom'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>{language === 'fr' ? 'Langue' : 'Language'}</Label>
+                <Select value={form.lang} onValueChange={v => setForm({ ...form, lang: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="en">🇬🇧 English</SelectItem>
+                    <SelectItem value="fr">🇫🇷 Français</SelectItem>
+                    <SelectItem value="ar">🇲🇦 العربية</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+            {form.category && (
+              <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                <button type="button" className="flex items-center gap-2 cursor-pointer" onClick={() => setForm({ ...form, isDefault: !form.isDefault })}>
+                  <Star className={`h-4 w-4 ${form.isDefault ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'}`} />
+                  <span className="text-sm font-medium">
+                    {language === 'fr' ? 'Définir comme modèle par défaut' : 'Set as default template'}
+                  </span>
+                </button>
+                {form.isDefault && (
+                  <span className="text-[10px] text-amber-600">
+                    ({language === 'fr' ? 'Remplacera le défaut actuel pour cette catégorie' : 'Will replace current default for this category'})
+                  </span>
+                )}
+              </div>
+            )}
             <div className="space-y-2">
               <Label>{language === 'fr' ? 'Contenu' : 'Content'}</Label>
               <Textarea value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} rows={6} placeholder="Dear {guardian_name}, {student_name} was marked absent from {class} today ({date})..." />
