@@ -1,54 +1,89 @@
 /**
  * PUT /api/change-password
- * Change password — updates D1 and optionally tries the external API.
- * Reads existing D1 user data first, only updates the password field,
- * and preserves all other profile data (role, fullName, email, etc.).
+ * Change password — validates current password against D1 first,
+ * then falls back to external API. Updates D1 and syncs to external API.
  */
 
-import { validateRequest } from '../_lib/auth.js';
 import { getCorsHeaders } from '../_lib/cors.js';
 
 const EXTERNAL_API = 'https://infohas-attendance-api.rachidelsabah.workers.dev/api';
 
+function jsonResponse(data, status = 200, request) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...getCorsHeaders(request) },
+  });
+}
+
 async function handleChangePassword(context) {
-  // Auth check
-  const auth = await validateRequest(context.request, context.env.DB);
-  if (!auth.authenticated) {
-    return new Response(
-      JSON.stringify({ success: false, error: auth.error }),
-      { status: 401, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
-    );
-  }
+  // No middleware token validation — this endpoint authenticates via currentPassword
+  // The middleware ([[path]].js) may block the request if the token is invalid,
+  // so we also add /api/change-password handling there.
 
   try {
     const body = await context.request.json();
     const { currentPassword, newPassword, username, tenant_id } = body;
 
     if (!newPassword || newPassword.length < 4) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Password must be at least 4 characters' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
-      );
+      return jsonResponse({ success: false, error: 'Password must be at least 4 characters' }, 400, context.request);
     }
 
     if (!currentPassword) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Current password is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
-      );
+      return jsonResponse({ success: false, error: 'Current password is required' }, 400, context.request);
     }
 
     const uname = username || 'admin';
     const tid = tenant_id || 'default';
-
-    // Step 1: Update password in D1 — READ existing data first to preserve profile
     const db = context.env.DB;
-    let d1Updated = false;
-    if (db) {
-      const authKey = `auth_${uname}_${tid}`;
+    const authKey = `auth_${uname}_${tid}`;
 
+    // Step 1: Validate current password against D1
+    let d1User = null;
+    let d1PasswordValid = false;
+    if (db) {
       try {
-        // Read existing user data from D1 to preserve profile fields
+        const row = await db.prepare(
+          'SELECT data FROM school_settings WHERE tenant_id = ? AND key = ?'
+        ).bind(tid, authKey).first();
+        if (row && row.data) {
+          try { d1User = JSON.parse(row.data); } catch {}
+        }
+      } catch {}
+    }
+
+    if (d1User && d1User.password === currentPassword) {
+      d1PasswordValid = true;
+    }
+
+    // Step 2: If D1 password doesn't match, try external API
+    let extPasswordValid = false;
+    let extLoginData = null;
+    if (!d1PasswordValid) {
+      try {
+        const loginRes = await fetch(`${EXTERNAL_API}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: uname, password: currentPassword }),
+        });
+        if (loginRes.ok) {
+          const data = await loginRes.json();
+          if (data.success) {
+            extPasswordValid = true;
+            extLoginData = data;
+          }
+        }
+      } catch {}
+    }
+
+    // Step 3: If NEITHER D1 nor external API confirms the current password → reject
+    if (!d1PasswordValid && !extPasswordValid) {
+      return jsonResponse({ success: false, error: 'Current password is incorrect' }, 401, context.request);
+    }
+
+    // Step 4: Update password in D1 — preserve all existing profile fields
+    if (db) {
+      try {
+        // Read existing user data to preserve all fields
         const existing = await db.prepare(
           'SELECT data FROM school_settings WHERE tenant_id = ? AND key = ?'
         ).bind(tid, authKey).first();
@@ -58,78 +93,49 @@ async function handleChangePassword(context) {
           try { userData = JSON.parse(existing.data); } catch {}
         }
 
-        // Only update the password field, preserve everything else
+        // If external API returned profile data and D1 has nothing, use it
+        if (!userData.username && extLoginData && extLoginData.user) {
+          const extUser = extLoginData.user;
+          userData.id = extUser.id || uname;
+          userData.username = uname;
+          userData.fullName = extUser.fullName || extUser.full_name || uname;
+          userData.email = extUser.email || '';
+          userData.role = extUser.role || 'user';
+          userData.is_super_admin = Boolean(extUser.is_super_admin);
+        }
+
+        // Update only the password
         userData.password = newPassword;
         userData.username = uname;
         userData.tenantId = tid;
+        if (extLoginData && extLoginData.token) {
+          userData.token = extLoginData.token;
+        }
         userData.updatedAt = new Date().toISOString();
 
         await db.prepare(
-          'INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime(\'now\')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime(\'now\')'
+          "INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime('now')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime('now')"
         ).bind(authKey, tid, authKey, JSON.stringify(userData)).run();
-        d1Updated = true;
       } catch (dbErr) {
         console.warn('[change-password] D1 update failed:', dbErr.message);
       }
     }
 
-    // Step 2: Try external API login to get full user profile and sync to D1
-    try {
-      const loginRes = await fetch(`${EXTERNAL_API}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: uname, password: currentPassword }),
-      });
-
-      if (loginRes.ok) {
-        const loginData = await loginRes.json();
-        if (loginData.success && loginData.user && db) {
-          // External API login worked — sync full profile to D1 (with NEW password)
-          const extUser = loginData.user;
-          const authKey = `auth_${uname}_${tid}`;
-          const fullUserData = {
-            password: newPassword, // Use the NEW password
-            username: uname,
-            tenantId: tid,
-            id: extUser.id || uname,
-            fullName: extUser.fullName || extUser.full_name || extUser.username || uname,
-            email: extUser.email || '',
-            role: extUser.role || 'user',
-            is_super_admin: extUser.is_super_admin || false,
-            token: loginData.token,
-            updatedAt: new Date().toISOString(),
-          };
-
-          try {
-            await db.prepare(
-              'INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime(\'now\')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime(\'now\')'
-            ).bind(authKey, tid, authKey, JSON.stringify(fullUserData)).run();
-          } catch {}
-
-          // Try external API password change — best-effort
-          if (loginData.token) {
-            await fetch(`${EXTERNAL_API}/auth/change-password`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${loginData.token}` },
-              body: JSON.stringify({ currentPassword, newPassword, tenant_id: tid, username: uname }),
-            }).catch(() => {});
-          }
-        }
-      }
-    } catch {
-      // External API not reachable — D1 already has the updated password + preserved profile
+    // Step 5: Try to change password on external API (best-effort)
+    if (extLoginData && extLoginData.token) {
+      try {
+        await fetch(`${EXTERNAL_API}/auth/change-password`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${extLoginData.token}` },
+          body: JSON.stringify({ currentPassword, newPassword, tenant_id: tid, username: uname }),
+        });
+      } catch {}
     }
 
-    return new Response(
-      JSON.stringify({ success: true, message: 'Password changed successfully', d1Updated }),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
-    );
+    return jsonResponse({ success: true, message: 'Password changed successfully' }, 200, context.request);
   } catch (err) {
     console.error('[change-password] Error:', err);
-    return new Response(
-      JSON.stringify({ success: false, error: String(err?.message || err) }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
-    );
+    return jsonResponse({ success: false, error: String(err?.message || err) }, 500, context.request);
   }
 }
 
@@ -144,4 +150,3 @@ export async function onRequest(context) {
 export async function onRequestPut(context) {
   return handleChangePassword(context);
 }
-
