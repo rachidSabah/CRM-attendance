@@ -11,6 +11,21 @@ import * as exportUtils from '@/lib/export';
 import * as pdfUtils from '@/lib/pdf';
 import { sendTaskAssignmentEmail, saveBrevoConfig, loadBrevoConfig, sendEmail } from '@/lib/email';
 
+// Module-level Google OAuth2 token resolve — GIS initTokenClient requires the callback at init time
+let _googleTokenResolve: ((token: string) => void) | null = null;
+let _googleTokenReject: ((err: Error) => void) | null = null;
+function _googleTokenCallback(resp: Record<string, unknown>) {
+  if (resp.error) {
+    _googleTokenReject?.(new Error(String(resp.error)));
+  } else if (resp.access_token) {
+    _googleTokenResolve?.(resp.access_token as string);
+  } else {
+    _googleTokenReject?.(new Error('No access token received'));
+  }
+  _googleTokenResolve = null;
+  _googleTokenReject = null;
+}
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -3854,21 +3869,19 @@ function SettingsPage() {
           const initTokenClient = oauth2.initTokenClient as (config: Record<string, unknown>) => {
             requestAccessToken: (override?: Record<string, unknown>) => void;
           };
+
+          // The callback must be set at initTokenClient time — use module-level resolve
           const client = initTokenClient({
             client_id: cloudConfig.googleClientId!.trim(),
             scope: 'https://www.googleapis.com/auth/drive.file',
-            callback: '', // placeholder — overridden below via requestAccessToken callback
+            callback: _googleTokenCallback,
           });
 
-          // Request token via popup — wrap in promise
+          // Request token via popup — callback will resolve the promise via module-level ref
           const accessToken = await new Promise<string>((resolve, reject) => {
-            client.requestAccessToken({
-              prompt: '',
-              callback: (resp: Record<string, unknown>) => {
-                if (resp.error) reject(new Error(String(resp.error)));
-                else resolve(resp.access_token as string);
-              },
-            });
+            _googleTokenResolve = resolve;
+            _googleTokenReject = reject;
+            client.requestAccessToken({ prompt: '' });
           });
           googleAccessTokenRef.current = accessToken;
 
