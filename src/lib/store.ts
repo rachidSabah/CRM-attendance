@@ -86,6 +86,8 @@ function loadLocalObj<T>(key: string, fallback: T): T {
 // ========== API Sync System ==========
 let _loadingFromApi = false;
 let _d1PushTimer: ReturnType<typeof setTimeout> | null = null;
+let _lastPull401Time = 0; // Cooldown after sync/pull 401 to prevent console spam
+const PULL_401_COOLDOWN = 5 * 60 * 1000; // 5 minutes
 
 // D1 Cloud Sync status
 export type D1SyncStatus = 'idle' | 'syncing' | 'error' | 'success';
@@ -147,6 +149,8 @@ function scheduleD1Push() {
 
 async function pushToD1() {
   try {
+    // Skip push if we recently got a 401 (token is invalid/expired)
+    if ((Date.now() - _lastPull401Time) <= PULL_401_COOLDOWN) return;
     updateD1SyncState({ status: 'syncing' });
     const state = useAppStore.getState();
     const payload = {
@@ -230,6 +234,11 @@ export async function loadFromCloud(): Promise<{ success: boolean; data?: Record
     updateD1SyncState({ status: 'syncing' });
     const tenantId = getTenantId();
     const res = await localApi('GET', `/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
+    if (!res.ok) {
+      if (res.status === 401) _lastPull401Time = Date.now();
+      updateD1SyncState({ status: 'error' });
+      return { success: false, error: `HTTP ${res.status}` };
+    }
     const data = await res.json();
     if (data.success && data.data) {
       updateD1SyncState({ status: 'success', lastCloudPull: new Date().toISOString(), cloudConnected: true, cloudCounts: data.counts || {} });
@@ -345,6 +354,7 @@ export const useAppStore = create<AppState>((set) => ({
         const token = result.token as string;
         const user = result.user as Record<string, unknown>;
         if (token) setApiToken(token);
+        _lastPull401Time = 0; // Reset cooldown on successful login
         const currentUser: User = {
           id: String(user.id || ''),
           username: String(user.username || ''),
@@ -476,13 +486,18 @@ export const useAppStore = create<AppState>((set) => ({
       // All entity GET endpoints return 404 there, so we skip them to avoid console noise.
 
       // Also try loading from D1 cloud database — only if user has a token
+      // AND we're not in cooldown from a recent 401
       try {
         const token = typeof window !== 'undefined' ? localStorage.getItem('api_token') : null;
-        if (token) {
+        if (token && (Date.now() - _lastPull401Time) > PULL_401_COOLDOWN) {
           const tenantId = getTenantId();
           const cloudRes = await localApi('GET', `/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
           if (!cloudRes.ok || cloudRes.status === 401) {
-            // Not authenticated or endpoint error — skip silently (normal before login or when session expired)
+            // Not authenticated or endpoint error — skip silently
+            // Set cooldown to prevent repeated 401 console spam
+            if (cloudRes.status === 401) {
+              _lastPull401Time = Date.now();
+            }
           } else {
             const cloudData = await cloudRes.json();
             if (cloudData?.success && cloudData.data) {
