@@ -743,9 +743,9 @@ function StudentsPage() {
   const [batchClassId, setBatchClassId] = useState('');
 
   const filtered = students.filter(s => {
-    const ms = s.fullName.toLowerCase().includes(search.toLowerCase()) || s.studentId.toLowerCase().includes(search.toLowerCase()) || (s.guardianName || '').toLowerCase().includes(search.toLowerCase());
+    const ms = (s.fullName || '').toLowerCase().includes(search.toLowerCase()) || (s.studentId || '').toLowerCase().includes(search.toLowerCase()) || (s.guardianName || '').toLowerCase().includes(search.toLowerCase());
     return ms && (classFilter === 'all' || s.classId === classFilter) && (statusFilter === 'all' || s.status === statusFilter);
-  }).sort((a, b) => { if (sortBy === 'name_asc') return a.fullName.localeCompare(b.fullName); if (sortBy === 'name_desc') return b.fullName.localeCompare(a.fullName); if (sortBy === 'id') return a.studentId.localeCompare(b.studentId); if (sortBy === 'date') return (b.createdAt || '').localeCompare(a.createdAt || ''); return 0; });
+  }).sort((a, b) => { if (sortBy === 'name_asc') return (a.fullName || '').localeCompare(b.fullName || ''); if (sortBy === 'name_desc') return (b.fullName || '').localeCompare(a.fullName || ''); if (sortBy === 'id') return (a.studentId || '').localeCompare(b.studentId || ''); if (sortBy === 'date') return (b.createdAt || '').localeCompare(a.createdAt || ''); return 0; });
 
   const openAdd = () => { setEditing(null); setForm({ fullName: '', studentId: '', classId: '', status: 'active', guardianName: '', guardianPhone: '', guardianEmail: '', phone: '', email: '', address: '', notes: '', group: '', photo: '' }); setDialogOpen(true); };
   const openEdit = (s: Student) => { setEditing(s); setForm({ fullName: s.fullName, studentId: s.studentId, classId: s.classId, status: s.status, guardianName: s.guardianName || '', guardianPhone: s.guardianPhone || '', guardianEmail: s.guardianEmail || '', phone: s.phone || '', email: s.email || '', address: s.address || '', notes: s.notes || '', group: s.group || '', photo: s.photo || '' }); setDialogOpen(true); };
@@ -1139,6 +1139,8 @@ function ModulesPage() {
       <div className="space-y-2"><Label>Description</Label><Textarea value={String(item.description || '')} onChange={e => onChange({ ...item, description: e.target.value })} rows={2} /></div>
     </div>
   )} />
+    </div>
+  )
 }
 
 // ==================== ATTENDANCE PAGE (with Quick Mode) ====================
