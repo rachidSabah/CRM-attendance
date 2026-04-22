@@ -475,48 +475,51 @@ export const useAppStore = create<AppState>((set) => ({
       // The external API (infohas-attendance-api) only supports auth/login.
       // All entity GET endpoints return 404 there, so we skip them to avoid console noise.
 
-      // Also try loading from D1 cloud database
+      // Also try loading from D1 cloud database — only if user has a token
       try {
-        const tenantId = getTenantId();
-        const cloudRes = await localApi('GET', `/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
-        if (!cloudRes.ok || cloudRes.status === 401) {
-          // Not authenticated or endpoint error — skip silently (normal before login or when session expired)
-        } else {
-          const cloudData = await cloudRes.json();
-          if (cloudData?.success && cloudData.data) {
-            const cd = cloudData.data;
-            const currentState = useAppStore.getState();
-            // Merge: prefer local data (user may have made intentional deletions)
-            // Only use cloud data if local is empty (fresh install or purged cache)
-            const mergeArray = (local: unknown[], cloudKey: string) => {
-              const cloud = cd[cloudKey];
-              if (Array.isArray(cloud) && local.length === 0) return cloud;
-              return local;
-            };
-            // Merge ALL entity types from cloud — cloud wins if larger
-            set({
-              students: mergeArray(currentState.students, 'students') as Student[],
-              classes: mergeArray(currentState.classes, 'classes') as Class[],
-              modules: mergeArray(currentState.modules, 'modules') as Module[],
-              attendance: mergeArray(currentState.attendance, 'attendance') as AttendanceRecord[],
-              grades: mergeArray(currentState.grades, 'grades') as Grade[],
-              behavior: mergeArray(currentState.behavior, 'behavior') as BehaviorRecord[],
-              tasks: mergeArray(currentState.tasks, 'tasks') as Task[],
-              incidents: mergeArray(currentState.incidents, 'incidents') as Incident[],
-              teachers: mergeArray(currentState.teachers, 'teachers') as Teacher[],
-              employees: mergeArray(currentState.employees, 'employees') as Employee[],
-              templates: mergeArray(currentState.templates, 'templates') as Template[],
-              academicYears: mergeArray(currentState.academicYears, 'academicYears') as AcademicYear[],
-              schedules: mergeArray(currentState.schedules, 'schedules') as ClassScheduleEntry[],
-              exams: mergeArray(currentState.exams, 'exams') as Exam[],
-              examGrades: mergeArray(currentState.examGrades, 'examGrades') as ExamGrade[],
-              curriculum: mergeArray(currentState.curriculum, 'curriculum') as CurriculumItem[],
-            });
-            // Merge school info — prefer local, use cloud only if local is empty
-            if (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(currentState.schoolInfo).length === 0) {
-              set({ schoolInfo: cd.schoolInfo as SchoolInfo });
+        const token = typeof window !== 'undefined' ? localStorage.getItem('api_token') : null;
+        if (token) {
+          const tenantId = getTenantId();
+          const cloudRes = await localApi('GET', `/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
+          if (!cloudRes.ok || cloudRes.status === 401) {
+            // Not authenticated or endpoint error — skip silently (normal before login or when session expired)
+          } else {
+            const cloudData = await cloudRes.json();
+            if (cloudData?.success && cloudData.data) {
+              const cd = cloudData.data;
+              const currentState = useAppStore.getState();
+              // Merge: prefer local data (user may have made intentional deletions)
+              // Only use cloud data if local is empty (fresh install or purged cache)
+              const mergeArray = (local: unknown[], cloudKey: string) => {
+                const cloud = cd[cloudKey];
+                if (Array.isArray(cloud) && local.length === 0) return cloud;
+                return local;
+              };
+              // Merge ALL entity types from cloud — cloud wins if larger
+              set({
+                students: mergeArray(currentState.students, 'students') as Student[],
+                classes: mergeArray(currentState.classes, 'classes') as Class[],
+                modules: mergeArray(currentState.modules, 'modules') as Module[],
+                attendance: mergeArray(currentState.attendance, 'attendance') as AttendanceRecord[],
+                grades: mergeArray(currentState.grades, 'grades') as Grade[],
+                behavior: mergeArray(currentState.behavior, 'behavior') as BehaviorRecord[],
+                tasks: mergeArray(currentState.tasks, 'tasks') as Task[],
+                incidents: mergeArray(currentState.incidents, 'incidents') as Incident[],
+                teachers: mergeArray(currentState.teachers, 'teachers') as Teacher[],
+                employees: mergeArray(currentState.employees, 'employees') as Employee[],
+                templates: mergeArray(currentState.templates, 'templates') as Template[],
+                academicYears: mergeArray(currentState.academicYears, 'academicYears') as AcademicYear[],
+                schedules: mergeArray(currentState.schedules, 'schedules') as ClassScheduleEntry[],
+                exams: mergeArray(currentState.exams, 'exams') as Exam[],
+                examGrades: mergeArray(currentState.examGrades, 'examGrades') as ExamGrade[],
+                curriculum: mergeArray(currentState.curriculum, 'curriculum') as CurriculumItem[],
+              });
+              // Merge school info — prefer local, use cloud only if local is empty
+              if (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(currentState.schoolInfo).length === 0) {
+                set({ schoolInfo: cd.schoolInfo as SchoolInfo });
+              }
+              updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });
             }
-            updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });
           }
         }
       } catch {}
