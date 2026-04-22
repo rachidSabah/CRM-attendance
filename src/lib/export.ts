@@ -53,9 +53,9 @@ export function exportClassesCSV(classes: Class[], students: Student[]) {
 }
 
 export function exportModulesCSV(modules: Module[]) {
-  const rows = [['Module Name', 'Code', 'Year', 'Semester', 'Credits', 'Description']];
+  const rows = [['Module Name', 'Code', 'Year', 'Semester', 'Hours', 'Description']];
   modules.forEach(m => {
-    rows.push([m.name, m.code || '', m.year || '', m.semester || '', String(m.credits || ''), m.description || '']);
+    rows.push([m.name, m.code || '', m.year || '', m.semester || '', String(m.hours || ''), m.description || '']);
   });
   downloadFile(rows.map(csvRow).join('\n'), 'modules_export.csv');
 }
@@ -132,8 +132,8 @@ export function exportAllCSV(data: { students: Student[]; classes: Class[]; modu
   });
 
   content += '\n=== MODULES ===\n';
-  content += csvRow(['Name', 'Code', 'Year', 'Semester', 'Credits']) + '\n';
-  data.modules.forEach(m => { content += csvRow([m.name, m.code || '', m.year || '', m.semester || '', String(m.credits || 0)]) + '\n'; });
+  content += csvRow(['Name', 'Code', 'Year', 'Semester', 'Hours']) + '\n';
+  data.modules.forEach(m => { content += csvRow([m.name, m.code || '', m.year || '', m.semester || '', String(m.hours || 0)]) + '\n'; });
 
   content += '\n=== GRADES ===\n';
   content += csvRow(['Student', 'Module', 'Grade', 'Percentage']) + '\n';

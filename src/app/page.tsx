@@ -773,9 +773,51 @@ function StudentsPage() {
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader(); reader.onload = (ev) => {
-      const text = ev.target?.result as string; const lines = text.split('\n').filter(l => l.trim()); if (lines.length < 2) return;
-      const h = lines[0].split(',').map(x => x.trim().toLowerCase()); const imported: Student[] = [];
-      for (let i = 1; i < lines.length; i++) { const c = lines[i].split(',').map(x => x.trim().replace(/^"|"$/g, '')); if (c.length < 2) continue; imported.push({ id: genId(), fullName: c[h.indexOf('fullname') >= 0 ? h.indexOf('fullname') : 0] || c[0], studentId: c[h.indexOf('studentid') >= 0 ? h.indexOf('studentid') : 1] || c[1], classId: '', status: 'active', guardianName: c[h.indexOf('guardianname') >= 0 ? h.indexOf('guardianname') : -1] || '', phone: '', email: c[h.indexOf('email') >= 0 ? h.indexOf('email') : -1] || '', address: '', createdAt: new Date().toISOString() }); }
+      const raw = (ev.target?.result as string).replace(/^\uFEFF/, '');
+      const lines = raw.split('\n').filter(l => l.trim()); if (lines.length < 2) return;
+      // Proper CSV row parser that handles quoted fields containing commas
+      const parseCSVRow = (row: string): string[] => {
+        const fields: string[] = []; let current = ''; let inQuotes = false;
+        for (let i = 0; i < row.length; i++) {
+          const ch = row[i];
+          if (inQuotes) {
+            if (ch === '"' && row[i + 1] === '"') { current += '"'; i++; }
+            else if (ch === '"') { inQuotes = false; }
+            else { current += ch; }
+          } else {
+            if (ch === '"') { inQuotes = true; }
+            else if (ch === ',') { fields.push(current.trim()); current = ''; }
+            else { current += ch; }
+          }
+        }
+        fields.push(current.trim());
+        return fields;
+      };
+      const headers = parseCSVRow(lines[0]).map(x => x.toLowerCase().replace(/\s+/g, ''));
+      const col = (name: string) => { const idx = headers.indexOf(name); return idx >= 0 ? idx : -1; };
+      const imported: Student[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const c = parseCSVRow(lines[i]); if (c.length < 2) continue;
+        const fullName = c[col('fullname')] || c[0] || '';
+        const studentId = c[col('studentid')] || c[1] || '';
+        if (!fullName) continue;
+        const className = c[col('class')] || '';
+        const matchedClass = className ? classes.find(cl => cl.name.toLowerCase() === className.toLowerCase()) : null;
+        const phoneVal = c[col('phone')] || '';
+        const guardianVal = c[col('guardian')] || '';
+        const emailVal = c[col('email')] || '';
+        const addressVal = c[col('address')] || '';
+        const statusVal = c[col('status')] || 'active';
+        const validStatuses = ['active', 'abandoned', 'terminated', 'graduated'];
+        imported.push({
+          id: genId(), fullName, studentId,
+          classId: matchedClass?.id || '', className: matchedClass?.name || className,
+          status: validStatuses.includes(statusVal) ? statusVal as Student['status'] : 'active',
+          guardianName: guardianVal, guardianPhone: phoneVal,
+          email: emailVal, address: addressVal,
+          createdAt: new Date().toISOString(),
+        });
+      }
       setStudents([...students, ...imported]); toast.success(`${imported.length} ${language === 'fr' ? 'étudiants importés' : 'students imported'}`);
     }; reader.readAsText(file); e.target.value = '';
   };
