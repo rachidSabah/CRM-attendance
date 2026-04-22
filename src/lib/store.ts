@@ -140,17 +140,18 @@ function scheduleApiSync() {
 }
 
 // ========== D1 Cloud Sync System ==========
+let _pushRetryCount = 0;
+const MAX_PUSH_RETRIES = 3;
+
 function scheduleD1Push() {
   // Don't push while loading from API — prevents overwriting cloud data with stale local data
   if (_loadingFromApi) return;
   if (_d1PushTimer) clearTimeout(_d1PushTimer);
-  _d1PushTimer = setTimeout(pushToD1, 5000); // 5 second debounce
+  _d1PushTimer = setTimeout(pushToD1, 3000); // 3 second debounce (reduced from 5s)
 }
 
-async function pushToD1() {
+async function pushToD1(): Promise<boolean> {
   try {
-    // Skip push if we recently got a 401 (token is invalid/expired)
-    if ((Date.now() - _lastPull401Time) <= PULL_401_COOLDOWN) return;
     updateD1SyncState({ status: 'syncing' });
     const state = useAppStore.getState();
     const payload = {
@@ -175,14 +176,23 @@ async function pushToD1() {
       admins: state.admins,
     };
     const res = await localApi('POST', '/api/sync/push', payload);
+    if (!res.ok) {
+      // If 401, token is bad — reset cooldown to allow pull retry on next load
+      if (res.status === 401) _lastPull401Time = 0;
+      updateD1SyncState({ status: 'error' });
+      return false;
+    }
     const data = await res.json();
     if (data.success) {
+      _pushRetryCount = 0;
       updateD1SyncState({ status: 'success', lastCloudSync: new Date().toISOString(), cloudConnected: true });
-    } else {
-      updateD1SyncState({ status: 'error' });
+      return true;
     }
+    updateD1SyncState({ status: 'error' });
+    return false;
   } catch (err) {
     updateD1SyncState({ status: 'error', cloudConnected: false });
+    return false;
   }
 }
 
@@ -355,6 +365,7 @@ export const useAppStore = create<AppState>((set) => ({
         const user = result.user as Record<string, unknown>;
         if (token) setApiToken(token);
         _lastPull401Time = 0; // Reset cooldown on successful login
+        _loadingFromApi = false; // Ensure push is not blocked
         const currentUser: User = {
           id: String(user.id || ''),
           username: String(user.username || ''),
@@ -373,6 +384,8 @@ export const useAppStore = create<AppState>((set) => ({
           tenantId: currentUser.tenantId,
           isSuperAdmin: currentUser.is_super_admin || false,
         }));
+        // Push current state to D1 after login to ensure cloud is in sync
+        setTimeout(() => { pushToD1(); }, 1500);
         return true;
       }
       return false;
@@ -481,20 +494,13 @@ export const useAppStore = create<AppState>((set) => ({
     _loadingFromApi = true;
 
     try {
-      // NOTE: Entity data is loaded from localStorage (above) and D1 cloud sync (below).
-      // The external API (infohas-attendance-api) only supports auth/login.
-      // All entity GET endpoints return 404 there, so we skip them to avoid console noise.
-
-      // Also try loading from D1 cloud database — only if user has a token
-      // AND we're not in cooldown from a recent 401
+      // Pull from D1 cloud database to get latest saved data
       try {
         const token = typeof window !== 'undefined' ? localStorage.getItem('api_token') : null;
-        if (token && (Date.now() - _lastPull401Time) > PULL_401_COOLDOWN) {
+        if (token) {
           const tenantId = getTenantId();
           const cloudRes = await localApi('GET', `/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
-          if (!cloudRes.ok || cloudRes.status === 401) {
-            // Not authenticated or endpoint error — skip silently
-            // Set cooldown to prevent repeated 401 console spam
+          if (!cloudRes.ok) {
             if (cloudRes.status === 401) {
               _lastPull401Time = Date.now();
             }
@@ -503,36 +509,74 @@ export const useAppStore = create<AppState>((set) => ({
             if (cloudData?.success && cloudData.data) {
               const cd = cloudData.data;
               const currentState = useAppStore.getState();
-              // Merge: prefer local data (user may have made intentional deletions)
-              // Only use cloud data if local is empty (fresh install or purged cache)
-              const mergeArray = (local: unknown[], cloudKey: string) => {
+
+              // Smart merge: merge local + cloud by ID, prefer the one with more records
+              // This ensures D1 data is used when it's the authoritative source
+              const mergeById = (local: Array<Record<string, unknown>>, cloudKey: string) => {
                 const cloud = cd[cloudKey];
-                if (Array.isArray(cloud) && local.length === 0) return cloud;
-                return local;
+                if (!Array.isArray(cloud)) return local;
+                // If cloud has significantly more data, use cloud (authoritative)
+                if (cloud.length > local.length + 2) return cloud;
+                // If local is empty, use cloud
+                if (local.length === 0) return cloud;
+                // Otherwise merge by ID — union of both, cloud as base, local overwrites
+                const map = new Map<string, Record<string, unknown>>();
+                for (const item of cloud) {
+                  const id = String(item.id || '');
+                  if (id) map.set(id, item);
+                }
+                for (const item of local) {
+                  const id = String(item.id || '');
+                  if (id) map.set(id, item); // local overwrites cloud
+                }
+                return Array.from(map.values());
               };
-              // Merge ALL entity types from cloud — cloud wins if larger
-              set({
-                students: mergeArray(currentState.students, 'students') as Student[],
-                classes: mergeArray(currentState.classes, 'classes') as Class[],
-                modules: mergeArray(currentState.modules, 'modules') as Module[],
-                attendance: mergeArray(currentState.attendance, 'attendance') as AttendanceRecord[],
-                grades: mergeArray(currentState.grades, 'grades') as Grade[],
-                behavior: mergeArray(currentState.behavior, 'behavior') as BehaviorRecord[],
-                tasks: mergeArray(currentState.tasks, 'tasks') as Task[],
-                incidents: mergeArray(currentState.incidents, 'incidents') as Incident[],
-                teachers: mergeArray(currentState.teachers, 'teachers') as Teacher[],
-                employees: mergeArray(currentState.employees, 'employees') as Employee[],
-                templates: mergeArray(currentState.templates, 'templates') as Template[],
-                academicYears: mergeArray(currentState.academicYears, 'academicYears') as AcademicYear[],
-                schedules: mergeArray(currentState.schedules, 'schedules') as ClassScheduleEntry[],
-                exams: mergeArray(currentState.exams, 'exams') as Exam[],
-                examGrades: mergeArray(currentState.examGrades, 'examGrades') as ExamGrade[],
-                curriculum: mergeArray(currentState.curriculum, 'curriculum') as CurriculumItem[],
-              });
-              // Merge school info — prefer local, use cloud only if local is empty
-              if (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(currentState.schoolInfo).length === 0) {
-                set({ schoolInfo: cd.schoolInfo as SchoolInfo });
+
+              const merged = {
+                students: mergeById(currentState.students as unknown as Array<Record<string, unknown>>, 'students') as unknown as Student[],
+                classes: mergeById(currentState.classes as unknown as Array<Record<string, unknown>>, 'classes') as unknown as Class[],
+                modules: mergeById(currentState.modules as unknown as Array<Record<string, unknown>>, 'modules') as unknown as Module[],
+                attendance: mergeById(currentState.attendance as unknown as Array<Record<string, unknown>>, 'attendance') as unknown as AttendanceRecord[],
+                grades: mergeById(currentState.grades as unknown as Array<Record<string, unknown>>, 'grades') as unknown as Grade[],
+                behavior: mergeById(currentState.behavior as unknown as Array<Record<string, unknown>>, 'behavior') as unknown as BehaviorRecord[],
+                tasks: mergeById(currentState.tasks as unknown as Array<Record<string, unknown>>, 'tasks') as unknown as Task[],
+                incidents: mergeById(currentState.incidents as unknown as Array<Record<string, unknown>>, 'incidents') as unknown as Incident[],
+                teachers: mergeById(currentState.teachers as unknown as Array<Record<string, unknown>>, 'teachers') as unknown as Teacher[],
+                employees: mergeById(currentState.employees as unknown as Array<Record<string, unknown>>, 'employees') as unknown as Employee[],
+                templates: mergeById(currentState.templates as unknown as Array<Record<string, unknown>>, 'templates') as unknown as Template[],
+                academicYears: mergeById(currentState.academicYears as unknown as Array<Record<string, unknown>>, 'academicYears') as unknown as AcademicYear[],
+                schedules: mergeById(currentState.schedules as unknown as Array<Record<string, unknown>>, 'schedules') as unknown as ClassScheduleEntry[],
+                exams: mergeById(currentState.exams as unknown as Array<Record<string, unknown>>, 'exams') as unknown as Exam[],
+                examGrades: mergeById(currentState.examGrades as unknown as Array<Record<string, unknown>>, 'examGrades') as unknown as ExamGrade[],
+                curriculum: mergeById(currentState.curriculum as unknown as Array<Record<string, unknown>>, 'curriculum') as unknown as CurriculumItem[],
+              };
+              set(merged);
+
+              // Also persist merged data to localStorage so it's available on next load
+              localStorage.setItem('attendance_students', JSON.stringify(merged.students));
+              localStorage.setItem('attendance_classes', JSON.stringify(merged.classes));
+              localStorage.setItem('attendance_modules', JSON.stringify(merged.modules));
+              localStorage.setItem('attendance_records', JSON.stringify(merged.attendance));
+              localStorage.setItem('attendance_grades', JSON.stringify(merged.grades));
+              localStorage.setItem('attendance_behavior', JSON.stringify(merged.behavior));
+              localStorage.setItem('attendance_tasks', JSON.stringify(merged.tasks));
+              localStorage.setItem('attendance_incidents', JSON.stringify(merged.incidents));
+              localStorage.setItem('attendance_teachers', JSON.stringify(merged.teachers));
+              localStorage.setItem('attendance_employees', JSON.stringify(merged.employees));
+              localStorage.setItem('attendance_templates', JSON.stringify(merged.templates));
+              localStorage.setItem('attendance_academic_years', JSON.stringify(merged.academicYears));
+              localStorage.setItem('attendance_schedules', JSON.stringify(merged.schedules));
+              localStorage.setItem('attendance_exams', JSON.stringify(merged.exams));
+              localStorage.setItem('attendance_exam_grades', JSON.stringify(merged.examGrades));
+              localStorage.setItem('attendance_curriculum', JSON.stringify(merged.curriculum));
+
+              // Merge school info
+              if (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(cd.schoolInfo).length > 0) {
+                const mergedInfo = { ...cd.schoolInfo as Record<string, unknown>, ...currentState.schoolInfo as Record<string, unknown> };
+                set({ schoolInfo: mergedInfo as SchoolInfo });
+                localStorage.setItem('attendance_school_info', JSON.stringify(mergedInfo));
               }
+
               updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });
             }
           }
@@ -544,6 +588,11 @@ export const useAppStore = create<AppState>((set) => ({
     } finally {
       // Re-enable API sync after loading is complete
       _loadingFromApi = false;
+      // After loading, push current state to D1 to ensure it's up to date
+      // This syncs any data that was only in localStorage to D1
+      if (typeof window !== 'undefined' && localStorage.getItem('api_token')) {
+        setTimeout(() => { pushToD1(); }, 2000);
+      }
     }
   },
 }));
