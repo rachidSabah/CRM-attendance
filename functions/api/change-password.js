@@ -24,8 +24,8 @@ async function handleChangePassword(context) {
     const body = await context.request.json();
     const { currentPassword, newPassword, username, tenant_id } = body;
 
-    if (!newPassword || newPassword.length < 4) {
-      return jsonResponse({ success: false, error: 'Password must be at least 4 characters' }, 400, context.request);
+    if (!newPassword || newPassword.length < 6) {
+      return jsonResponse({ success: false, error: 'Password must be at least 6 characters' }, 400, context.request);
     }
 
     if (!currentPassword) {

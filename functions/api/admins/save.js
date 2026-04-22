@@ -59,6 +59,13 @@ async function handleSave(context) {
     const authKey = `auth_${username}_${tid}`;
 
     if (action === 'delete') {
+      // Prevent self-deletion — admin would lock themselves out
+      if (auth.user?.username && username === auth.user.username) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Cannot delete your own account' }),
+          { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+        );
+      }
       // Remove the auth entry so deleted user can no longer login
       try {
         await db.prepare(

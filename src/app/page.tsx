@@ -124,6 +124,17 @@ function EmptyState({ message }: { message: string }) {
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).substring(2, 9); }
 
+/** Get today's date as YYYY-MM-DD in LOCAL timezone (not UTC) */
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Format a Date to YYYY-MM-DD in local timezone */
+function toLocalDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function formatWhatsAppPhone(phone: string | undefined): string {
   if (!phone) return '';
   let c = phone.replace(/\D/g, '');
@@ -211,7 +222,7 @@ function GlobalSearchDialog({ open, onOpenChange }: { open: boolean; onOpenChang
 // ==================== SMART NOTIFICATIONS ====================
 function generateSmartNotifications(students: Student[], attendance: AttendanceRecord[], tasks: Task[], classes: Class[], language: string) {
   const notifs: Array<{ id: string; title: string; message: string; urgent: boolean; timestamp: string; action?: string }> = [];
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
   const todayRecs = attendance.filter(r => r.date === today);
 
   // Low attendance alerts (< 75%)
@@ -272,8 +283,8 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
       const w = 3 - i;
       const we = new Date(now); we.setDate(now.getDate() - w * 7);
       const ws = new Date(we); ws.setDate(we.getDate() - 6);
-      const wsStr = ws.toISOString().split('T')[0];
-      const weStr = we.toISOString().split('T')[0];
+      const wsStr = toLocalDate(ws);
+      const weStr = toLocalDate(we);
       const wr = sa.filter(a => a.date >= wsStr && a.date <= weStr);
       const wp = wr.filter(a => a.status === 'present').length;
       return { label: `W${4 - w}`, rate: wr.length > 0 ? Math.round((wp / wr.length) * 100) : 0 };
@@ -307,7 +318,7 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
       .footer{display:flex;justify-content:space-between;font-size:10px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:8px}
     </style></head><body><div class="card">
       <div class="header"><h2>INFOHAS</h2><span style="font-size:12px;color:#6b7280">${esc(student.academicYear || '')}</span></div>
-      <div class="body"><div class="photo">${student.photo ? `<img src="${student.photo}" style="width:64px;height:64px;border-radius:50%;object-fit:cover">` : '&#128100;'}</div>
+      <div class="body"><div class="photo">${student.photo ? `<img src="${esc(student.photo)}" style="width:64px;height:64px;border-radius:50%;object-fit:cover">` : '&#128100;'}</div>
       <div class="info"><h3>${esc(student.fullName)}</h3><p>ID: ${esc(student.studentId)}</p><p>${esc(studentClass?.name || '-')}</p><p>Year: ${esc(student.academicYear || '-')}</p></div></div>
       <div class="footer"><span>Attendance: ${rate}%</span><span>Generated: ${new Date().toLocaleDateString()}</span></div>
     </div></body></html>`);
@@ -316,7 +327,8 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
   };
 
   const handleReport = () => {
-    const csvContent = `Student Report - ${student.fullName}\n\nBasic Info\nName,${student.fullName}\nID,${student.studentId}\nClass,${studentClass?.name || '-'}\nAcademic Year,${student.academicYear || '-'}\nStatus,${student.status}\nGuardian,${student.guardianName || '-'}\nPhone,${student.guardianPhone || '-'}\nEmail,${student.email || '-'}\n\nAttendance Summary\nTotal Days,${total}\nPresent,${present}\nAbsent,${absent}\nLate,${late}\nExcused,${excused}\nRate,${rate}%\nCurrent Streak,${curStreak}\nBest Streak,${bestStreak}\n\nRecent Grades\n${sg.slice(0, 10).map(g => `${modules.find(m => m.id === g.moduleId)?.name || '-'},${g.grade || '-'},${g.percentage || '-'}%`).join('\n')}`;
+    const csvEsc = (v: string) => `"${String(v || '').replace(/"/g, '""')}"`;
+    const csvContent = `Student Report - ${student.fullName}\n\nBasic Info\nName,${csvEsc(student.fullName)}\nID,${csvEsc(student.studentId)}\nClass,${csvEsc(studentClass?.name)}\nAcademic Year,${csvEsc(student.academicYear)}\nStatus,${csvEsc(student.status)}\nGuardian,${csvEsc(student.guardianName)}\nPhone,${csvEsc(student.guardianPhone)}\nEmail,${csvEsc(student.email)}\n\nAttendance Summary\nTotal Days,${total}\nPresent,${present}\nAbsent,${absent}\nLate,${late}\nExcused,${excused}\nRate,${rate}%\nCurrent Streak,${curStreak}\nBest Streak,${bestStreak}\n\nRecent Grades\n${sg.slice(0, 10).map(g => `${csvEsc(modules.find(m => m.id === g.moduleId)?.name)},${csvEsc(g.grade)},${g.percentage || '-'}%`).join('\n')}`;
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `report_${student.studentId}.csv`; a.click();
     toast.success(language === 'fr' ? 'Rapport généré' : 'Report generated');
@@ -587,7 +599,7 @@ function DashboardPage() {
   const [loading, setLoading] = useState(true);
   useEffect(() => { const t = setTimeout(() => setLoading(false), 500); return () => clearTimeout(t); }, []);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
   const todayRecords = attendance.filter(r => r.date === today);
   const presentCount = todayRecords.filter(r => r.status === 'present').length;
   const absentCount = todayRecords.filter(r => r.status === 'absent').length;
@@ -1180,7 +1192,7 @@ function ModulesPage() {
 // ==================== ATTENDANCE PAGE (with Quick Mode) ====================
 function AttendancePage() {
   const { students, classes, attendance, setAttendance, templates, schoolInfo, language } = useAppStore();
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(localToday());
   const [selectedClass, setSelectedClass] = useState('all');
   const [overrides, setOverrides] = useState<Record<string, AttendanceRecord['status']>>({});
   const [saving, setSaving] = useState(false);
@@ -1402,7 +1414,7 @@ function CalendarPage() {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>(() => { try { return JSON.parse(localStorage.getItem('calendar_events') || '[]'); } catch { return []; } });
   const [eventOpen, setEventOpen] = useState(false);
-  const [eventForm, setEventForm] = useState({ title: '', date: new Date().toISOString().split('T')[0], type: 'other' as CalendarEvent['type'], description: '', color: '#10b981' });
+  const [eventForm, setEventForm] = useState({ title: '', date: localToday(), type: 'other' as CalendarEvent['type'], description: '', color: '#10b981' });
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
 
   useEffect(() => { try { localStorage.setItem('calendar_events', JSON.stringify(events)); } catch {} }, [events]);
@@ -1425,7 +1437,7 @@ function CalendarPage() {
     if (editingEvent) { setEvents(events.map(e => e.id === editingEvent.id ? { ...e, ...eventForm, id: e.id, createdAt: e.createdAt } : e)); }
     else setEvents([...events, { ...eventForm, id: genId(), createdAt: new Date().toISOString() }]);
     toast.success(language === 'fr' ? 'Événement sauvegardé' : 'Event saved');
-    setEventOpen(false); setEditingEvent(null); setEventForm({ title: '', date: new Date().toISOString().split('T')[0], type: 'other', description: '', color: '#10b981' });
+    setEventOpen(false); setEditingEvent(null); setEventForm({ title: '', date: localToday(), type: 'other', description: '', color: '#10b981' });
   };
   const openEditEvent = (e: CalendarEvent) => { setEditingEvent(e); setEventForm({ title: e.title, date: e.date, type: e.type, description: e.description || '', color: e.color || '#10b981' }); setEventOpen(true); };
   const handleDeleteEvent = (id: string) => { setEvents(events.filter(e => e.id !== id)); toast.success('Event deleted'); };
@@ -1441,7 +1453,7 @@ function CalendarPage() {
           <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date())}>{language === 'fr' ? "Aujourd'hui" : 'Today'}</Button>
           <Button variant="outline" size="icon" onClick={() => setCurrentMonth(new Date(year, month + 1, 1))}><ChevronRight className="h-4 w-4" /></Button>
         </div>
-        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 ml-auto" onClick={() => { setEditingEvent(null); setEventForm({ title: '', date: new Date().toISOString().split('T')[0], type: 'other', description: '', color: '#10b981' }); setEventOpen(true); }}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter Événement' : 'Add Event'}</Button>
+        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 ml-auto" onClick={() => { setEditingEvent(null); setEventForm({ title: '', date: localToday(), type: 'other', description: '', color: '#10b981' }); setEventOpen(true); }}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter Événement' : 'Add Event'}</Button>
       </div>
 
       <Card className="border-0 shadow-sm"><CardContent className="p-4">
@@ -1451,7 +1463,7 @@ function CalendarPage() {
           {[...Array(daysInMonth)].map((_, i) => {
             const day = i + 1; const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const recs = getRecordsForDay(day); const evts = getEventsForDay(day);
-            const isToday = ds === new Date().toISOString().split('T')[0]; const isSel = selectedDay === ds;
+            const isToday = ds === localToday(); const isSel = selectedDay === ds;
             return (
               <button key={day} onClick={() => setSelectedDay(ds === selectedDay ? null : ds)} className={`relative p-2 rounded-lg text-sm min-h-16 flex flex-col items-center justify-center transition-colors ${isSel ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700' : 'hover:bg-muted'} ${isToday ? 'font-bold ring-2 ring-emerald-500' : ''}`}>
                 <span>{day}</span>
@@ -1859,7 +1871,7 @@ function SchedulePage() {
                   const day = i + 1;
                   const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                   const entry = getEntryForDay(day);
-                  const isToday = ds === new Date().toISOString().split('T')[0];
+                  const isToday = ds === localToday();
 
                   return (
                     <button
@@ -2213,7 +2225,7 @@ function GradesPage() {
   const [moduleFilter, setModuleFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editGrade, setEditGrade] = useState<Grade | null>(null);
-  const [form, setForm] = useState({ studentId: '', moduleId: '', grade: '', percentage: '', date: new Date().toISOString().split('T')[0] });
+  const [form, setForm] = useState({ studentId: '', moduleId: '', grade: '', percentage: '', date: localToday() });
 
   const filteredGrades = useMemo(() => {
     let g = [...grades];
@@ -2241,16 +2253,16 @@ function GradesPage() {
     return buckets.map((b, i) => ({ range: b, count: counts[i] }));
   }, [filteredGrades]);
 
-  const openAdd = () => { setEditGrade(null); setForm({ studentId: '', moduleId: '', grade: '', percentage: '', date: new Date().toISOString().split('T')[0] }); setDialogOpen(true); };
+  const openAdd = () => { setEditGrade(null); setForm({ studentId: '', moduleId: '', grade: '', percentage: '', date: localToday() }); setDialogOpen(true); };
   const openEdit = (g: Grade) => { setEditGrade(g); setForm({ studentId: g.studentId, moduleId: g.moduleId, grade: g.grade || '', percentage: g.percentage != null ? String(g.percentage) : '', date: g.date || '' }); setDialogOpen(true); };
 
   const handleSave = () => {
     if (!form.studentId || !form.moduleId) return;
     if (editGrade) {
-      setGrades(grades.map(g => g.id === editGrade.id ? { ...g, studentId: form.studentId, moduleId: form.moduleId, grade: form.grade, percentage: Number(form.percentage) || undefined, date: form.date } : g));
+      setGrades(grades.map(g => g.id === editGrade.id ? { ...g, studentId: form.studentId, moduleId: form.moduleId, grade: form.grade, percentage: form.percentage !== '' ? Number(form.percentage) : undefined, date: form.date } : g));
       toast.success(language === 'fr' ? 'Note mise à jour' : 'Grade updated');
     } else {
-      setGrades([...grades, { id: genId(), studentId: form.studentId, moduleId: form.moduleId, grade: form.grade, percentage: Number(form.percentage) || undefined, date: form.date, createdAt: new Date().toISOString() }]);
+      setGrades([...grades, { id: genId(), studentId: form.studentId, moduleId: form.moduleId, grade: form.grade, percentage: form.percentage !== '' ? Number(form.percentage) : undefined, date: form.date, createdAt: new Date().toISOString() }]);
       toast.success(language === 'fr' ? 'Note ajoutée' : 'Grade added');
     }
     setDialogOpen(false);
@@ -2299,7 +2311,7 @@ function BehaviorPage() {
   const [studentFilter, setStudentFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editRec, setEditRec] = useState<BehaviorRecord | null>(null);
-  const [form, setForm] = useState({ studentId: '', type: 'positive' as 'positive' | 'negative', description: '', points: '0', date: new Date().toISOString().split('T')[0] });
+  const [form, setForm] = useState({ studentId: '', type: 'positive' as 'positive' | 'negative', description: '', points: '0', date: localToday() });
 
   const filtered = useMemo(() => {
     let b = [...behavior];
@@ -2314,13 +2326,13 @@ function BehaviorPage() {
       const s = students.find(st => st.id === b.studentId);
       if (!s) return;
       const d = map.get(b.studentId) || { pos: 0, neg: 0, name: s.fullName };
-      if (b.type === 'positive') d.pos += (b.points ?? 1); else d.neg += (b.points ?? 1);
+      if (b.type === 'positive') d.pos += Math.abs(b.points ?? 1); else d.neg += Math.abs(b.points ?? 1);
       map.set(b.studentId, d);
     });
     return Array.from(map.entries()).map(([id, d]) => ({ id, ...d, total: d.pos + d.neg })).sort((a, b) => b.total - a.total);
   }, [behavior, students]);
 
-  const openAdd = () => { setEditRec(null); setForm({ studentId: '', type: 'positive', description: '', points: '1', date: new Date().toISOString().split('T')[0] }); setDialogOpen(true); };
+  const openAdd = () => { setEditRec(null); setForm({ studentId: '', type: 'positive', description: '', points: '1', date: localToday() }); setDialogOpen(true); };
   const openEdit = (r: BehaviorRecord) => { setEditRec(r); setForm({ studentId: r.studentId, type: r.type, description: r.description, points: String(r.points || 0), date: r.date }); setDialogOpen(true); };
 
   const handleSave = () => {
@@ -2822,7 +2834,7 @@ function IncidentsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [editInc, setEditInc] = useState<Incident | null>(null);
   const [selectedInc, setSelectedInc] = useState<Incident | null>(null);
-  const [form, setForm] = useState({ studentId: '', incidentType: '', severity: 'medium' as Incident['severity'], status: 'open' as Incident['status'], description: '', actionTaken: '', date: new Date().toISOString().split('T')[0], followUpNotes: '' });
+  const [form, setForm] = useState({ studentId: '', incidentType: '', severity: 'medium' as Incident['severity'], status: 'open' as Incident['status'], description: '', actionTaken: '', date: localToday(), followUpNotes: '' });
 
   const filtered = useMemo(() => {
     let i = [...incidents];
@@ -2835,7 +2847,7 @@ function IncidentsPage() {
     all: incidents.length, low: incidents.filter(i => i.severity === 'low').length, medium: incidents.filter(i => i.severity === 'medium').length, high: incidents.filter(i => i.severity === 'high').length, critical: incidents.filter(i => i.severity === 'critical').length,
   }), [incidents]);
 
-  const openAdd = () => { setEditInc(null); setForm({ studentId: '', incidentType: '', severity: 'medium', status: 'open', description: '', actionTaken: '', date: new Date().toISOString().split('T')[0], followUpNotes: '' }); setDialogOpen(true); };
+  const openAdd = () => { setEditInc(null); setForm({ studentId: '', incidentType: '', severity: 'medium', status: 'open', description: '', actionTaken: '', date: localToday(), followUpNotes: '' }); setDialogOpen(true); };
   const openEdit = (inc: Incident) => { setEditInc(inc); setForm({ studentId: inc.studentId, incidentType: inc.incidentType || '', severity: inc.severity, status: inc.status, description: inc.description || '', actionTaken: inc.actionTaken || '', date: inc.date || '', followUpNotes: inc.followUpNotes || '' }); setDialogOpen(true); };
   const openDetail = (inc: Incident) => { setSelectedInc(inc); setDetailOpen(true); };
 
@@ -3388,7 +3400,7 @@ function ReportsPage() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Présence par classe' : 'Attendance by Class'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={250}><BarChart data={classAttendance}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} domain={[0, 100]} /><ReTooltip /><Bar dataKey="rate" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Répartition des statuts' : 'Status Distribution'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={250}><PieChart><Pie data={attendancePieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value"><Cell fill="#10b981" /><Cell fill="#ef4444" /><Cell fill="#f59e0b" /><Cell fill="#3b82f6" /></Pie><ReTooltip /><Legend /></PieChart></ResponsiveContainer></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Répartition des statuts' : 'Status Distribution'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={250}><PieChart><Pie data={attendancePieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value">{attendancePieData.map((entry, i) => <Cell key={i} fill={['#10b981', '#ef4444', '#f59e0b', '#3b82f6'][i % 4]} />)}</Pie><ReTooltip /><Legend /></PieChart></ResponsiveContainer></CardContent></Card>
         </div>
       </>)}
 
@@ -3405,7 +3417,7 @@ function ReportsPage() {
           <div className="rounded-lg p-4 text-center bg-red-100 dark:bg-red-900/20"><p className="text-3xl font-bold text-red-700">{behaviorSummary.negative}</p><p className="text-xs text-red-600">{t('negative', language)}</p></div>
           <div className={`rounded-lg p-4 text-center ${behaviorSummary.totalPoints >= 0 ? 'bg-emerald-100 dark:bg-emerald-900/20' : 'bg-red-100 dark:bg-red-900/20'}`}><p className={`text-3xl font-bold ${behaviorSummary.totalPoints >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{behaviorSummary.totalPoints > 0 ? '+' : ''}{behaviorSummary.totalPoints}</p><p className="text-xs">{language === 'fr' ? 'Total Points' : 'Total Points'}</p></div>
         </div>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Comportement' : 'Behavior'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={200}><PieChart><Pie data={[{ name: t('positive', language), value: behaviorSummary.positive }, { name: t('negative', language), value: behaviorSummary.negative }]} cx="50%" cy="50%" outerRadius={80} dataKey="value" fill="#8884d8"><Cell fill="#10b981" /><Cell fill="#ef4444" /></Pie><ReTooltip /><Legend /></PieChart></ResponsiveContainer></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Comportement' : 'Behavior'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={200}><PieChart><Pie data={[{ name: t('positive', language), value: behaviorSummary.positive }, { name: t('negative', language), value: behaviorSummary.negative }].filter(d => d.value > 0)} cx="50%" cy="50%" outerRadius={80} dataKey="value" fill="#8884d8">{[{ name: t('positive', language), value: behaviorSummary.positive }, { name: t('negative', language), value: behaviorSummary.negative }].filter(d => d.value > 0).map((_, i) => <Cell key={i} fill={['#10b981', '#ef4444'][i]} />)}</Pie><ReTooltip /><Legend /></PieChart></ResponsiveContainer></CardContent></Card>
       </>)}
 
       {reportType === 'progress' && <ProgressReportsSection />}
@@ -3891,7 +3903,7 @@ function SettingsPage() {
             timestamp: new Date().toISOString(),
             data: { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees, templates, academicYears, schoolInfo },
           };
-          const fileName = `CRM_Attendance_Backup_${new Date().toISOString().split('T')[0]}.json`;
+          const fileName = `CRM_Attendance_Backup_${localToday()}.json`;
           const fileId = await uploadToGoogleDrive(accessToken, fileName, JSON.stringify(backupPayload, null, 2), googleDriveFileIdRef.current);
           googleDriveFileIdRef.current = fileId;
           toast.success(language === 'fr'
@@ -5057,7 +5069,7 @@ function ReminderSettings() {
     setSending(true);
     setReminderResult(null);
     const result = await sendAttendanceReminders({
-      attendance: attendance.filter(a => a.date === new Date().toISOString().split('T')[0] && (a.status === 'absent' || a.status === 'late')),
+      attendance: attendance.filter(a => a.date === localToday() && (a.status === 'absent' || a.status === 'late')),
       students,
       classes,
       brevoApiKey: brevoConfig.apiKey,
@@ -5074,7 +5086,7 @@ function ReminderSettings() {
     setSending(false);
   };
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
   const todayAbsences = attendance.filter(a => a.date === today && a.status === 'absent').length;
   const todayLates = attendance.filter(a => a.date === today && a.status === 'late').length;
 
@@ -5164,7 +5176,7 @@ function ExamsPage() {
   const examTypes: Exam['type'][] = ['midterm', 'final', 'quiz', 'practical', 'oral', 'project', 'other'];
   const examStatuses: Exam['status'][] = ['scheduled', 'in_progress', 'completed', 'cancelled'];
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
   const filteredExams = useMemo(() => {
     let list = [...exams].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     if (tab === 'upcoming') list = list.filter(e => e.date >= today && e.status !== 'cancelled');
@@ -5927,7 +5939,7 @@ function SuperAdminPage() {
               if (!userForm.fullName || !userForm.username) { toast.error(language === 'fr' ? 'Nom et identifiant requis' : 'Name and username required'); return; }
               if (!editUser && !userForm.password) { toast.error(language === 'fr' ? 'Le mot de passe est requis' : 'Password is required'); return; }
               const userData = { ...userForm, id: editUser ? (editUser as Record<string, unknown>).id : genId(), fullName: userForm.fullName, name: userForm.fullName, username: userForm.username, role: userForm.role, department: userForm.department, tenantId: userForm.tenantId };
-              if (editUser) { const idx = admins.indexOf(editUser); const updated = [...admins]; updated[idx] = { ...updated[idx], ...userData }; if (!userForm.password) delete (userData as Record<string, unknown>).password; else (userData as Record<string, unknown>).password = userForm.password; setAdmins(updated); addAuditLog('UPDATE_USER', 'user', String((editUser as Record<string, unknown>).id), userForm.fullName, `Updated user: ${userForm.username}`); const saved = await saveAdminToD1('update', userData); if (!saved) { toast.error(language === 'fr' ? 'Échec de la sauvegarde — session peut être expirée, veuillez vous reconnecter' : 'Save failed — session may have expired, please log in again'); } else { toast.success(language === 'fr' ? 'Utilisateur mis à jour' : 'User updated'); } }
+              if (editUser) { const idx = admins.indexOf(editUser); const updated = [...admins]; const updateData = { ...userData }; if (!userForm.password) delete (updateData as Record<string, unknown>).password; else (updateData as Record<string, unknown>).password = userForm.password; updated[idx] = { ...updated[idx], ...updateData }; setAdmins(updated); addAuditLog('UPDATE_USER', 'user', String((editUser as Record<string, unknown>).id), userForm.fullName, `Updated user: ${userForm.username}`); const saved = await saveAdminToD1('update', updateData); if (!saved) { toast.error(language === 'fr' ? 'Échec de la sauvegarde — session peut être expirée, veuillez vous reconnecter' : 'Save failed — session may have expired, please log in again'); } else { toast.success(language === 'fr' ? 'Utilisateur mis à jour' : 'User updated'); } }
               else { const saved = await saveAdminToD1('create', userData); if (!saved) { toast.error(language === 'fr' ? 'Échec de la sauvegarde — session peut être expirée, veuillez vous reconnecter' : 'Save failed — session may have expired, please log in again'); return; } setAdmins([...admins, userData]); addAuditLog('CREATE_USER', 'user', String(userData.id), userForm.fullName, `Created user: ${userForm.username} (${userForm.role})`); toast.success(language === 'fr' ? 'Utilisateur ajouté' : 'User added'); }
               setUserDialog(false);
             }}>{editUser ? <><Save className="h-4 w-4 mr-1" />{t('save', language)}</> : <><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter' : 'Add'}</>}</Button></DialogFooter>
@@ -6062,7 +6074,7 @@ function AuditTrailSection() {
     const blob = new Blob([header + rows], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `audit_trail_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `audit_trail_${localToday()}.csv`;
     a.click();
     toast.success(language === 'fr' ? 'Journal exporté' : 'Audit log exported');
   };
@@ -6321,13 +6333,13 @@ function ImportWizardSection() {
         if (skipped > 0) toast.info(`${skipped} ${language === 'fr' ? 'doublons ignorés' : 'duplicates skipped'}`);
       } else if (importType === 'grades') {
         const existingGrades = new Set(grades.map(g => `${g.studentId}_${g.moduleId}_${g.date}`));
-        const newGrades: Grade[] = validRows.filter(r => !existingGrades.has(`${r.row[0]}_${r.row[1]}_${r.row[4] || new Date().toISOString().split('T')[0]}`)).map(r => ({
+        const newGrades: Grade[] = validRows.filter(r => !existingGrades.has(`${r.row[0]}_${r.row[1]}_${r.row[4] || localToday()}`)).map(r => ({
           id: genId(),
           studentId: r.row[0],
           moduleId: r.row[1],
           grade: r.row[2] || '',
           percentage: r.row[3] ? parseFloat(r.row[3]) : undefined,
-          date: r.row[4] || new Date().toISOString().split('T')[0],
+          date: r.row[4] || localToday(),
           createdAt: new Date().toISOString(),
         }));
         setGrades([...grades, ...newGrades]);
