@@ -479,8 +479,8 @@ export const useAppStore = create<AppState>((set) => ({
       try {
         const tenantId = getTenantId();
         const cloudRes = await localApi('GET', `/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
-        if (!cloudRes.ok) {
-          // Endpoint not available or error — skip silently
+        if (!cloudRes.ok || cloudRes.status === 401) {
+          // Not authenticated or endpoint error — skip silently (normal before login or when session expired)
         } else {
           const cloudData = await cloudRes.json();
           if (cloudData?.success && cloudData.data) {
