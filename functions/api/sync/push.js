@@ -24,6 +24,7 @@ const ENTITY_TYPES = {
   exams: 'exams',
   examGrades: 'exam_grades',
   curriculum: 'curriculum_items',
+  calendarEvents: 'calendar_events',
 };
 
 async function handlePush(context) {
@@ -157,7 +158,7 @@ async function handlePush(context) {
   } catch (err) {
     console.error('[sync/push] Error:', err);
     return new Response(
-      JSON.stringify({ success: false, error: err.message }),
+      JSON.stringify({ success: false, error: 'Internal server error' }),
       { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   }

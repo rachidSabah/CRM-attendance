@@ -14,6 +14,7 @@
 
 import { validateRequest } from '../../_lib/auth.js';
 import { getCorsHeaders } from '../../_lib/cors.js';
+import { fetchAll } from '../../_lib/paginate.js';
 
 function buildAbsenceEmailHtml(studentName, className, date, schoolName, language) {
   const isAr = language === 'ar';
@@ -161,27 +162,30 @@ async function handleReminderCheck(context) {
       );
     }
 
-    // Get today's attendance records for absent/late students
-    const attendanceRecords = await db.prepare(
-      `SELECT e.data FROM entities e
-       WHERE e.tenant_id = ? AND e.entity_type = 'attendance_records'`
-    ).bind(tenantId).all();
+    // Get today's attendance records for absent/late students (paginated)
+    const attendanceRecords = await fetchAll(
+      db,
+      `SELECT e.data FROM entities e WHERE e.tenant_id = ? AND e.entity_type = 'attendance_records'`,
+      [tenantId]
+    );
 
-    // Get students
-    const studentRecords = await db.prepare(
-      `SELECT e.data FROM entities e
-       WHERE e.tenant_id = ? AND e.entity_type = 'students'`
-    ).bind(tenantId).all();
+    // Get students (paginated)
+    const studentRecords = await fetchAll(
+      db,
+      `SELECT e.data FROM entities e WHERE e.tenant_id = ? AND e.entity_type = 'students'`,
+      [tenantId]
+    );
 
-    // Get classes
-    const classRecords = await db.prepare(
-      `SELECT e.data FROM entities e
-       WHERE e.tenant_id = ? AND e.entity_type = 'classes'`
-    ).bind(tenantId).all();
+    // Get classes (paginated)
+    const classRecords = await fetchAll(
+      db,
+      `SELECT e.data FROM entities e WHERE e.tenant_id = ? AND e.entity_type = 'classes'`,
+      [tenantId]
+    );
 
     // Parse data
     const students = {};
-    for (const row of (studentRecords.results || [])) {
+    for (const row of studentRecords) {
       try {
         const s = JSON.parse(row.data);
         students[s.id] = s;
@@ -189,7 +193,7 @@ async function handleReminderCheck(context) {
     }
 
     const classes = {};
-    for (const row of (classRecords.results || [])) {
+    for (const row of classRecords) {
       try {
         const c = JSON.parse(row.data);
         classes[c.id] = c;
@@ -199,7 +203,7 @@ async function handleReminderCheck(context) {
     // Find absences/late for target date
     const absentStudents = [];
     const lateStudents = [];
-    for (const row of (attendanceRecords.results || [])) {
+    for (const row of attendanceRecords) {
       try {
         const a = JSON.parse(row.data);
         if (a.date === targetDate) {
@@ -331,7 +335,7 @@ async function handleReminderCheck(context) {
   } catch (err) {
     console.error('[reminders/check] Error:', err);
     return new Response(
-      JSON.stringify({ success: false, error: err.message }),
+      JSON.stringify({ success: false, error: 'Internal server error' }),
       { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   }

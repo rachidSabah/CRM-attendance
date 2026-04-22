@@ -5,6 +5,7 @@
 
 import { validateRequest } from '../../_lib/auth.js';
 import { getCorsHeaders } from '../../_lib/cors.js';
+import { fetchAll } from '../../_lib/paginate.js';
 
 async function handleTrigger(context) {
   // Auth check
@@ -31,7 +32,7 @@ async function handleTrigger(context) {
         tasks: 'tasks', incidents: 'incidents', teachers: 'teachers',
         employees: 'employees', templates: 'templates', academicYears: 'academic_years',
         schedules: 'schedules', exams: 'exams', examGrades: 'exam_grades',
-        curriculum: 'curriculum_items',
+        curriculum: 'curriculum_items', calendarEvents: 'calendar_events',
       };
 
       let pushed = 0;
@@ -76,7 +77,7 @@ async function handleTrigger(context) {
         tasks: 'tasks', incidents: 'incidents', teachers: 'teachers',
         employees: 'employees', templates: 'templates', academic_years: 'academicYears',
         schedules: 'schedules', exams: 'exams', exam_grades: 'examGrades',
-        curriculum_items: 'curriculum',
+        curriculum_items: 'curriculum', calendar_events: 'calendarEvents',
       };
 
       const db = context.env.DB;
@@ -89,14 +90,12 @@ async function handleTrigger(context) {
         }
       }
 
-      const allEntities = await db.prepare(`SELECT entity_type, data FROM entities WHERE tenant_id = ?`).bind(tenantId).all();
-      if (allEntities.results) {
-        for (const row of allEntities.results) {
-          const bodyKey = ENTITY_TYPE_MAP[row.entity_type];
-          if (bodyKey) {
-            if (!data[bodyKey]) data[bodyKey] = [];
-            try { data[bodyKey].push(JSON.parse(row.data)); } catch {}
-          }
+      const allEntities = await fetchAll(db, `SELECT entity_type, data FROM entities WHERE tenant_id = ?`, [tenantId]);
+      for (const row of allEntities) {
+        const bodyKey = ENTITY_TYPE_MAP[row.entity_type];
+        if (bodyKey) {
+          if (!data[bodyKey]) data[bodyKey] = [];
+          try { data[bodyKey].push(JSON.parse(row.data)); } catch {}
         }
       }
 
@@ -115,7 +114,7 @@ async function handleTrigger(context) {
   } catch (err) {
     console.error('[sync/trigger] Error:', err);
     return new Response(
-      JSON.stringify({ success: false, error: err.message }),
+      JSON.stringify({ success: false, error: 'Internal server error' }),
       { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   }

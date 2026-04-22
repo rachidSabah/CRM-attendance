@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from './types';
+import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule, CalendarEvent } from './types';
 import { api, setApiToken, localApi } from './api';
 
 interface AppState {
@@ -32,6 +32,7 @@ interface AppState {
   curriculum: CurriculumItem[];
   auditLog: AuditLogEntry[];
   savedSchedules: SavedSchedule[];
+  calendarEvents: CalendarEvent[];
   profileViewStudent: Student | null;
 
   // Settings
@@ -64,6 +65,7 @@ interface AppState {
   addAuditLog: (action: string, entityType: string, entityId?: string, entityName?: string, details?: string) => void;
   setAuditLog: (logs: AuditLogEntry[]) => void;
   setSavedSchedules: (schedules: SavedSchedule[]) => void;
+  setCalendarEvents: (events: CalendarEvent[]) => void;
   setAdmins: (admins: Record<string, unknown>[]) => void;
   purgeCache: () => void;
   loadAllData: () => Promise<void>;
@@ -172,6 +174,7 @@ async function pushToD1(): Promise<boolean> {
       exams: state.exams,
       examGrades: state.examGrades,
       curriculum: state.curriculum,
+      calendarEvents: state.calendarEvents,
       schoolInfo: state.schoolInfo,
       admins: state.admins,
     };
@@ -218,6 +221,7 @@ export async function syncToCloud(): Promise<{ success: boolean; upserted?: numb
       academicYears: state.academicYears,
       schedules: state.schedules,
       admins: state.admins,
+      calendarEvents: state.calendarEvents,
       exams: state.exams,
       examGrades: state.examGrades,
       curriculum: state.curriculum,
@@ -341,7 +345,7 @@ export const useAppStore = create<AppState>((set) => ({
   examGrades: [],
   curriculum: [],
   auditLog: [],
-  savedSchedules: [], profileViewStudent: null,
+  savedSchedules: [], calendarEvents: [], profileViewStudent: null,
   language: 'en',
   primaryColor: '#10b981',
 
@@ -436,6 +440,7 @@ export const useAppStore = create<AppState>((set) => ({
   },
   setAuditLog: (logs) => { set({ auditLog: logs }); localStorage.setItem('attendance_audit_log', JSON.stringify(logs)); },
   setSavedSchedules: (s) => { set({ savedSchedules: s }); localStorage.setItem('attendance_saved_schedules', JSON.stringify(s)); scheduleApiSync(); },
+  setCalendarEvents: (e) => { set({ calendarEvents: e }); localStorage.setItem('calendar_events', JSON.stringify(e)); scheduleApiSync(); scheduleD1Push(); },
   setAdmins: (a) => { set({ admins: a }); localStorage.setItem('attendance_admins', JSON.stringify(a)); scheduleD1Push(); },
   purgeCache: () => {
     const keep = ['attendance_auth', 'attendance_primary_color'];
@@ -446,7 +451,7 @@ export const useAppStore = create<AppState>((set) => ({
       behavior: [], tasks: [], incidents: [], teachers: [], employees: [],
       templates: [], academicYears: [], schoolInfo: {}, notifications: [],
       admins: [], schedules: [], exams: [], examGrades: [], curriculum: [],
-      auditLog: [], savedSchedules: [],
+      auditLog: [], savedSchedules: [], calendarEvents: [],
     });
   },
   setPrimaryColor: (color) => { set({ primaryColor: color }); localStorage.setItem('attendance_primary_color', color); document.documentElement.style.setProperty('--app-primary-color', color); scheduleApiSync(); },
@@ -476,6 +481,7 @@ export const useAppStore = create<AppState>((set) => ({
       curriculum: loadLocal('attendance_curriculum'),
       auditLog: loadLocal('attendance_audit_log'),
       savedSchedules: loadLocal('attendance_saved_schedules'),
+      calendarEvents: loadLocal('calendar_events'),
       language: savedLang || 'en',
     });
 
@@ -556,6 +562,7 @@ export const useAppStore = create<AppState>((set) => ({
                 exams: mergeById(currentState.exams as unknown as Array<Record<string, unknown>>, 'exams') as unknown as Exam[],
                 examGrades: mergeById(currentState.examGrades as unknown as Array<Record<string, unknown>>, 'examGrades') as unknown as ExamGrade[],
                 curriculum: mergeById(currentState.curriculum as unknown as Array<Record<string, unknown>>, 'curriculum') as unknown as CurriculumItem[],
+                calendarEvents: mergeById(currentState.calendarEvents as unknown as Array<Record<string, unknown>>, 'calendarEvents') as unknown as CalendarEvent[],
               };
               set(merged);
 
@@ -582,6 +589,7 @@ export const useAppStore = create<AppState>((set) => ({
               localStorage.setItem('attendance_exams', JSON.stringify(merged.exams));
               localStorage.setItem('attendance_exam_grades', JSON.stringify(merged.examGrades));
               localStorage.setItem('attendance_curriculum', JSON.stringify(merged.curriculum));
+              localStorage.setItem('calendar_events', JSON.stringify(merged.calendarEvents));
 
               // Merge school info
               if (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(cd.schoolInfo).length > 0) {

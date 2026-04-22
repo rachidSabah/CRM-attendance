@@ -6,6 +6,7 @@
 
 import { validateRequest } from '../../_lib/auth.js';
 import { getCorsHeaders } from '../../_lib/cors.js';
+import { fetchAll } from '../../_lib/paginate.js';
 
 const ENTITY_TYPE_MAP = {
   students: 'students',
@@ -24,6 +25,7 @@ const ENTITY_TYPE_MAP = {
   exams: 'exams',
   exam_grades: 'examGrades',
   curriculum_items: 'curriculum',
+  calendar_events: 'calendarEvents',
 };
 
 async function handlePull(context) {
@@ -73,18 +75,18 @@ async function handlePull(context) {
       if (admins.length > 0) result.data.admins = admins;
     }
 
-    // Pull entities by type
-    const allEntities = await db.prepare(
-      `SELECT entity_type, data FROM entities WHERE tenant_id = ?`
-    ).bind(tenantId).all();
+    // Pull entities by type (paginated to avoid D1 1000-row limit)
+    const allEntities = await fetchAll(
+      db,
+      `SELECT entity_type, data FROM entities WHERE tenant_id = ?`,
+      [tenantId]
+    );
 
-    if (allEntities.results) {
-      for (const row of allEntities.results) {
-        const bodyKey = ENTITY_TYPE_MAP[row.entity_type];
-        if (bodyKey) {
-          if (!result.data[bodyKey]) result.data[bodyKey] = [];
-          try { result.data[bodyKey].push(JSON.parse(row.data)); } catch {}
-        }
+    for (const row of allEntities) {
+      const bodyKey = ENTITY_TYPE_MAP[row.entity_type];
+      if (bodyKey) {
+        if (!result.data[bodyKey]) result.data[bodyKey] = [];
+        try { result.data[bodyKey].push(JSON.parse(row.data)); } catch {}
       }
     }
 

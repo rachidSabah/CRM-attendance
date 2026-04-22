@@ -136,7 +136,7 @@ async function handleChangePassword(context) {
     return jsonResponse({ success: true, message: 'Password changed successfully', token: newSessionToken }, 200, context.request);
   } catch (err) {
     console.error('[change-password] Error:', err);
-    return jsonResponse({ success: false, error: String(err?.message || err) }, 500, context.request);
+    return jsonResponse({ success: false, error: 'Internal server error' }, 500, context.request);
   }
 }
 
