@@ -41,9 +41,11 @@ async function handleTrigger(context) {
       for (const [bodyKey, entityType] of Object.entries(ENTITY_TYPES)) {
         const data = body[bodyKey];
         if (!Array.isArray(data)) continue;
+        const pushedIds = new Set();
         for (const record of data) {
           const id = String(record.id || '');
           if (!id) continue;
+          pushedIds.add(id);
           await db.prepare(
             `INSERT INTO entities (id, tenant_id, entity_type, data, updated_at)
              VALUES (?, ?, ?, ?, datetime('now'))
@@ -51,6 +53,22 @@ async function handleTrigger(context) {
           ).bind(id, tenantId, entityType, JSON.stringify(record)).run();
           pushed++;
         }
+        // Delete records removed from frontend (same logic as push.js)
+        try {
+          const existing = await db.prepare(
+            `SELECT id FROM entities WHERE tenant_id = ? AND entity_type = ?`
+          ).bind(tenantId, entityType).all();
+          if (existing.results) {
+            for (const row of existing.results) {
+              if (!pushedIds.has(String(row.id))) {
+                await db.prepare(
+                  `DELETE FROM entities WHERE tenant_id = ? AND entity_type = ? AND id = ?`
+                ).bind(tenantId, entityType, row.id).run();
+                pushed++;
+              }
+            }
+          }
+        } catch {}
       }
 
       // Sync school info

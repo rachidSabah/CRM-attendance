@@ -59,9 +59,13 @@ async function handlePush(context) {
       const data = body[bodyKey];
       if (!Array.isArray(data)) continue;
 
+      // Collect pushed IDs for later cleanup of removed records
+      const pushedIds = new Set();
+
       for (const record of data) {
         const id = String(record.id || '');
         if (!id) continue;
+        pushedIds.add(id);
         const dataStr = JSON.stringify(record);
 
         await db.prepare(
@@ -70,6 +74,27 @@ async function handlePush(context) {
            ON CONFLICT(id, tenant_id) DO UPDATE SET data = excluded.data, entity_type = excluded.entity_type, updated_at = excluded.updated_at`
         ).bind(id, tenantId, entityType, dataStr).run();
         totalUpserted++;
+      }
+
+      // CRITICAL: Delete records that were removed from the frontend
+      // Without this, deleted items (students, grades, etc.) persist in D1
+      // and reappear on next pull/login.
+      try {
+        const existing = await db.prepare(
+          `SELECT id FROM entities WHERE tenant_id = ? AND entity_type = ?`
+        ).bind(tenantId, entityType).all();
+        if (existing.results) {
+          for (const row of existing.results) {
+            if (!pushedIds.has(String(row.id))) {
+              await db.prepare(
+                `DELETE FROM entities WHERE tenant_id = ? AND entity_type = ? AND id = ?`
+              ).bind(tenantId, entityType, row.id).run();
+              totalUpserted++;
+            }
+          }
+        }
+      } catch (cleanupErr) {
+        console.warn(`[sync/push] Cleanup failed for ${entityType}:`, cleanupErr.message);
       }
     }
 
