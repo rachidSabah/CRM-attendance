@@ -189,7 +189,7 @@ async function handleReminderCheck(context) {
       try {
         const s = JSON.parse(row.data);
         students[s.id] = s;
-      } catch {}
+      } catch (e) { console.warn('[reminders/check] Student data parse failed:', e.message || e); }
     }
 
     const classes = {};
@@ -197,7 +197,7 @@ async function handleReminderCheck(context) {
       try {
         const c = JSON.parse(row.data);
         classes[c.id] = c;
-      } catch {}
+      } catch (e) { console.warn('[reminders/check] Class data parse failed:', e.message || e); }
     }
 
     // Find absences/late for target date
@@ -210,7 +210,7 @@ async function handleReminderCheck(context) {
           if (a.status === 'absent') absentStudents.push(a);
           else if (a.status === 'late') lateStudents.push(a);
         }
-      } catch {}
+      } catch (e) { console.warn('[reminders/check] Attendance data parse failed:', e.message || e); }
     }
 
     // Also use body data if provided (for real-time reminders from frontend)
@@ -255,7 +255,7 @@ async function handleReminderCheck(context) {
 
       const studentName = student.fullName || student.full_name || student.name || 'Student';
       const guardianEmail = student.guardianEmail;
-      if (!guardianEmail || !guardianEmail.includes('@')) { skippedCount++; continue; }
+      if (!guardianEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guardianEmail)) { skippedCount++; continue; }
 
       const className = student.className || (student.classId ? allClasses[student.classId]?.name : '') || '';
       const isFr = language === 'fr';
@@ -293,7 +293,7 @@ async function handleReminderCheck(context) {
 
       const studentName = student.fullName || student.full_name || student.name || 'Student';
       const guardianEmail = student.guardianEmail;
-      if (!guardianEmail || !guardianEmail.includes('@')) { skippedCount++; continue; }
+      if (!guardianEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guardianEmail)) { skippedCount++; continue; }
 
       const className = student.className || (student.classId ? allClasses[student.classId]?.name : '') || '';
       const isFr = language === 'fr';

@@ -71,7 +71,7 @@ async function handleSave(context) {
         await db.prepare(
           `DELETE FROM school_settings WHERE tenant_id = ? AND key = ?`
         ).bind(tid, authKey).run();
-      } catch {}
+      } catch (e) { console.warn('[admins/save] Delete failed:', e.message || e); }
 
       return new Response(
         JSON.stringify({ success: true, message: `User "${username}" removed from auth` }),
@@ -96,9 +96,9 @@ async function handleSave(context) {
             `SELECT data FROM school_settings WHERE tenant_id = ? AND key = ?`
           ).bind(tid, authKey).first();
           if (row && row.data) {
-            try { existingData = JSON.parse(row.data); } catch {}
+            try { existingData = JSON.parse(row.data); } catch (e) { console.warn('[admins/save] Existing data parse failed:', e.message || e); }
           }
-        } catch {}
+        } catch (e) { console.warn('[admins/save] Existing data lookup failed:', e.message || e); }
       }
 
       const authData = {

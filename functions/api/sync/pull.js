@@ -53,7 +53,7 @@ async function handlePull(context) {
       const admins = [];
       for (const row of settings.results) {
         if (row.key === 'school_info') {
-          try { result.data.schoolInfo = JSON.parse(row.data); } catch {}
+          try { result.data.schoolInfo = JSON.parse(row.data); } catch (e) { console.warn('[sync/pull] school_info parse failed:', e.message || e); }
         } else if (row.key.startsWith('auth_')) {
           // Include admin records for frontend sync (strip password & token)
           try {
@@ -69,7 +69,7 @@ async function handlePull(context) {
               tenantId: userData.tenantId || tenantId,
               is_super_admin: Boolean(userData.is_super_admin),
             });
-          } catch {}
+          } catch (e) { console.warn('[sync/pull] Admin data parse failed:', e.message || e); }
         }
       }
       if (admins.length > 0) result.data.admins = admins;
@@ -86,7 +86,7 @@ async function handlePull(context) {
       const bodyKey = ENTITY_TYPE_MAP[row.entity_type];
       if (bodyKey) {
         if (!result.data[bodyKey]) result.data[bodyKey] = [];
-        try { result.data[bodyKey].push(JSON.parse(row.data)); } catch {}
+        try { result.data[bodyKey].push(JSON.parse(row.data)); } catch (e) { console.warn('[sync/pull] Entity data parse failed:', e.message || e); }
       }
     }
 

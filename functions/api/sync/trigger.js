@@ -68,7 +68,7 @@ async function handleTrigger(context) {
               }
             }
           }
-        } catch {}
+        } catch (e) { console.warn('[sync/trigger] Entity cleanup failed:', e.message || e); }
       }
 
       // Sync school info
@@ -78,6 +78,71 @@ async function handleTrigger(context) {
            VALUES (?, ?, 'school_info', ?, datetime('now'))
            ON CONFLICT(tenant_id, key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
         ).bind('school_info_' + tenantId, tenantId, JSON.stringify(body.schoolInfo)).run();
+      }
+
+      // Sync admin users to school_settings so login endpoint can authenticate them
+      // Key format: auth_{username}_{tenantId} — matches what /api/auth/login expects
+      if (Array.isArray(body.admins)) {
+        const safeToDelete = body.admins.length > 0 && auth.user?.username;
+
+        if (safeToDelete) {
+          try {
+            const existingAuths = await db.prepare(
+              `SELECT key FROM school_settings WHERE tenant_id = ? AND key LIKE 'auth_%'`
+            ).bind(tenantId).all();
+            if (existingAuths && existingAuths.results) {
+              const currentAdminUsernames = new Set(
+                body.admins.map(a => `auth_${String(a.username || '').trim()}_${tenantId}`)
+              );
+              const protectedKey = `auth_${auth.user.username}_${auth.user.tenantId || tenantId}`;
+              for (const row of existingAuths.results) {
+                if (!currentAdminUsernames.has(row.key) && row.key !== protectedKey) {
+                  await db.prepare(
+                    `DELETE FROM school_settings WHERE tenant_id = ? AND key = ?`
+                  ).bind(tenantId, row.key).run();
+                  pushed++;
+                }
+              }
+            }
+          } catch (e) { console.warn('[sync/trigger] Admin cleanup failed:', e.message || e); }
+        }
+
+        for (const admin of body.admins) {
+          const username = String(admin.username || '').trim();
+          if (!username) continue;
+          const authKey = `auth_${username}_${tenantId}`;
+
+          let existingData = {};
+          try {
+            const existing = await db.prepare(
+              `SELECT data FROM school_settings WHERE tenant_id = ? AND key = ?`
+            ).bind(tenantId, authKey).first();
+            if (existing && existing.data) {
+              try { existingData = JSON.parse(existing.data); } catch (e) { console.warn('[sync/trigger] Admin data parse failed:', e.message || e); }
+            }
+          } catch (e) { console.warn('[sync/trigger] Admin existing lookup failed:', e.message || e); }
+
+          const authData = {
+            id: admin.id || existingData.id || username,
+            username: username,
+            password: admin.password || existingData.password || '',
+            token: existingData.token || '',
+            fullName: admin.fullName || admin.name || existingData.fullName || username,
+            email: admin.email || existingData.email || '',
+            role: admin.role || existingData.role || 'admin',
+            department: admin.department || existingData.department || '',
+            tenantId: admin.tenantId || existingData.tenantId || tenantId,
+            is_super_admin: admin.role === 'super_admin' ? true : Boolean(existingData.is_super_admin),
+            updatedAt: new Date().toISOString(),
+          };
+
+          await db.prepare(
+            `INSERT INTO school_settings (id, tenant_id, key, data, updated_at)
+             VALUES (?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(tenant_id, key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
+          ).bind(authKey, tenantId, authKey, JSON.stringify(authData)).run();
+          pushed++;
+        }
       }
 
       await db.prepare(
@@ -103,9 +168,28 @@ async function handleTrigger(context) {
 
       const settings = await db.prepare(`SELECT key, data FROM school_settings WHERE tenant_id = ?`).bind(tenantId).all();
       if (settings.results) {
+        const admins = [];
         for (const row of settings.results) {
-          if (row.key === 'school_info') try { data.schoolInfo = JSON.parse(row.data); } catch {}
+          if (row.key === 'school_info') {
+            try { data.schoolInfo = JSON.parse(row.data); } catch (e) { console.warn('[sync/trigger] school_info parse failed:', e.message || e); }
+          } else if (row.key.startsWith('auth_')) {
+            try {
+              const userData = JSON.parse(row.data);
+              admins.push({
+                id: userData.id || userData.username,
+                username: userData.username,
+                fullName: userData.fullName || userData.full_name || userData.username,
+                name: userData.fullName || userData.full_name || userData.username,
+                email: userData.email || '',
+                role: userData.role || 'admin',
+                department: userData.department || '',
+                tenantId: userData.tenantId || tenantId,
+                is_super_admin: Boolean(userData.is_super_admin),
+              });
+            } catch (e) { console.warn('[sync/trigger] Admin user parse failed:', e.message || e); }
+          }
         }
+        if (admins.length > 0) data.admins = admins;
       }
 
       const allEntities = await fetchAll(db, `SELECT entity_type, data FROM entities WHERE tenant_id = ?`, [tenantId]);
@@ -113,7 +197,7 @@ async function handleTrigger(context) {
         const bodyKey = ENTITY_TYPE_MAP[row.entity_type];
         if (bodyKey) {
           if (!data[bodyKey]) data[bodyKey] = [];
-          try { data[bodyKey].push(JSON.parse(row.data)); } catch {}
+          try { data[bodyKey].push(JSON.parse(row.data)); } catch (e) { console.warn('[sync/trigger] Entity data parse failed:', e.message || e); }
         }
       }
 

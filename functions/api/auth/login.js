@@ -31,16 +31,17 @@ async function handleLogin(context) {
           'SELECT data FROM school_settings WHERE tenant_id = ? AND key = ?'
         ).bind(tid, authKey).first();
         if (row && row.data) {
-          try { d1User = JSON.parse(row.data); } catch {}
+          try { d1User = JSON.parse(row.data); } catch (e) { console.warn('[auth/login] D1 user parse failed:', e.message || e); }
         }
-      } catch {}
+      } catch (e) { console.warn('[auth/login] D1 lookup failed:', e.message || e); }
     }
 
     // Step 2: If user exists in D1 → try D1 password first
     if (d1User) {
       if (d1User.password === password) {
         // D1 login successful — generate session token
-        const sessionToken = 'd1_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 15);
+        const bytes = crypto.getRandomValues(new Uint8Array(24));
+        const sessionToken = 'd1_' + Array.from(bytes, b => b.toString(36).padStart(2, '0')).join('');
         d1User.token = sessionToken;
         d1User.updatedAt = new Date().toISOString();
 
@@ -48,7 +49,7 @@ async function handleLogin(context) {
           await db.prepare(
             'INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime(\'now\')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime(\'now\')'
           ).bind(authKey, tid, authKey, JSON.stringify(d1User)).run();
-        } catch {}
+        } catch (e) { console.warn('[auth/login] Token save failed:', e.message || e); }
 
         return new Response(
           JSON.stringify({
@@ -103,7 +104,7 @@ async function handleLogin(context) {
                 'INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime(\'now\')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime(\'now\')'
               ).bind(authKey, tid, authKey, JSON.stringify(userData)).run();
             }
-          } catch {}
+          } catch (e) { console.warn('[auth/login] D1 sync from external failed:', e.message || e); }
 
           return new Response(
             JSON.stringify(extData),
@@ -111,8 +112,8 @@ async function handleLogin(context) {
           );
         }
       }
-    } catch {
-      // External API unreachable
+    } catch (e) {
+      console.warn('[auth/login] External API unreachable:', e.message || e);
     }
 
     // Step 4: No match anywhere

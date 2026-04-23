@@ -15,7 +15,6 @@ const EXTERNAL_API = 'https://infohas-attendance-api.rachidelsabah.workers.dev/a
 // Endpoints that do NOT require authentication
 const PUBLIC_PATHS = [
   '/api/auth/login',
-  '/api/change-password',  // Handler validates currentPassword itself
 ];
 
 export async function validateRequest(request, db) {

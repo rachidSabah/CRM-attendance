@@ -71,7 +71,7 @@ async function handleSendEmail(context) {
     const { to, toName, subject, htmlContent, textContent } = body;
 
     // --- Validate required fields ---
-    if (!to || typeof to !== 'string' || !to.includes('@')) {
+    if (!to || typeof to !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
       return new Response(
         JSON.stringify({ success: false, error: 'Valid "to" email is required' }),
         { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }

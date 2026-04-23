@@ -46,9 +46,9 @@ async function handleChangePassword(context) {
           'SELECT data FROM school_settings WHERE tenant_id = ? AND key = ?'
         ).bind(tid, authKey).first();
         if (row && row.data) {
-          try { d1User = JSON.parse(row.data); } catch {}
+          try { d1User = JSON.parse(row.data); } catch (e) { console.warn('[change-password] D1 user parse failed:', e.message || e); }
         }
-      } catch {}
+      } catch (e) { console.warn('[change-password] D1 lookup failed:', e.message || e); }
     }
 
     if (d1User && d1User.password === currentPassword) {
@@ -72,7 +72,7 @@ async function handleChangePassword(context) {
             extLoginData = data;
           }
         }
-      } catch {}
+      } catch (e) { console.warn('[change-password] External API login failed:', e.message || e); }
     }
 
     // Step 3: If NEITHER D1 nor external API confirms the current password → reject
@@ -81,7 +81,8 @@ async function handleChangePassword(context) {
     }
 
     // Generate a new session token so the frontend stays authenticated
-    const newSessionToken = 'd1_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 15);
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    const newSessionToken = 'd1_' + Array.from(bytes, b => b.toString(36).padStart(2, '0')).join('');
 
     // Step 4: Update password in D1 — preserve all existing profile fields
     if (db) {
@@ -93,7 +94,7 @@ async function handleChangePassword(context) {
 
         let userData = {};
         if (existing && existing.data) {
-          try { userData = JSON.parse(existing.data); } catch {}
+          try { userData = JSON.parse(existing.data); } catch (e) { console.warn('[change-password] Existing data parse failed:', e.message || e); }
         }
 
         // If external API returned profile data and D1 has nothing, use it
@@ -130,7 +131,7 @@ async function handleChangePassword(context) {
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${extLoginData.token}` },
           body: JSON.stringify({ currentPassword, newPassword, tenant_id: tid, username: uname }),
         });
-      } catch {}
+      } catch (e) { console.warn('[change-password] External API change-password failed:', e.message || e); }
     }
 
     return jsonResponse({ success: true, message: 'Password changed successfully', token: newSessionToken }, 200, context.request);

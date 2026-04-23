@@ -607,7 +607,7 @@ function DashboardPage() {
 
   const last7Days = useMemo(() => {
     const days: Array<{ date: string; present: number; absent: number; late: number }> = [];
-    for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const ds = d.toISOString().split('T')[0]; const dr = attendance.filter(r => r.date === ds); days.push({ date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'short' }), present: dr.filter(r => r.status === 'present').length, absent: dr.filter(r => r.status === 'absent').length, late: dr.filter(r => r.status === 'late').length }); }
+    for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const ds = toLocalDate(d); const dr = attendance.filter(r => r.date === ds); days.push({ date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'short' }), present: dr.filter(r => r.status === 'present').length, absent: dr.filter(r => r.status === 'absent').length, late: dr.filter(r => r.status === 'late').length }); }
     return days;
   }, [attendance, language]);
 
@@ -616,7 +616,7 @@ function DashboardPage() {
     const days: Array<{ date: string; rate: number }> = [];
     for (let i = 29; i >= 0; i--) {
       const d = new Date(); d.setDate(d.getDate() - i);
-      const ds = d.toISOString().split('T')[0];
+      const ds = toLocalDate(d);
       const dr = attendance.filter(r => r.date === ds);
       const rate = dr.length > 0 ? Math.round((dr.filter(r => r.status === 'present').length / dr.length) * 100) : 0;
       days.push({ date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { month: 'short', day: 'numeric' }), rate });
@@ -2259,7 +2259,7 @@ function GradesPage() {
   const openEdit = (g: Grade) => { setEditGrade(g); setForm({ studentId: g.studentId, moduleId: g.moduleId, grade: g.grade || '', percentage: g.percentage != null ? String(g.percentage) : '', date: g.date || '' }); setDialogOpen(true); };
 
   const handleSave = () => {
-    if (!form.studentId || !form.moduleId) return;
+    if (!form.studentId || !form.moduleId) { toast.error(t('select_student_and_module', language) || (language === 'fr' ? 'Sélectionnez un étudiant et un module' : 'Select a student and module')); return; }
     if (editGrade) {
       setGrades(grades.map(g => g.id === editGrade.id ? { ...g, studentId: form.studentId, moduleId: form.moduleId, grade: form.grade, percentage: form.percentage !== '' ? Number(form.percentage) : undefined, date: form.date } : g));
       toast.success(language === 'fr' ? 'Note mise à jour' : 'Grade updated');
@@ -2338,7 +2338,7 @@ function BehaviorPage() {
   const openEdit = (r: BehaviorRecord) => { setEditRec(r); setForm({ studentId: r.studentId, type: r.type, description: r.description, points: String(r.points || 0), date: r.date }); setDialogOpen(true); };
 
   const handleSave = () => {
-    if (!form.studentId || !form.description) return;
+    if (!form.studentId || !form.description) { toast.error(language === 'fr' ? 'Sélectionnez un étudiant et ajoutez une description' : 'Select a student and add a description'); return; }
     if (editRec) {
       setBehavior(behavior.map(b => b.id === editRec.id ? { ...b, studentId: form.studentId, type: form.type, description: form.description, points: Number(form.points) || 0, date: form.date, teacher: currentUser?.fullName } : b));
       toast.success(language === 'fr' ? 'Enregistrement mis à jour' : 'Record updated');
@@ -2562,7 +2562,7 @@ function TasksPage() {
   const openDetail = (tk: Task) => { setSelectedTask(tk); setCommentText(''); setDetailOpen(true); };
 
   const handleSave = async () => {
-    if (!form.title) return;
+    if (!form.title) { toast.error(language === 'fr' ? 'Le titre est requis' : 'Title is required'); return; }
     let ticket = editTask?.ticketNumber || '';
     let emailResult: { success: boolean; error?: string } | null = null;
 
@@ -2854,7 +2854,7 @@ function IncidentsPage() {
   const openDetail = (inc: Incident) => { setSelectedInc(inc); setDetailOpen(true); };
 
   const handleSave = () => {
-    if (!form.studentId) return;
+    if (!form.studentId) { toast.error(language === 'fr' ? 'Sélectionnez un étudiant' : 'Select a student'); return; }
     if (editInc) {
       setIncidents(incidents.map(i => i.id === editInc.id ? { ...i, studentId: form.studentId, incidentType: form.incidentType, severity: form.severity, status: form.status, description: form.description, actionTaken: form.actionTaken, date: form.date, followUpNotes: form.followUpNotes, reportedBy: currentUser?.fullName } : i));
       toast.success(language === 'fr' ? 'Incident mis à jour' : 'Incident updated');
@@ -3473,7 +3473,7 @@ function ProgressReportsSection() {
       let totalWeight = 0;
       studentExamGrades.forEach(eg => {
         const exam = exams.find(e => e.id === eg.examId);
-        if (exam) { weightedAvg += eg.percentage * exam.weight; totalWeight += exam.weight; }
+        if (exam && exam.status === 'completed') { weightedAvg += eg.percentage * exam.weight; totalWeight += exam.weight; }
       });
       const finalWeighted = totalWeight > 0 ? Math.round(weightedAvg / totalWeight) : 0;
 
@@ -4303,6 +4303,8 @@ function SettingsPage() {
       curriculum: (v) => setCurriculum(v as CurriculumItem[]),
       academicYears: (v) => setAcademicYears(v as AcademicYear[]),
       schoolInfo: (v) => setSchoolInfo(v as SchoolInfo),
+      savedSchedules: (v) => setSavedSchedules(v as SavedSchedule[]),
+      templates: (v) => setTemplates(v as Template[]),
     };
 
     const lsKeyMap: Record<string, string> = {
@@ -4322,6 +4324,8 @@ function SettingsPage() {
       curriculum: 'attendance_curriculum',
       academicYears: 'attendance_academic_years',
       schoolInfo: 'attendance_school_info',
+      savedSchedules: 'attendance_saved_schedules',
+      templates: 'attendance_templates',
     };
 
     let restoredCount = 0;
@@ -5480,14 +5484,14 @@ function CurriculumPage() {
     if (selectedModule) items = items.filter(i => i.moduleId === selectedModule);
     if (selectedYear) items = items.filter(i => i.academicYear === yearIdToName(selectedYear));
     return items;
-  }, [curriculum, selectedModule, selectedYear]);
+  }, [curriculum, selectedModule, selectedYear, academicYears]);
 
   const totalHours = filteredItems.reduce((s, i) => s + i.hours, 0);
   const completedHours = filteredItems.filter(i => i.status === 'completed').reduce((s, i) => s + i.hours, 0);
 
   const openCreate = () => {
     setEditingItem(null);
-    setForm({ ...emptyItem, moduleId: selectedModule, academicYear: selectedYear });
+    setForm({ ...emptyItem, moduleId: selectedModule, academicYear: yearIdToName(selectedYear) });
     setDialogOpen(true);
   };
   const openEdit = (item: CurriculumItem) => {

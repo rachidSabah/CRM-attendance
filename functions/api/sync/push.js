@@ -127,7 +127,7 @@ async function handlePush(context) {
               }
             }
           }
-        } catch {}
+        } catch (e) { console.warn('[sync/push] Admin auth cleanup failed:', e.message || e); }
       }
 
       for (const admin of body.admins) {
@@ -142,9 +142,9 @@ async function handlePush(context) {
             `SELECT data FROM school_settings WHERE tenant_id = ? AND key = ?`
           ).bind(tenantId, authKey).first();
           if (existing && existing.data) {
-            try { existingData = JSON.parse(existing.data); } catch {}
+            try { existingData = JSON.parse(existing.data); } catch (e) { console.warn('[sync/push] Admin existing data parse failed:', e.message || e); }
           }
-        } catch {}
+        } catch (e) { console.warn('[sync/push] Admin existing lookup failed:', e.message || e); }
 
         // Build the user record — preserve existing token/password
         const authData = {

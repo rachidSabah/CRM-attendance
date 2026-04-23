@@ -174,6 +174,7 @@ async function pushToD1(): Promise<boolean> {
       exams: state.exams,
       examGrades: state.examGrades,
       curriculum: state.curriculum,
+      savedSchedules: state.savedSchedules,
       calendarEvents: state.calendarEvents,
       schoolInfo: state.schoolInfo,
       admins: state.admins,
@@ -225,6 +226,7 @@ export async function syncToCloud(): Promise<{ success: boolean; upserted?: numb
       exams: state.exams,
       examGrades: state.examGrades,
       curriculum: state.curriculum,
+      savedSchedules: state.savedSchedules,
       schoolInfo: state.schoolInfo,
     };
     const res = await localApi('POST', '/api/sync/trigger', payload);
@@ -439,7 +441,7 @@ export const useAppStore = create<AppState>((set) => ({
     // Audit logs stored locally only (external API does not have audit-log endpoint)
   },
   setAuditLog: (logs) => { set({ auditLog: logs }); localStorage.setItem('attendance_audit_log', JSON.stringify(logs)); },
-  setSavedSchedules: (s) => { set({ savedSchedules: s }); localStorage.setItem('attendance_saved_schedules', JSON.stringify(s)); scheduleApiSync(); },
+  setSavedSchedules: (s) => { set({ savedSchedules: s }); localStorage.setItem('attendance_saved_schedules', JSON.stringify(s)); scheduleApiSync(); scheduleD1Push(); },
   setCalendarEvents: (e) => { set({ calendarEvents: e }); localStorage.setItem('calendar_events', JSON.stringify(e)); scheduleApiSync(); scheduleD1Push(); },
   setAdmins: (a) => { set({ admins: a }); localStorage.setItem('attendance_admins', JSON.stringify(a)); scheduleD1Push(); },
   purgeCache: () => {
@@ -528,8 +530,6 @@ export const useAppStore = create<AppState>((set) => ({
               const mergeById = (local: Array<Record<string, unknown>>, cloudKey: string) => {
                 const cloud = cd[cloudKey];
                 if (!Array.isArray(cloud)) return local;
-                // If cloud has significantly more data, use cloud (authoritative)
-                if (cloud.length > local.length + 2) return cloud;
                 // If local is empty, use cloud
                 if (local.length === 0) return cloud;
                 // Otherwise merge by ID — union of both, cloud as base, local overwrites
@@ -562,6 +562,7 @@ export const useAppStore = create<AppState>((set) => ({
                 exams: mergeById(currentState.exams as unknown as Array<Record<string, unknown>>, 'exams') as unknown as Exam[],
                 examGrades: mergeById(currentState.examGrades as unknown as Array<Record<string, unknown>>, 'examGrades') as unknown as ExamGrade[],
                 curriculum: mergeById(currentState.curriculum as unknown as Array<Record<string, unknown>>, 'curriculum') as unknown as CurriculumItem[],
+                savedSchedules: mergeById(currentState.savedSchedules as unknown as Array<Record<string, unknown>>, 'savedSchedules') as unknown as SavedSchedule[],
                 calendarEvents: mergeById(currentState.calendarEvents as unknown as Array<Record<string, unknown>>, 'calendarEvents') as unknown as CalendarEvent[],
               };
               set(merged);
