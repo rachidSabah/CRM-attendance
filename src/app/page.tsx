@@ -32,6 +32,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -115,7 +116,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: string }) {
-  return <Badge variant="secondary" className={STATUS_COLORS[status] || 'bg-gray-100 text-gray-800'}>{t(status)}</Badge>;
+  return <Badge variant="secondary" className={STATUS_COLORS[status] || 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'}>{t(status)}</Badge>;
 }
 
 function EmptyState({ message }: { message: string }) {
@@ -350,7 +351,7 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
               {curStreak > 0 && <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">🔥 {curStreak}</Badge>}
               {bestStreak > 2 && <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">⭐ {bestStreak}</Badge>}
               {avgGrade > 0 && <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">Avg: {Math.round(avgGrade)}%</Badge>}
-              {totalBp !== 0 && <Badge className={totalBp > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}>{totalBp > 0 ? '+' : ''}{totalBp} pts</Badge>}
+              {totalBp !== 0 && <Badge className={totalBp > 0 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}>{totalBp > 0 ? '+' : ''}{totalBp} pts</Badge>}
             </div>
           </div>
           <div className="flex gap-1.5 shrink-0 w-full sm:w-auto">
@@ -2020,8 +2021,8 @@ function SchedulePage() {
 
       {/* Schedule Entry Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>
               {editingDay && classSchedules.find(s => s.date === editingDay)
                 ? (language === 'fr' ? 'Modifier le Programme' : 'Edit Schedule')
@@ -2043,7 +2044,7 @@ function SchedulePage() {
             </div>
           )}
 
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-4 flex-1 min-h-0 overflow-y-auto">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{language === 'fr' ? 'De (Heure début)' : 'From'}</Label>
@@ -2158,7 +2159,7 @@ function SchedulePage() {
             </div>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 shrink-0 pt-2">
             {classSchedules.find(s => s.date === editingDay) && (
               <Button variant="destructive" size="sm" onClick={handleDeleteDay}>
                 <Trash2 className="h-4 w-4 mr-1" />
@@ -2727,8 +2728,8 @@ function TasksPage() {
           </div>
         </ScrollArea>}</DialogContent></Dialog>
       {/* Add/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{editTask ? t('edit', language) : t('add', language)} {t('tasks', language)}</DialogTitle></DialogHeader>
-        <div className="grid gap-4 py-4">
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="max-w-lg max-h-[85vh] flex flex-col overflow-hidden"><DialogHeader className="shrink-0"><DialogTitle>{editTask ? t('edit', language) : t('add', language)} {t('tasks', language)}</DialogTitle></DialogHeader>
+        <div className="grid gap-4 py-4 flex-1 min-h-0 overflow-y-auto">
           <div className="space-y-2"><Label>{language === 'fr' ? 'Titre' : 'Title'} *</Label><Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
           <div className="space-y-2"><Label>{language === 'fr' ? 'Description' : 'Description'}</Label><Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
           <div className="grid grid-cols-2 gap-4">
@@ -2814,7 +2815,7 @@ function TasksPage() {
             <p className="text-[10px] text-muted-foreground">{language === 'fr' ? 'Formats acceptés : PDF, Excel, Word, CSV, Images — Max 10 Mo par fichier' : 'Accepted formats: PDF, Excel, Word, CSV, Images — Max 10MB per file'}</p>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 pt-2">
           <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button>
           <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave} disabled={emailSending}>
             {emailSending ? (
@@ -2902,8 +2903,8 @@ function IncidentsPage() {
         </div></ScrollArea>}
       </DialogContent></Dialog>
       {/* Add/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{editInc ? t('edit', language) : t('add', language)} {t('incidents', language)}</DialogTitle></DialogHeader>
-        <div className="grid gap-4 py-4">
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="max-w-lg max-h-[85vh] flex flex-col overflow-hidden"><DialogHeader className="shrink-0"><DialogTitle>{editInc ? t('edit', language) : t('add', language)} {t('incidents', language)}</DialogTitle></DialogHeader>
+        <div className="grid gap-4 py-4 flex-1 min-h-0 overflow-y-auto">
           <div className="space-y-2"><Label>{t('students', language)} *</Label><Select value={form.studentId} onValueChange={v => setForm({ ...form, studentId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{students.map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}</SelectContent></Select></div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2"><Label>{language === 'fr' ? 'Type' : 'Type'}</Label><Select value={form.incidentType} onValueChange={v => setForm({ ...form, incidentType: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="disciplinary">{t('disciplinary', language)}</SelectItem><SelectItem value="academic">{t('academic', language)}</SelectItem><SelectItem value="behavioral">{t('behavioral', language)}</SelectItem><SelectItem value="safety">{t('safety', language)}</SelectItem><SelectItem value="other">{t('other', language)}</SelectItem></SelectContent></Select></div>
@@ -2917,7 +2918,7 @@ function IncidentsPage() {
           <div className="space-y-2"><Label>{language === 'fr' ? 'Action prise' : 'Action Taken'}</Label><Textarea value={form.actionTaken} onChange={e => setForm({ ...form, actionTaken: e.target.value })} rows={2} /></div>
           <div className="space-y-2"><Label>{t('follow_up_notes', language)}</Label><Textarea value={form.followUpNotes} onChange={e => setForm({ ...form, followUpNotes: e.target.value })} rows={2} /></div>
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter>
+        <DialogFooter className="shrink-0 pt-2"><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter>
       </DialogContent></Dialog>
     </div>
   );
@@ -4477,7 +4478,7 @@ function SettingsPage() {
           <div className="flex justify-between"><h3 className="font-semibold">{t('academic_year_management', language)} ({academicYears.length})</h3><Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={openAddAy}><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button></div>
           {academicYears.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
             <Card><CardContent className="p-0"><div className="max-h-96 overflow-y-auto"><Table><TableHeader><TableRow><TableHead>{t('name', language)}</TableHead><TableHead>{language === 'fr' ? 'Niveau' : 'Level'}</TableHead><TableHead>{language === 'fr' ? 'Début' : 'Start'}</TableHead><TableHead>{language === 'fr' ? 'Fin' : 'End'}</TableHead><TableHead>{language === 'fr' ? 'Actuelle' : 'Current'}</TableHead><TableHead className="w-24">{t('actions', language)}</TableHead></TableRow></TableHeader><TableBody>
-              {academicYears.map(ay => <TableRow key={ay.id}><TableCell className="font-medium">{ay.name}</TableCell><TableCell className="text-sm">{ay.level || '-'}</TableCell><TableCell className="text-sm">{ay.startDate || '-'}</TableCell><TableCell className="text-sm">{ay.endDate || '-'}</TableCell><TableCell>{ay.isCurrent ? <Badge className="bg-emerald-100 text-emerald-800">✓</Badge> : '-'}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditAy(ay)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => deleteAy(ay.id)}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell></TableRow>)}
+              {academicYears.map(ay => <TableRow key={ay.id}><TableCell className="font-medium">{ay.name}</TableCell><TableCell className="text-sm">{ay.level || '-'}</TableCell><TableCell className="text-sm">{ay.startDate || '-'}</TableCell><TableCell className="text-sm">{ay.endDate || '-'}</TableCell><TableCell>{ay.isCurrent ? <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">✓</Badge> : '-'}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditAy(ay)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => deleteAy(ay.id)}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell></TableRow>)}
             </TableBody></Table></div></CardContent></Card>
           )}
           <Dialog open={ayDialog} onOpenChange={setAyDialog}><DialogContent><DialogHeader><DialogTitle>{editAy ? t('edit', language) : t('add', language)} {t('academic_year', language)}</DialogTitle></DialogHeader>
@@ -5385,9 +5386,9 @@ function ExamsPage() {
 
       {/* Add/Edit Exam Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>{editingExam ? t('edit_exam', language) : t('create_exam', language)}</DialogTitle></DialogHeader>
-          <div className="grid gap-4 py-2">
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0"><DialogTitle>{editingExam ? t('edit_exam', language) : t('create_exam', language)}</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2 flex-1 min-h-0 overflow-y-auto">
             <div className="space-y-2"><Label>{t('exam_title', language)} *</Label><Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>{t('modules', language)} *</Label><Select value={form.moduleId} onValueChange={v => setForm({ ...form, moduleId: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></div>
@@ -5409,7 +5410,7 @@ function ExamsPage() {
             <div className="space-y-2"><Label>{t('status', language)}</Label><Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Exam['status'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{examStatuses.map(st => <SelectItem key={st} value={st}>{t(st, language)}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>{t('exam_description', language)}</Label><Textarea value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 pt-2">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button>
             <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
           </DialogFooter>
@@ -5903,7 +5904,7 @@ function SuperAdminPage() {
         <TabsContent value="tenants" className="space-y-4">
           <div className="flex justify-between items-center"><h3 className="font-semibold">{language === 'fr' ? 'Écoles gérées' : 'Managed Schools'} ({tenants.length})</h3><Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={openAddTenant}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter école' : 'Add School'}</Button></div>
           <div className="grid gap-3">{tenants.map(t => (
-            <Card key={t.id}><CardContent className="p-4"><div className="flex items-start justify-between"><div><h4 className="font-semibold">{t.name}</h4><p className="text-sm text-muted-foreground">/{t.slug}</p><div className="flex gap-4 mt-2 text-sm"><span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {t.students} {language === 'fr' ? 'étudiants' : 'students'}</span><span className="flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" /> {t.teachers} {language === 'fr' ? 'enseignants' : 'teachers'}</span></div></div><div className="flex items-center gap-2"><Badge className={t.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100'}>{t.status}</Badge><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditTenant(t)} title={language === 'fr' ? 'Modifier' : 'Edit'}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => setDeleteConfirm(t.id)} title={language === 'fr' ? 'Supprimer' : 'Delete'}><Trash2 className="h-3.5 w-3.5" /></Button></div></div></CardContent></Card>
+            <Card key={t.id}><CardContent className="p-4"><div className="flex items-start justify-between"><div><h4 className="font-semibold">{t.name}</h4><p className="text-sm text-muted-foreground">/{t.slug}</p><div className="flex gap-4 mt-2 text-sm"><span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {t.students} {language === 'fr' ? 'étudiants' : 'students'}</span><span className="flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" /> {t.teachers} {language === 'fr' ? 'enseignants' : 'teachers'}</span></div></div><div className="flex items-center gap-2"><Badge className={t.status === 'active' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'}>{t.status}</Badge><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditTenant(t)} title={language === 'fr' ? 'Modifier' : 'Edit'}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => setDeleteConfirm(t.id)} title={language === 'fr' ? 'Supprimer' : 'Delete'}><Trash2 className="h-3.5 w-3.5" /></Button></div></div></CardContent></Card>
           ))}</div>
 
           {/* Add/Edit Tenant Dialog */}
@@ -5933,8 +5934,8 @@ function SuperAdminPage() {
           </TableBody></Table></div></CardContent></Card>
 
           {/* Add/Edit User Dialog */}
-          <Dialog open={userDialog} onOpenChange={setUserDialog}><DialogContent><DialogHeader><DialogTitle>{editUser ? (language === 'fr' ? 'Modifier utilisateur' : 'Edit User') : (language === 'fr' ? 'Ajouter utilisateur' : 'Add User')}</DialogTitle><DialogDescription>{editUser ? (language === 'fr' ? 'Modifier les informations de l\'utilisateur' : 'Update user information') : (language === 'fr' ? 'Créer un nouveau compte utilisateur' : 'Create a new user account')}</DialogDescription></DialogHeader>
-            <div className="grid gap-4 py-4">
+          <Dialog open={userDialog} onOpenChange={setUserDialog}><DialogContent className="max-h-[85vh] flex flex-col overflow-hidden"><DialogHeader className="shrink-0"><DialogTitle>{editUser ? (language === 'fr' ? 'Modifier utilisateur' : 'Edit User') : (language === 'fr' ? 'Ajouter utilisateur' : 'Add User')}</DialogTitle><DialogDescription>{editUser ? (language === 'fr' ? 'Modifier les informations de l\'utilisateur' : 'Update user information') : (language === 'fr' ? 'Créer un nouveau compte utilisateur' : 'Create a new user account')}</DialogDescription></DialogHeader>
+            <div className="grid gap-4 py-4 flex-1 min-h-0 overflow-y-auto">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2"><Label>{language === 'fr' ? 'Nom complet' : 'Full Name'} *</Label><Input value={userForm.fullName} onChange={e => setUserForm({ ...userForm, fullName: e.target.value })} /></div>
                 <div className="space-y-2"><Label>{language === 'fr' ? 'Identifiant' : 'Username'} *</Label><Input value={userForm.username} onChange={e => setUserForm({ ...userForm, username: e.target.value })} /></div>
@@ -5955,7 +5956,7 @@ function SuperAdminPage() {
               </div>
               <div className="space-y-2"><Label>{language === 'fr' ? 'École (Tenant)' : 'School (Tenant)'}</Label><Input value={userForm.tenantId} onChange={e => setUserForm({ ...userForm, tenantId: e.target.value })} placeholder={language === 'fr' ? 'Ex: infohas-academy' : 'e.g. infohas-academy'} /></div>
             </div>
-            <DialogFooter><Button variant="outline" onClick={() => setUserDialog(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={async () => {
+            <DialogFooter className="shrink-0 pt-2"><Button variant="outline" onClick={() => setUserDialog(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={async () => {
               if (!userForm.fullName || !userForm.username) { toast.error(language === 'fr' ? 'Nom et identifiant requis' : 'Name and username required'); return; }
               if (!editUser && !userForm.password) { toast.error(language === 'fr' ? 'Le mot de passe est requis' : 'Password is required'); return; }
               const userData = { ...userForm, id: editUser ? (editUser as Record<string, unknown>).id : genId(), fullName: userForm.fullName, name: userForm.fullName, username: userForm.username, role: userForm.role, department: userForm.department, tenantId: userForm.tenantId };
