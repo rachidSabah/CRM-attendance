@@ -5412,13 +5412,13 @@ function ExamsPage() {
 
       {/* Grade Exam Dialog */}
       <Dialog open={gradeDialogOpen} onOpenChange={setGradeDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>{t('enter_scores', language)} — {gradingExam?.title}</DialogTitle>
             <DialogDescription>{gradingExam?.date} • Max: {gradingExam?.maxScore} • {getModule(gradingExam?.moduleId || '')?.name || '-'}</DialogDescription>
           </DialogHeader>
           {gradingExam && (
-            <ScrollArea className="max-h-[55vh]">
+            <ScrollArea className="flex-1 min-h-0">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -5443,7 +5443,7 @@ function ExamsPage() {
               </Table>
             </ScrollArea>
           )}
-          <DialogFooter>
+          <DialogFooter className="shrink-0 pt-2">
             <Button variant="outline" onClick={() => setGradeDialogOpen(false)}>{t('cancel', language)}</Button>
             <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveGrades}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
           </DialogFooter>
