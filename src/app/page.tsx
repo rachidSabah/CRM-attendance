@@ -860,7 +860,7 @@ function StudentsPage() {
           <div className="flex gap-2 ml-auto flex-wrap">
             <Select value={batchClassId} onValueChange={setBatchClassId}><SelectTrigger className="w-40 h-8 text-xs"><SelectValue placeholder={language === 'fr' ? 'Assigner classe...' : 'Assign class...'} /></SelectTrigger><SelectContent>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
             <Button variant="outline" size="sm" onClick={handleBatchAssign} disabled={!batchClassId}><GraduationCap className="h-4 w-4 mr-1" />{language === 'fr' ? 'Assigner' : 'Assign'}</Button>
-            <Button variant="outline" size="sm" onClick={() => { const ex = students.filter(s => selectedIds.has(s.id)); exportUtils.exportStudentsCSV(ex, classes); toast.success('Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
+            <Button variant="outline" size="sm" onClick={() => { const ex = students.filter(s => selectedIds.has(s.id)); exportUtils.exportStudentsCSV(ex, classes, language); toast.success('Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
             <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => { if (confirm(`Delete ${selectedIds.size} students?`)) { const st = useAppStore.getState(); st.setAttendance(st.attendance.filter(a => !selectedIds.has(a.studentId))); st.setGrades(st.grades.filter(g => !selectedIds.has(g.studentId))); st.setBehavior(st.behavior.filter(b => !selectedIds.has(b.studentId))); st.setIncidents(st.incidents.filter(i => !selectedIds.has(i.studentId))); st.setExamGrades(st.examGrades.filter(eg => !selectedIds.has(eg.studentId))); setStudents(students.filter(s => !selectedIds.has(s.id))); setSelectedIds(new Set()); toast.success(`${selectedIds.size} deleted`); } }}><Trash2 className="h-4 w-4 mr-1" />{t('delete', language)}</Button>
             <Button variant="ghost" size="sm" onClick={() => { setSelectedIds(new Set()); setMultiSelect(false); }}><X className="h-4 w-4" /></Button>
           </div>
@@ -876,8 +876,8 @@ function StudentsPage() {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" className={multiSelect ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-400' : ''} onClick={() => { setMultiSelect(!multiSelect); setSelectedIds(new Set()); }}><CheckCircle2 className="h-4 w-4 mr-1" />{language === 'fr' ? 'Sélection multiple' : 'Multi-select'}</Button>
           <label className="cursor-pointer"><input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} /><Button variant="outline" size="sm" className="border-orange-400 text-orange-600" asChild><span><Upload className="h-4 w-4 mr-1" />CSV</span></Button></label>
-          <Button variant="outline" size="sm" onClick={() => { exportUtils.exportStudentsCSV(students, classes); toast.success('Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
-          <Button variant="outline" size="sm" onClick={() => pdfUtils.exportStudentsPDF(students, classes, schoolInfo)}><Printer className="h-4 w-4 mr-1" />PDF</Button>
+          <Button variant="outline" size="sm" onClick={() => { exportUtils.exportStudentsCSV(students, classes, language); toast.success('Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
+          <Button variant="outline" size="sm" onClick={() => { pdfUtils.exportStudentsPDF(students, classes, schoolInfo, language); }}><Printer className="h-4 w-4 mr-1" />PDF</Button>
           <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={openAdd}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter' : 'Add'}</Button>
         </div>
       </div>
@@ -1716,7 +1716,8 @@ function SchedulePage() {
       teachers.map(tc => ({ id: tc.id, name: tc.name })),
       modules.map(m => ({ id: m.id, name: m.name })),
       monthName,
-      schoolInfo
+      schoolInfo,
+      language
     );
   };
 
@@ -1731,7 +1732,8 @@ function SchedulePage() {
       classes,
       teachers.map(tc => ({ id: tc.id, name: tc.name })),
       modules.map(m => ({ id: m.id, name: m.name })),
-      schoolInfo
+      schoolInfo,
+      language
     );
   };
 
@@ -2184,16 +2186,16 @@ function ExportDataDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const data = { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees };
 
   const options = [
-    { key: 'students', label: t('students', language), fn: () => exportUtils.exportStudentsCSV(students, classes) },
-    { key: 'attendance', label: t('attendance', language), fn: () => exportUtils.exportAttendanceCSV(attendance, students, classes) },
-    { key: 'grades', label: t('grades', language), fn: () => exportUtils.exportGradesCSV(grades, students, modules) },
-    { key: 'classes', label: t('classes', language), fn: () => exportUtils.exportClassesCSV(classes, students) },
-    { key: 'modules', label: t('modules', language), fn: () => exportUtils.exportModulesCSV(modules) },
-    { key: 'behavior', label: t('behavior', language), fn: () => exportUtils.exportBehaviorCSV(behavior, students) },
-    { key: 'tasks', label: t('tasks', language), fn: () => exportUtils.exportTasksCSV(tasks) },
-    { key: 'incidents', label: t('incidents', language), fn: () => exportUtils.exportIncidentsCSV(incidents, students) },
-    { key: 'teachers', label: t('teachers_management', language), fn: () => exportUtils.exportTeachersCSV(teachers) },
-    { key: 'employees', label: t('employees_management', language), fn: () => exportUtils.exportEmployeesCSV(employees) },
+    { key: 'students', label: t('students', language), fn: () => exportUtils.exportStudentsCSV(students, classes, language) },
+    { key: 'attendance', label: t('attendance', language), fn: () => exportUtils.exportAttendanceCSV(attendance, students, classes, language) },
+    { key: 'grades', label: t('grades', language), fn: () => exportUtils.exportGradesCSV(grades, students, modules, language) },
+    { key: 'classes', label: t('classes', language), fn: () => exportUtils.exportClassesCSV(classes, students, language) },
+    { key: 'modules', label: t('modules', language), fn: () => exportUtils.exportModulesCSV(modules, language) },
+    { key: 'behavior', label: t('behavior', language), fn: () => exportUtils.exportBehaviorCSV(behavior, students, language) },
+    { key: 'tasks', label: t('tasks', language), fn: () => exportUtils.exportTasksCSV(tasks, language) },
+    { key: 'incidents', label: t('incidents', language), fn: () => exportUtils.exportIncidentsCSV(incidents, students, language) },
+    { key: 'teachers', label: t('teachers_management', language), fn: () => exportUtils.exportTeachersCSV(teachers, language) },
+    { key: 'employees', label: t('employees_management', language), fn: () => exportUtils.exportEmployeesCSV(employees, language) },
   ];
 
   return (
@@ -2209,7 +2211,7 @@ function ExportDataDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
             </button>
           ))}
           <Separator className="my-1" />
-          <button onClick={() => { exportUtils.exportAllCSV(data); onOpenChange(false); toast.success(language === 'fr' ? 'Export complet!' : 'Full export!'); }} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">
+          <button onClick={() => { exportUtils.exportAllCSV(data, language); onOpenChange(false); toast.success(language === 'fr' ? 'Export complet!' : 'Full export!'); }} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">
             <Download className="h-4 w-4" /><span className="text-sm font-medium">{t('export_all_data', language)}</span>
           </button>
         </div>
@@ -3364,12 +3366,12 @@ function ReportsPage() {
   }, [behavior]);
 
   const handleExportReport = () => {
-    if (reportType === 'attendance') exportUtils.exportAttendanceCSV(filteredAttendance, students, classes);
-    else if (reportType === 'grades') exportUtils.exportGradesCSV(grades, students, modules);
-    else if (reportType === 'behavior') exportUtils.exportBehaviorCSV(behavior, students);
-    else if (reportType === 'progress') { exportUtils.exportTasksCSV(tasks); toast.info(language === 'fr' ? 'Données de progression exportées' : 'Progress data exported'); return; }
-    else if (reportType === 'tasks') exportUtils.exportTasksCSV(tasks);
-    else if (reportType === 'incidents') exportUtils.exportIncidentsCSV(incidents, students);
+    if (reportType === 'attendance') exportUtils.exportAttendanceCSV(filteredAttendance, students, classes, language);
+    else if (reportType === 'grades') exportUtils.exportGradesCSV(grades, students, modules, language);
+    else if (reportType === 'behavior') exportUtils.exportBehaviorCSV(behavior, students, language);
+    else if (reportType === 'progress') { exportUtils.exportTasksCSV(tasks, language); toast.info(language === 'fr' ? 'Données de progression exportées' : 'Progress data exported'); return; }
+    else if (reportType === 'tasks') exportUtils.exportTasksCSV(tasks, language);
+    else if (reportType === 'incidents') exportUtils.exportIncidentsCSV(incidents, students, language);
     toast.success(language === 'fr' ? 'Rapport exporté' : 'Report exported');
   };
 
@@ -3383,9 +3385,9 @@ function ReportsPage() {
         <div className="flex gap-2">
           <Button variant="outline" onClick={handleExportReport}><FileDown className="h-4 w-4 mr-1" />{t('export_csv', language)}</Button>
           <Button variant="outline" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800" onClick={() => {
-            if (reportType === 'attendance') pdfUtils.exportAttendancePDF(filteredAttendance, students, classes, schoolInfo, dateFrom, dateTo);
-            else if (reportType === 'grades') pdfUtils.exportGradesPDF(grades, students, modules, schoolInfo);
-            else if (reportType === 'behavior') pdfUtils.exportBehaviorPDF(behavior, students, schoolInfo);
+            if (reportType === 'attendance') pdfUtils.exportAttendancePDF(filteredAttendance, students, classes, schoolInfo, dateFrom, dateTo, language);
+            else if (reportType === 'grades') pdfUtils.exportGradesPDF(grades, students, modules, schoolInfo, language);
+            else if (reportType === 'behavior') pdfUtils.exportBehaviorPDF(behavior, students, schoolInfo, language);
             else if (reportType === 'progress') pdfUtils.exportProgressReportPDF([], {}, schoolInfo as unknown as Record<string, string | undefined>, { from: dateFrom, to: dateTo }, '', language);
             toast.success(language === 'fr' ? 'PDF exporté' : 'PDF exported');
           }}><FileText className="h-4 w-4 mr-1" />PDF</Button>
@@ -4067,7 +4069,7 @@ function SettingsPage() {
   const deleteAy = (id: string) => { if (!confirm(language === 'fr' ? 'Supprimer cette année scolaire ?' : 'Delete this academic year?')) return; setAcademicYears(academicYears.filter(ay => ay.id !== id)); toast.success('Deleted'); };
 
   // Data management
-  const handleExportAll = () => { exportUtils.exportAllCSV({ students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees }); toast.success(language === 'fr' ? 'Exporté!' : 'Exported!'); };
+  const handleExportAll = () => { exportUtils.exportAllCSV({ students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees }, language); toast.success(language === 'fr' ? 'Exporté!' : 'Exported!'); };
   const handleClearAll = () => {
     if (!confirm(t('clear_confirm', language))) return;
     setStudents([]); setClasses([]); setModules([]); setAttendance([]); setGrades([]); setBehavior([]); setTasks([]); setIncidents([]); setTeachers([]); setEmployees([]); setTemplates([]); setAcademicYears([]); setSchedules([]); setExams([]); setExamGrades([]); setCurriculum([]); setSavedSchedules([]); setSchoolInfo({});
@@ -5760,33 +5762,33 @@ function SuperAdminPage() {
   const handleExportSelected = () => {
     const si = schoolInfo || {};
     if (exportFormat === 'pdf') {
-      if (selectedExportTypes.has('students')) pdfUtils.exportStudentsPDF(students, classes, si);
-      if (selectedExportTypes.has('attendance')) pdfUtils.exportAttendancePDF(attendance, students, classes, si, exportDateFrom || undefined, exportDateTo || undefined);
-      if (selectedExportTypes.has('grades')) pdfUtils.exportGradesPDF(grades, students, modules, si);
-      if (selectedExportTypes.has('behavior')) pdfUtils.exportBehaviorPDF(behavior, students, si);
-      if (selectedExportTypes.has('incidents')) pdfUtils.exportIncidentsPDF(incidents, students, si);
-      if (selectedExportTypes.has('tasks')) pdfUtils.exportTasksPDF(tasks, si);
+      if (selectedExportTypes.has('students')) pdfUtils.exportStudentsPDF(students, classes, si, language);
+      if (selectedExportTypes.has('attendance')) pdfUtils.exportAttendancePDF(attendance, students, classes, si, exportDateFrom || undefined, exportDateTo || undefined, language);
+      if (selectedExportTypes.has('grades')) pdfUtils.exportGradesPDF(grades, students, modules, si, language);
+      if (selectedExportTypes.has('behavior')) pdfUtils.exportBehaviorPDF(behavior, students, si, language);
+      if (selectedExportTypes.has('incidents')) pdfUtils.exportIncidentsPDF(incidents, students, si, language);
+      if (selectedExportTypes.has('tasks')) pdfUtils.exportTasksPDF(tasks, si, language);
     } else {
-      if (selectedExportTypes.has('students')) exportUtils.exportStudentsCSV(students, classes);
-      if (selectedExportTypes.has('classes')) exportUtils.exportClassesCSV(classes, students);
-      if (selectedExportTypes.has('modules')) exportUtils.exportModulesCSV(modules);
-      if (selectedExportTypes.has('attendance')) exportUtils.exportAttendanceCSV(attendance, students, classes);
-      if (selectedExportTypes.has('grades')) exportUtils.exportGradesCSV(grades, students, modules);
-      if (selectedExportTypes.has('behavior')) exportUtils.exportBehaviorCSV(behavior, students);
-      if (selectedExportTypes.has('tasks')) exportUtils.exportTasksCSV(tasks);
-      if (selectedExportTypes.has('incidents')) exportUtils.exportIncidentsCSV(incidents, students);
-      if (selectedExportTypes.has('teachers')) exportUtils.exportTeachersCSV(teachers);
-      if (selectedExportTypes.has('employees')) exportUtils.exportEmployeesCSV(employees);
+      if (selectedExportTypes.has('students')) exportUtils.exportStudentsCSV(students, classes, language);
+      if (selectedExportTypes.has('classes')) exportUtils.exportClassesCSV(classes, students, language);
+      if (selectedExportTypes.has('modules')) exportUtils.exportModulesCSV(modules, language);
+      if (selectedExportTypes.has('attendance')) exportUtils.exportAttendanceCSV(attendance, students, classes, language);
+      if (selectedExportTypes.has('grades')) exportUtils.exportGradesCSV(grades, students, modules, language);
+      if (selectedExportTypes.has('behavior')) exportUtils.exportBehaviorCSV(behavior, students, language);
+      if (selectedExportTypes.has('tasks')) exportUtils.exportTasksCSV(tasks, language);
+      if (selectedExportTypes.has('incidents')) exportUtils.exportIncidentsCSV(incidents, students, language);
+      if (selectedExportTypes.has('teachers')) exportUtils.exportTeachersCSV(teachers, language);
+      if (selectedExportTypes.has('employees')) exportUtils.exportEmployeesCSV(employees, language);
     }
     toast.success(language === 'fr' ? 'Exporté!' : 'Exported!');
   };
 
   const handleExportAll = () => {
     if (exportFormat === 'pdf') {
-      pdfUtils.exportFullReportPDF({ students, classes, modules, attendance, grades, behavior, tasks, incidents }, schoolInfo || {});
-      pdfUtils.exportClassPerformancePDF(students, classes, grades, attendance, schoolInfo || {});
+      pdfUtils.exportFullReportPDF({ students, classes, modules, attendance, grades, behavior, tasks, incidents }, schoolInfo || {}, language);
+      pdfUtils.exportClassPerformancePDF(students, classes, grades, attendance, schoolInfo || {}, language);
     } else {
-      exportUtils.exportAllCSV({ students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees });
+      exportUtils.exportAllCSV({ students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees }, language);
     }
     toast.success(language === 'fr' ? 'Export complet!' : 'Full export!');
   };

@@ -8,6 +8,12 @@ interface PdfOptions {
   orientation: Orientation;
   title: string;
   schoolInfo: SchoolInfo;
+  language?: string;
+}
+
+// ---- Translation helper ----
+function t(en: string, fr: string, lang: string): string {
+  return lang === 'fr' ? fr : en;
 }
 
 function createDoc(opts: PdfOptions) {
@@ -17,6 +23,7 @@ function createDoc(opts: PdfOptions) {
 
 function addHeader(doc: jsPDF, opts: PdfOptions) {
   const pageWidth = doc.internal.pageSize.getWidth();
+  const lang = opts.language || 'en';
   let yPos = 10;
 
   // Logo on left
@@ -61,7 +68,7 @@ function addHeader(doc: jsPDF, opts: PdfOptions) {
   doc.text(opts.title, pageWidth - 14, yPos + 6, { align: 'right' });
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth - 14, yPos + 12, { align: 'right' });
+  doc.text(`${t('Generated:', 'Généré le :', lang)} ${new Date().toLocaleString()}`, pageWidth - 14, yPos + 12, { align: 'right' });
 
   // Line separator
   yPos = 28;
@@ -72,7 +79,7 @@ function addHeader(doc: jsPDF, opts: PdfOptions) {
   return yPos + 4;
 }
 
-function addFooter(doc: jsPDF, schoolInfo: SchoolInfo) {
+function addFooter(doc: jsPDF, schoolInfo: SchoolInfo, language: string = 'en') {
   const pageCount = doc.getNumberOfPages();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -83,15 +90,18 @@ function addFooter(doc: jsPDF, schoolInfo: SchoolInfo) {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(150, 150, 150);
 
+    const telLabel = t('Tel:', 'Tél.:', language);
+    const emailLabel = t('Email:', 'Email :', language);
+
     const footerParts = [
       schoolInfo.address || '',
-      schoolInfo.phone ? `Tel: ${schoolInfo.phone}` : '',
-      schoolInfo.email ? `Email: ${schoolInfo.email}` : ''
+      schoolInfo.phone ? `${telLabel} ${schoolInfo.phone}` : '',
+      schoolInfo.email ? `${emailLabel} ${schoolInfo.email}` : ''
     ].filter(Boolean);
 
     const footerText = footerParts.join('  |  ');
     doc.text(footerText, 14, pageHeight - 8);
-    doc.text(`Page ${i} of ${pageCount}`, pageWidth - 14, pageHeight - 8, { align: 'right' });
+    doc.text(`${t('Page', 'Page', language)} ${i} ${t('of', 'sur', language)} ${pageCount}`, pageWidth - 14, pageHeight - 8, { align: 'right' });
 
     doc.setDrawColor(220, 220, 220);
     doc.setLineWidth(0.2);
@@ -105,9 +115,10 @@ function downloadPdf(doc: jsPDF, filename: string) {
 
 // ==================== EXPORT FUNCTIONS ====================
 
-export function exportStudentsPDF(students: Student[], classes: Class[], schoolInfo: SchoolInfo) {
-  const { doc } = createDoc({ orientation: 'landscape', title: 'Students List', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'landscape', title: 'Students List', schoolInfo });
+export function exportStudentsPDF(students: Student[], classes: Class[], schoolInfo: SchoolInfo, language: string = 'en') {
+  const title = t('Students List', 'Liste des Étudiants', language);
+  const { doc } = createDoc({ orientation: 'landscape', title, schoolInfo, language });
+  let startY = addHeader(doc, { orientation: 'landscape', title, schoolInfo, language });
 
   const tableData = students.map(s => {
     const cls = classes.find(c => c.id === s.classId);
@@ -125,7 +136,16 @@ export function exportStudentsPDF(students: Student[], classes: Class[], schoolI
 
   autoTable(doc, {
     startY,
-    head: [['Name', 'Student ID', 'Class', 'Status', 'Guardian', 'Phone', 'Email', 'Created']],
+    head: [[
+      t('Name', 'Nom', language),
+      t('Student ID', 'ID Étudiant', language),
+      t('Class', 'Classe', language),
+      t('Status', 'Statut', language),
+      t('Guardian', 'Tuteur', language),
+      t('Phone', 'Téléphone', language),
+      t('Email', 'Email', language),
+      t('Created', 'Créé', language),
+    ]],
     body: tableData,
     theme: 'grid',
     headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
@@ -144,13 +164,14 @@ export function exportStudentsPDF(students: Student[], classes: Class[], schoolI
     },
   });
 
-  addFooter(doc, schoolInfo);
+  addFooter(doc, schoolInfo, language);
   downloadPdf(doc, `students_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
-export function exportAttendancePDF(records: AttendanceRecord[], students: Student[], classes: Class[], schoolInfo: SchoolInfo, dateFrom?: string, dateTo?: string) {
-  const { doc } = createDoc({ orientation: 'landscape', title: 'Attendance Report', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'landscape', title: 'Attendance Report', schoolInfo });
+export function exportAttendancePDF(records: AttendanceRecord[], students: Student[], classes: Class[], schoolInfo: SchoolInfo, dateFrom?: string, dateTo?: string, language: string = 'en') {
+  const title = t('Attendance Report', 'Rapport de Présence', language);
+  const { doc } = createDoc({ orientation: 'landscape', title, schoolInfo, language });
+  let startY = addHeader(doc, { orientation: 'landscape', title, schoolInfo, language });
 
   let filtered = [...records];
   if (dateFrom) filtered = filtered.filter(r => r.date >= dateFrom);
@@ -159,7 +180,7 @@ export function exportAttendancePDF(records: AttendanceRecord[], students: Stude
   // Summary section
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  doc.text('Summary', 14, startY);
+  doc.text(t('Summary', 'Résumé', language), 14, startY);
   startY += 2;
 
   const present = filtered.filter(r => r.status === 'present').length;
@@ -171,12 +192,16 @@ export function exportAttendancePDF(records: AttendanceRecord[], students: Stude
 
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Total Records: ${total}  |  Present: ${present}  |  Absent: ${absent}  |  Late: ${late}  |  Excused: ${excused}  |  Rate: ${rate}%`, 14, startY + 5);
+  doc.text(
+    `${t('Total Records', 'Total Enregistrements', language)}: ${total}  |  ${t('Present', 'Présent', language)}: ${present}  |  ${t('Absent', 'Absent', language)}: ${absent}  |  ${t('Late', 'En Retard', language)}: ${late}  |  ${t('Excused', 'Excusé', language)}: ${excused}  |  ${t('Rate', 'Taux', language)}: ${rate}%`,
+    14,
+    startY + 5
+  );
   startY += 12;
 
   if (dateFrom || dateTo) {
     doc.setFontSize(8);
-    doc.text(`Date Range: ${dateFrom || 'All'} → ${dateTo || 'All'}`, 14, startY);
+    doc.text(`${t('Date Range', 'Plage de Dates', language)}: ${dateFrom || t('All', 'Tout', language)} → ${dateTo || t('All', 'Tout', language)}`, 14, startY);
     startY += 6;
   }
 
@@ -185,7 +210,7 @@ export function exportAttendancePDF(records: AttendanceRecord[], students: Stude
     const cls = classes.find(c => c.id === s?.classId);
     return [
       r.date,
-      s?.fullName || 'Unknown',
+      s?.fullName || t('Unknown', 'Inconnu', language),
       s?.studentId || '-',
       cls?.name || '-',
       r.status,
@@ -195,7 +220,14 @@ export function exportAttendancePDF(records: AttendanceRecord[], students: Stude
 
   autoTable(doc, {
     startY,
-    head: [['Date', 'Student Name', 'Student ID', 'Class', 'Status', 'Notes']],
+    head: [[
+      t('Date', 'Date', language),
+      t('Student Name', 'Nom Étudiant', language),
+      t('Student ID', 'ID Étudiant', language),
+      t('Class', 'Classe', language),
+      t('Status', 'Statut', language),
+      t('Notes', 'Notes', language),
+    ]],
     body: tableData,
     theme: 'grid',
     headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
@@ -204,19 +236,20 @@ export function exportAttendancePDF(records: AttendanceRecord[], students: Stude
     margin: { left: 14, right: 14 },
   });
 
-  addFooter(doc, schoolInfo);
+  addFooter(doc, schoolInfo, language);
   downloadPdf(doc, `attendance_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
-export function exportGradesPDF(grades: Grade[], students: Student[], modules: Module[], schoolInfo: SchoolInfo) {
-  const { doc } = createDoc({ orientation: 'landscape', title: 'Grades Report', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'landscape', title: 'Grades Report', schoolInfo });
+export function exportGradesPDF(grades: Grade[], students: Student[], modules: Module[], schoolInfo: SchoolInfo, language: string = 'en') {
+  const title = t('Grades Report', 'Rapport des Notes', language);
+  const { doc } = createDoc({ orientation: 'landscape', title, schoolInfo, language });
+  let startY = addHeader(doc, { orientation: 'landscape', title, schoolInfo, language });
 
   const tableData = grades.map(g => {
     const s = students.find(st => st.id === g.studentId);
     const m = modules.find(mod => mod.id === g.moduleId);
     return [
-      s?.fullName || 'Unknown',
+      s?.fullName || t('Unknown', 'Inconnu', language),
       s?.studentId || '-',
       m?.name || '-',
       g.grade || '-',
@@ -227,7 +260,14 @@ export function exportGradesPDF(grades: Grade[], students: Student[], modules: M
 
   autoTable(doc, {
     startY,
-    head: [['Student', 'Student ID', 'Module', 'Grade', 'Percentage', 'Date']],
+    head: [[
+      t('Student', 'Étudiant', language),
+      t('Student ID', 'ID Étudiant', language),
+      t('Module', 'Module', language),
+      t('Grade', 'Note', language),
+      t('Percentage', 'Pourcentage', language),
+      t('Date', 'Date', language),
+    ]],
     body: tableData,
     theme: 'grid',
     headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
@@ -236,19 +276,20 @@ export function exportGradesPDF(grades: Grade[], students: Student[], modules: M
     margin: { left: 14, right: 14 },
   });
 
-  addFooter(doc, schoolInfo);
+  addFooter(doc, schoolInfo, language);
   downloadPdf(doc, `grades_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
-export function exportBehaviorPDF(records: BehaviorRecord[], students: Student[], schoolInfo: SchoolInfo) {
-  const { doc } = createDoc({ orientation: 'landscape', title: 'Behavior Report', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'landscape', title: 'Behavior Report', schoolInfo });
+export function exportBehaviorPDF(records: BehaviorRecord[], students: Student[], schoolInfo: SchoolInfo, language: string = 'en') {
+  const title = t('Behavior Report', 'Rapport de Comportement', language);
+  const { doc } = createDoc({ orientation: 'landscape', title, schoolInfo, language });
+  let startY = addHeader(doc, { orientation: 'landscape', title, schoolInfo, language });
 
   const tableData = records.map(r => {
     const s = students.find(st => st.id === r.studentId);
     return [
       r.date,
-      s?.fullName || 'Unknown',
+      s?.fullName || t('Unknown', 'Inconnu', language),
       s?.studentId || '-',
       r.type,
       r.description,
@@ -259,7 +300,15 @@ export function exportBehaviorPDF(records: BehaviorRecord[], students: Student[]
 
   autoTable(doc, {
     startY,
-    head: [['Date', 'Student', 'Student ID', 'Type', 'Description', 'Points', 'Teacher']],
+    head: [[
+      t('Date', 'Date', language),
+      t('Student', 'Étudiant', language),
+      t('Student ID', 'ID Étudiant', language),
+      t('Type', 'Type', language),
+      t('Description', 'Description', language),
+      t('Points', 'Points', language),
+      t('Teacher', 'Enseignant', language),
+    ]],
     body: tableData,
     theme: 'grid',
     headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
@@ -268,19 +317,20 @@ export function exportBehaviorPDF(records: BehaviorRecord[], students: Student[]
     margin: { left: 14, right: 14 },
   });
 
-  addFooter(doc, schoolInfo);
+  addFooter(doc, schoolInfo, language);
   downloadPdf(doc, `behavior_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
-export function exportIncidentsPDF(incidents: Incident[], students: Student[], schoolInfo: SchoolInfo) {
-  const { doc } = createDoc({ orientation: 'landscape', title: 'Incidents Report', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'landscape', title: 'Incidents Report', schoolInfo });
+export function exportIncidentsPDF(incidents: Incident[], students: Student[], schoolInfo: SchoolInfo, language: string = 'en') {
+  const title = t('Incidents Report', 'Rapport des Incidents', language);
+  const { doc } = createDoc({ orientation: 'landscape', title, schoolInfo, language });
+  let startY = addHeader(doc, { orientation: 'landscape', title, schoolInfo, language });
 
   const tableData = incidents.map(i => {
     const s = students.find(st => st.id === i.studentId);
     return [
       i.date || '-',
-      s?.fullName || 'Unknown',
+      s?.fullName || t('Unknown', 'Inconnu', language),
       i.incidentType || '-',
       i.severity,
       i.status,
@@ -292,7 +342,16 @@ export function exportIncidentsPDF(incidents: Incident[], students: Student[], s
 
   autoTable(doc, {
     startY,
-    head: [['Date', 'Student', 'Type', 'Severity', 'Status', 'Description', 'Action Taken', 'Reported By']],
+    head: [[
+      t('Date', 'Date', language),
+      t('Student', 'Étudiant', language),
+      t('Type', 'Type', language),
+      t('Severity', 'Sévérité', language),
+      t('Status', 'Statut', language),
+      t('Description', 'Description', language),
+      t('Action Taken', 'Action Prise', language),
+      t('Reported By', 'Signalé Par', language),
+    ]],
     body: tableData,
     theme: 'grid',
     headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
@@ -301,28 +360,38 @@ export function exportIncidentsPDF(incidents: Incident[], students: Student[], s
     margin: { left: 14, right: 14 },
   });
 
-  addFooter(doc, schoolInfo);
+  addFooter(doc, schoolInfo, language);
   downloadPdf(doc, `incidents_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
-export function exportTasksPDF(tasks: Task[], schoolInfo: SchoolInfo) {
-  const { doc } = createDoc({ orientation: 'landscape', title: 'Tasks Report', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'landscape', title: 'Tasks Report', schoolInfo });
+export function exportTasksPDF(tasks: Task[], schoolInfo: SchoolInfo, language: string = 'en') {
+  const title = t('Tasks Report', 'Rapport des Tâches', language);
+  const { doc } = createDoc({ orientation: 'landscape', title, schoolInfo, language });
+  let startY = addHeader(doc, { orientation: 'landscape', title, schoolInfo, language });
 
-  const tableData = tasks.map(t => [
-    t.ticketNumber || '-',
-    t.title,
-    t.priority,
-    t.status,
-    t.assignedTo || '-',
-    t.dueDate || '-',
-    t.progress != null ? `${t.progress}%` : '0%',
-    new Date(t.createdAt).toLocaleDateString()
+  const tableData = tasks.map(task => [
+    task.ticketNumber || '-',
+    task.title,
+    task.priority,
+    task.status,
+    task.assignedTo || '-',
+    task.dueDate || '-',
+    task.progress != null ? `${task.progress}%` : '0%',
+    new Date(task.createdAt).toLocaleDateString()
   ]);
 
   autoTable(doc, {
     startY,
-    head: [['Ticket', 'Title', 'Priority', 'Status', 'Assigned To', 'Due Date', 'Progress', 'Created']],
+    head: [[
+      t('Ticket', 'Ticket', language),
+      t('Title', 'Titre', language),
+      t('Priority', 'Priorité', language),
+      t('Status', 'Statut', language),
+      t('Assigned To', 'Assigné À', language),
+      t('Due Date', 'Date Limite', language),
+      t('Progress', 'Progression', language),
+      t('Created', 'Créé', language),
+    ]],
     body: tableData,
     theme: 'grid',
     headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
@@ -331,7 +400,7 @@ export function exportTasksPDF(tasks: Task[], schoolInfo: SchoolInfo) {
     margin: { left: 14, right: 14 },
   });
 
-  addFooter(doc, schoolInfo);
+  addFooter(doc, schoolInfo, language);
   downloadPdf(doc, `tasks_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
@@ -340,10 +409,12 @@ export function exportClassPerformancePDF(
   classes: Class[],
   grades: Grade[],
   attendance: AttendanceRecord[],
-  schoolInfo: SchoolInfo
+  schoolInfo: SchoolInfo,
+  language: string = 'en'
 ) {
-  const { doc } = createDoc({ orientation: 'landscape', title: 'Class Performance Comparison', schoolInfo });
-  let startY = addHeader(doc, { orientation: 'landscape', title: 'Class Performance Comparison', schoolInfo });
+  const title = t('Class Performance Comparison', 'Comparaison des Performances par Classe', language);
+  const { doc } = createDoc({ orientation: 'landscape', title, schoolInfo, language });
+  let startY = addHeader(doc, { orientation: 'landscape', title, schoolInfo, language });
 
   const classData = classes.map(c => {
     const classStudentIds = new Set(students.filter(s => s.classId === c.id).map(s => s.id));
@@ -375,7 +446,16 @@ export function exportClassPerformancePDF(
 
   autoTable(doc, {
     startY,
-    head: [['Class', 'Students', 'Total Grades', 'Avg Grade', 'Att. Records', 'Att. Rate', 'Pass Rate', 'Teacher']],
+    head: [[
+      t('Class', 'Classe', language),
+      t('Students', 'Étudiants', language),
+      t('Total Grades', 'Total des Notes', language),
+      t('Avg Grade', 'Moyenne', language),
+      t('Att. Records', 'Enr. Présence', language),
+      t('Att. Rate', 'Taux Présence', language),
+      t('Pass Rate', 'Taux Réussite', language),
+      t('Teacher', 'Enseignant', language),
+    ]],
     body: classData,
     theme: 'grid',
     headStyles: { fillColor: [16, 185, 129], fontSize: 9, fontStyle: 'bold' },
@@ -384,7 +464,7 @@ export function exportClassPerformancePDF(
     margin: { left: 14, right: 14 },
   });
 
-  addFooter(doc, schoolInfo);
+  addFooter(doc, schoolInfo, language);
   downloadPdf(doc, `class_performance_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
@@ -399,32 +479,34 @@ export function exportFullReportPDF(
     tasks: Task[];
     incidents: Incident[];
   },
-  schoolInfo: SchoolInfo
+  schoolInfo: SchoolInfo,
+  language: string = 'en'
 ) {
-  const { doc } = createDoc({ orientation: 'landscape', title: 'Comprehensive School Report', schoolInfo });
-  let yPos = addHeader(doc, { orientation: 'landscape', title: 'Comprehensive School Report', schoolInfo });
+  const title = t('Comprehensive School Report', "Rapport Global de l'École", language);
+  const { doc } = createDoc({ orientation: 'landscape', title, schoolInfo, language });
+  let yPos = addHeader(doc, { orientation: 'landscape', title, schoolInfo, language });
   const pageWidth = doc.internal.pageSize.getWidth();
 
   // ---- OVERVIEW STATS ----
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(16, 185, 129);
-  doc.text('1. Overview', 14, yPos);
+  doc.text(`1. ${t('Overview', 'Aperçu', language)}`, 14, yPos);
   yPos += 6;
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
 
   const statsText = [
-    `Total Students: ${allData.students.length}`,
-    `Active Students: ${allData.students.filter(s => s.status === 'active').length}`,
-    `Total Classes: ${allData.classes.length}`,
-    `Total Modules: ${allData.modules.length}`,
-    `Attendance Records: ${allData.attendance.length}`,
-    `Grade Records: ${allData.grades.length}`,
-    `Behavior Records: ${allData.behavior.length}`,
-    `Open Tasks: ${allData.tasks.filter(t => t.status !== 'completed').length}`,
-    `Open Incidents: ${allData.incidents.filter(i => i.status !== 'closed' && i.status !== 'resolved').length}`,
+    `${t('Total Students', 'Total Étudiants', language)}: ${allData.students.length}`,
+    `${t('Active Students', 'Étudiants Actifs', language)}: ${allData.students.filter(s => s.status === 'active').length}`,
+    `${t('Total Classes', 'Total Classes', language)}: ${allData.classes.length}`,
+    `${t('Total Modules', 'Total Modules', language)}: ${allData.modules.length}`,
+    `${t('Attendance Records', 'Enregistrements de Présence', language)}: ${allData.attendance.length}`,
+    `${t('Grade Records', 'Enregistrements de Notes', language)}: ${allData.grades.length}`,
+    `${t('Behavior Records', 'Enregistrements de Comportement', language)}: ${allData.behavior.length}`,
+    `${t('Open Tasks', 'Tâches Ouvertes', language)}: ${allData.tasks.filter(task => task.status !== 'completed').length}`,
+    `${t('Open Incidents', 'Incidents Ouverts', language)}: ${allData.incidents.filter(i => i.status !== 'closed' && i.status !== 'resolved').length}`,
   ];
 
   statsText.forEach((text, i) => {
@@ -436,7 +518,7 @@ export function exportFullReportPDF(
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(16, 185, 129);
-  doc.text('2. Students', 14, yPos);
+  doc.text(`2. ${t('Students', 'Étudiants', language)}`, 14, yPos);
   yPos += 4;
 
   const studentsData = allData.students.map(s => {
@@ -446,7 +528,12 @@ export function exportFullReportPDF(
 
   autoTable(doc, {
     startY: yPos,
-    head: [['Name', 'Student ID', 'Class', 'Status']],
+    head: [[
+      t('Name', 'Nom', language),
+      t('Student ID', 'ID Étudiant', language),
+      t('Class', 'Classe', language),
+      t('Status', 'Statut', language),
+    ]],
     body: studentsData,
     theme: 'grid',
     headStyles: { fillColor: [16, 185, 129], fontSize: 7, fontStyle: 'bold' },
@@ -465,12 +552,16 @@ export function exportFullReportPDF(
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(16, 185, 129);
-  doc.text('3. Attendance Summary', 14, yPos);
+  doc.text(`3. ${t('Attendance Summary', 'Résumé de Présence', language)}`, 14, yPos);
   yPos += 6;
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Total Records: ${allData.attendance.length}  |  Present: ${present}  |  Absent: ${absent}  |  Rate: ${rate}%`, 14, yPos);
+  doc.text(
+    `${t('Total Records', 'Total Enregistrements', language)}: ${allData.attendance.length}  |  ${t('Present', 'Présent', language)}: ${present}  |  ${t('Absent', 'Absent', language)}: ${absent}  |  ${t('Rate', 'Taux', language)}: ${rate}%`,
+    14,
+    yPos
+  );
   yPos += 10;
 
   // ---- GRADES SUMMARY ----
@@ -481,12 +572,16 @@ export function exportFullReportPDF(
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(16, 185, 129);
-  doc.text('4. Grades Summary', 14, yPos);
+  doc.text(`4. ${t('Grades Summary', 'Résumé des Notes', language)}`, 14, yPos);
   yPos += 6;
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Total Grades: ${allData.grades.length}  |  Average: ${avgGrade}%  |  Above 70%: ${allData.grades.filter(g => (g.percentage || 0) >= 70).length}  |  Below 50%: ${allData.grades.filter(g => (g.percentage || 0) < 50).length}`, 14, yPos);
+  doc.text(
+    `${t('Total Grades', 'Total des Notes', language)}: ${allData.grades.length}  |  ${t('Average', 'Moyenne', language)}: ${avgGrade}%  |  ${t('Above', 'Au-dessus', language)} 70%: ${allData.grades.filter(g => (g.percentage || 0) >= 70).length}  |  ${t('Below', 'En dessous', language)} 50%: ${allData.grades.filter(g => (g.percentage || 0) < 50).length}`,
+    14,
+    yPos
+  );
   yPos += 10;
 
   // ---- BEHAVIOR SUMMARY ----
@@ -496,44 +591,56 @@ export function exportFullReportPDF(
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(16, 185, 129);
-  doc.text('5. Behavior Summary', 14, yPos);
+  doc.text(`5. ${t('Behavior Summary', 'Résumé de Comportement', language)}`, 14, yPos);
   yPos += 6;
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Total Records: ${allData.behavior.length}  |  Positive: ${posBehavior}  |  Negative: ${negBehavior}`, 14, yPos);
+  doc.text(
+    `${t('Total Records', 'Total Enregistrements', language)}: ${allData.behavior.length}  |  Positive: ${posBehavior}  |  Negative: ${negBehavior}`,
+    14,
+    yPos
+  );
   yPos += 10;
 
   // ---- TASKS SUMMARY ----
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(16, 185, 129);
-  doc.text('6. Tasks Summary', 14, yPos);
+  doc.text(`6. ${t('Tasks Summary', 'Résumé des Tâches', language)}`, 14, yPos);
   yPos += 6;
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  const pendingTasks = allData.tasks.filter(t => t.status === 'pending').length;
-  const inProgressTasks = allData.tasks.filter(t => t.status === 'in_progress').length;
-  const completedTasks = allData.tasks.filter(t => t.status === 'completed').length;
-  const overdueTasks = allData.tasks.filter(t => t.status === 'overdue').length;
-  doc.text(`Total: ${allData.tasks.length}  |  Pending: ${pendingTasks}  |  In Progress: ${inProgressTasks}  |  Completed: ${completedTasks}  |  Overdue: ${overdueTasks}`, 14, yPos);
+  const pendingTasks = allData.tasks.filter(task => task.status === 'pending').length;
+  const inProgressTasks = allData.tasks.filter(task => task.status === 'in_progress').length;
+  const completedTasks = allData.tasks.filter(task => task.status === 'completed').length;
+  const overdueTasks = allData.tasks.filter(task => task.status === 'overdue').length;
+  doc.text(
+    `${t('Total', 'Total', language)}: ${allData.tasks.length}  |  ${t('Pending', 'En Attente', language)}: ${pendingTasks}  |  ${t('In Progress', 'En Cours', language)}: ${inProgressTasks}  |  ${t('Completed', 'Terminé', language)}: ${completedTasks}  |  ${t('Overdue', 'En Retard', language)}: ${overdueTasks}`,
+    14,
+    yPos
+  );
   yPos += 10;
 
   // ---- INCIDENTS SUMMARY ----
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(16, 185, 129);
-  doc.text('7. Incidents Summary', 14, yPos);
+  doc.text(`7. ${t('Incidents Summary', 'Résumé des Incidents', language)}`, 14, yPos);
   yPos += 6;
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   const openIncidents = allData.incidents.filter(i => i.status === 'open').length;
   const resolvedIncidents = allData.incidents.filter(i => i.status === 'resolved' || i.status === 'closed').length;
-  doc.text(`Total: ${allData.incidents.length}  |  Open: ${openIncidents}  |  Resolved: ${resolvedIncidents}`, 14, yPos);
+  doc.text(
+    `${t('Total', 'Total', language)}: ${allData.incidents.length}  |  ${t('Open', 'Ouvert', language)}: ${openIncidents}  |  ${t('Resolved', 'Résolu', language)}: ${resolvedIncidents}`,
+    14,
+    yPos
+  );
 
-  addFooter(doc, schoolInfo);
+  addFooter(doc, schoolInfo, language);
   downloadPdf(doc, `full_report_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
@@ -543,8 +650,10 @@ export function exportSchedulePDF(
   teachers: { id: string; name: string }[],
   modules: { id: string; name: string }[],
   monthLabel: string,
-  schoolInfo: SchoolInfo
+  schoolInfo: SchoolInfo,
+  language: string = 'en'
 ) {
+  const lang = language;
   // A4 Portrait
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -582,7 +691,7 @@ export function exportSchedulePDF(
   }
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  doc.text(`Schedule - ${targetClass.name}`, pageWidth - 14, yPos + 5, { align: 'right' });
+  doc.text(`${t('Schedule', 'Emploi du Temps', lang)} - ${targetClass.name}`, pageWidth - 14, yPos + 5, { align: 'right' });
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.text(monthLabel, pageWidth - 14, yPos + 10, { align: 'right' });
@@ -595,7 +704,13 @@ export function exportSchedulePDF(
   // ---- GROUP SCHEDULE DATA BY DATE ----
   const sorted = [...scheduleEntries].sort((a, b) => a.date.localeCompare(b.date));
 
-  const tableHead = [['Date', 'Time', 'Teacher', 'Room', 'Module']];
+  const tableHead = [[
+    t('Date', 'Date', lang),
+    t('Time', 'Heure', lang),
+    t('Teacher', 'Enseignant', lang),
+    t('Room', 'Salle', lang),
+    t('Module', 'Module', lang),
+  ]];
   const tableBody = sorted.map(entry => {
     const teacher = teachers.find(tc => tc.id === entry.teacherId);
     const mod = modules.find(m => m.id === entry.moduleId);
@@ -613,7 +728,7 @@ export function exportSchedulePDF(
 
   if (tableBody.length === 0) {
     doc.setFontSize(10);
-    doc.text('No schedule entries for this period.', 14, yPos + 10);
+    doc.text(t("No schedule entries for this period.", "Aucune entrée d'emploi du temps pour cette période.", lang), 14, yPos + 10);
   } else {
     // Calculate optimal font size to fit all rows on one page in portrait
     // A4 portrait: usable width ~182mm, usable height from yPos(27) to footer(282) = ~255mm
@@ -621,6 +736,9 @@ export function exportSchedulePDF(
     const estimatedRowHeight = 5.5;
     const maxRowsPerPage = Math.floor(availableHeight / estimatedRowHeight);
     const fontSize = tableBody.length > maxRowsPerPage * 2 ? 5 : tableBody.length > maxRowsPerPage ? 5.5 : 6;
+
+    const telLabel = t('Tel:', 'Tél.:', lang);
+    const emailLabel = t('Email:', 'Email :', lang);
 
     autoTable(doc, {
       startY: yPos,
@@ -648,11 +766,11 @@ export function exportSchedulePDF(
         doc.setTextColor(150, 150, 150);
         const footerParts = [
           schoolInfo.address || '',
-          schoolInfo.phone ? `Tel: ${schoolInfo.phone}` : '',
-          schoolInfo.email ? `Email: ${schoolInfo.email}` : ''
+          schoolInfo.phone ? `${telLabel} ${schoolInfo.phone}` : '',
+          schoolInfo.email ? `${emailLabel} ${schoolInfo.email}` : ''
         ].filter(Boolean);
         doc.text(footerParts.join('  |  '), 14, ph - 8);
-        doc.text(`Page ${pg}`, pw - 14, ph - 8, { align: 'right' });
+        doc.text(`${t('Page', 'Page', lang)} ${pg}`, pw - 14, ph - 8, { align: 'right' });
         doc.setDrawColor(220, 220, 220);
         doc.setLineWidth(0.2);
         doc.line(14, ph - 10, pw - 14, ph - 10);
@@ -669,8 +787,10 @@ export function exportAllSchedulesPDF(
   classes: Class[],
   teachers: { id: string; name: string }[],
   modules: { id: string; name: string }[],
-  schoolInfo: SchoolInfo
+  schoolInfo: SchoolInfo,
+  language: string = 'en'
 ) {
+  const lang = language;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -695,7 +815,7 @@ export function exportAllSchedulesPDF(
   doc.setFontSize(9); doc.setFont('helvetica', 'normal');
   if (schoolInfo.field) doc.text(schoolInfo.field, textX, yPos + 12);
   doc.setFontSize(12); doc.setFont('helvetica', 'bold');
-  doc.text('All Classes Schedule', pageWidth - 14, yPos + 6, { align: 'right' });
+  doc.text(t('All Classes Schedule', "Emploi du Temps de Toutes les Classes", lang), pageWidth - 14, yPos + 6, { align: 'right' });
   doc.setFontSize(8); doc.setFont('helvetica', 'normal');
   doc.text(new Date().toLocaleDateString(), pageWidth - 14, yPos + 12, { align: 'right' });
   yPos = 28;
@@ -723,7 +843,7 @@ export function exportAllSchedulesPDF(
     // Class title
     doc.setFontSize(11); doc.setFont('helvetica', 'bold');
     doc.setTextColor(16, 185, 129);
-    doc.text(`Class: ${cls.name}`, 14, yPos);
+    doc.text(`${t('Class', 'Classe', lang)}: ${cls.name}`, 14, yPos);
     yPos += 2;
     doc.setTextColor(0, 0, 0);
     yPos += 4;
@@ -745,7 +865,13 @@ export function exportAllSchedulesPDF(
 
     autoTable(doc, {
       startY: yPos,
-      head: [['Date', 'Time', 'Teacher', 'Room', 'Module']],
+      head: [[
+        t('Date', 'Date', lang),
+        t('Time', 'Heure', lang),
+        t('Teacher', 'Enseignant', lang),
+        t('Room', 'Salle', lang),
+        t('Module', 'Module', lang),
+      ]],
       body: tableBody,
       theme: 'grid',
       headStyles: { fillColor: [16, 185, 129], fontSize: 7, fontStyle: 'bold', halign: 'center' },
@@ -766,14 +892,16 @@ export function exportAllSchedulesPDF(
 
   // Footer on all pages
   const pageCount = doc.getNumberOfPages();
+  const telLabel = t('Tel:', 'Tél.:', lang);
+  const emailLabel = t('Email:', 'Email :', lang);
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
     const ph = doc.internal.pageSize.getHeight();
     const pw = doc.internal.pageSize.getWidth();
     doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(150, 150, 150);
-    const fp = [schoolInfo.address || '', schoolInfo.phone ? `Tel: ${schoolInfo.phone}` : '', schoolInfo.email ? `Email: ${schoolInfo.email}` : ''].filter(Boolean);
+    const fp = [schoolInfo.address || '', schoolInfo.phone ? `${telLabel} ${schoolInfo.phone}` : '', schoolInfo.email ? `${emailLabel} ${schoolInfo.email}` : ''].filter(Boolean);
     doc.text(fp.join('  |  '), 14, ph - 8);
-    doc.text(`Page ${i} of ${pageCount}`, pw - 14, ph - 8, { align: 'right' });
+    doc.text(`${t('Page', 'Page', lang)} ${i} ${t('of', 'sur', lang)} ${pageCount}`, pw - 14, ph - 8, { align: 'right' });
     doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.2);
     doc.line(14, ph - 10, pw - 14, ph - 10);
   }
@@ -790,26 +918,28 @@ export function exportProgressReportPDF(
   teacherComment: string,
   language: string = 'en'
 ) {
+  const lang = language;
   const si = schoolInfo as SchoolInfo;
-  const { doc } = createDoc({ orientation: 'landscape', title: language === 'fr' ? 'Bulletin de Progres' : 'Progress Report', schoolInfo: si });
-  let startY = addHeader(doc, { orientation: 'landscape', title: language === 'fr' ? 'Bulletin de Progres' : 'Progress Report', schoolInfo: si });
+  const title = lang === 'fr' ? 'Bulletin de Progres' : 'Progress Report';
+  const { doc } = createDoc({ orientation: 'landscape', title, schoolInfo: si, language: lang });
+  let startY = addHeader(doc, { orientation: 'landscape', title, schoolInfo: si, language: lang });
 
   if (reports.length === 0) {
     doc.setFontSize(12);
     doc.setFont('helvetica', 'normal');
-    doc.text(language === 'fr' ? 'Aucune donnee de progression disponible' : 'No progress data available', 14, startY + 20);
-    addFooter(doc, si);
+    doc.text(lang === 'fr' ? 'Aucune donnee de progression disponible' : 'No progress data available', 14, startY + 20);
+    addFooter(doc, si, lang);
     downloadPdf(doc, `progress_report_${new Date().toISOString().slice(0, 10)}.pdf`);
     return;
   }
 
   // Table header
   const head = [[
-    language === 'fr' ? 'Étudiant' : 'Student',
-    language === 'fr' ? 'Matière' : 'Module',
-    language === 'fr' ? 'Note' : 'Grade',
-    language === 'fr' ? '%' : '%',
-    language === 'fr' ? 'Statut' : 'Status',
+    t('Student', 'Étudiant', lang),
+    t('Module', 'Module', lang),
+    t('Grade', 'Note', lang),
+    '%',
+    t('Status', 'Statut', lang),
   ]];
 
   const body = reports.map(r => [
@@ -817,7 +947,7 @@ export function exportProgressReportPDF(
     String(r.moduleName || r.module || '-'),
     String(r.grade || r.score || '-'),
     String(r.percentage || r.pct || '0'),
-    String(r.status || (Number(r.percentage || r.pct || 0) >= 50 ? (language === 'fr' ? 'Reussi' : 'Pass') : (language === 'fr' ? 'Echoue' : 'Fail'))),
+    String(r.status || (Number(r.percentage || r.pct || 0) >= 50 ? (lang === 'fr' ? 'Reussi' : 'Pass') : (lang === 'fr' ? 'Echoue' : 'Fail'))),
   ]);
 
   autoTable(doc, {
@@ -837,7 +967,7 @@ export function exportProgressReportPDF(
     if (finalY) {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
-      doc.text(language === 'fr' ? 'Commentaire du professeur' : 'Teacher Comment', 14, finalY + 12);
+      doc.text(lang === 'fr' ? 'Commentaire du professeur' : 'Teacher Comment', 14, finalY + 12);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
       const lines = doc.splitTextToSize(teacherComment, 180);
@@ -845,6 +975,6 @@ export function exportProgressReportPDF(
     }
   }
 
-  addFooter(doc, si);
+  addFooter(doc, si, lang);
   downloadPdf(doc, `progress_report_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
