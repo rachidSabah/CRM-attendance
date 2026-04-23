@@ -350,8 +350,8 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
               <Badge variant="secondary">{student.academicYear || '-'}</Badge>
               {curStreak > 0 && <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">🔥 {curStreak}</Badge>}
               {bestStreak > 2 && <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">⭐ {bestStreak}</Badge>}
-              {avgGrade > 0 && <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">Avg: {Math.round(avgGrade)}%</Badge>}
-              {totalBp !== 0 && <Badge className={totalBp > 0 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}>{totalBp > 0 ? '+' : ''}{totalBp} pts</Badge>}
+              {avgGrade > 0 && <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">{language === 'fr' ? 'Moy : ' : 'Avg: '}{Math.round(avgGrade)}%</Badge>}
+              {totalBp !== 0 && <Badge className={totalBp > 0 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}>{totalBp > 0 ? '+' : ''}{totalBp} {language === 'fr' ? 'pts' : 'pts'}</Badge>}
             </div>
           </div>
           <div className="flex gap-1.5 shrink-0 w-full sm:w-auto">
@@ -394,9 +394,9 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
 
           {tab === 'trends' && <>
             <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-6">
-              <div className="rounded-lg p-2 sm:p-3 text-center bg-amber-100 dark:bg-amber-900/20"><p className="text-xl sm:text-2xl font-bold text-amber-700">🔥 {curStreak}</p><p className="text-[10px] sm:text-xs text-amber-600">Current Streak</p></div>
-              <div className="rounded-lg p-2 sm:p-3 text-center bg-emerald-100 dark:bg-emerald-900/20"><p className="text-xl sm:text-2xl font-bold text-emerald-700">⭐ {bestStreak}</p><p className="text-[10px] sm:text-xs text-emerald-600">Best Streak</p></div>
-              <div className="rounded-lg p-2 sm:p-3 text-center bg-purple-100 dark:bg-purple-900/20"><p className="text-xl sm:text-2xl font-bold text-purple-700">{rate}%</p><p className="text-[10px] sm:text-xs text-purple-600">Attendance Rate</p></div>
+              <div className="rounded-lg p-2 sm:p-3 text-center bg-amber-100 dark:bg-amber-900/20"><p className="text-xl sm:text-2xl font-bold text-amber-700">🔥 {curStreak}</p><p className="text-[10px] sm:text-xs text-amber-600">{language === 'fr' ? 'Série actuelle' : 'Current Streak'}</p></div>
+              <div className="rounded-lg p-2 sm:p-3 text-center bg-emerald-100 dark:bg-emerald-900/20"><p className="text-xl sm:text-2xl font-bold text-emerald-700">⭐ {bestStreak}</p><p className="text-[10px] sm:text-xs text-emerald-600">{language === 'fr' ? 'Meilleure série' : 'Best Streak'}</p></div>
+              <div className="rounded-lg p-2 sm:p-3 text-center bg-purple-100 dark:bg-purple-900/20"><p className="text-xl sm:text-2xl font-bold text-purple-700">{rate}%</p><p className="text-[10px] sm:text-xs text-purple-600">{language === 'fr' ? 'Taux de présence' : 'Attendance Rate'}</p></div>
             </div>
             <p className="text-xs sm:text-sm font-semibold mb-3">{language === 'fr' ? '4 dernières semaines' : 'Last 4 Weeks'}</p>
             <div className="flex gap-2 sm:gap-3 items-end h-24 sm:h-28 mb-6">
@@ -778,7 +778,7 @@ function StudentsPage() {
   const openAdd = () => { setEditing(null); setForm({ fullName: '', studentId: '', classId: '', status: 'active', guardianName: '', guardianPhone: '', guardianEmail: '', phone: '', email: '', address: '', notes: '', group: '', photo: '' }); setDialogOpen(true); };
   const openEdit = (s: Student) => { setEditing(s); setForm({ fullName: s.fullName, studentId: s.studentId, classId: s.classId, status: s.status, guardianName: s.guardianName || '', guardianPhone: s.guardianPhone || '', guardianEmail: s.guardianEmail || '', phone: s.phone || '', email: s.email || '', address: s.address || '', notes: s.notes || '', group: s.group || '', photo: s.photo || '' }); setDialogOpen(true); };
   const handleSave = () => {
-    if (!form.fullName || !form.studentId) { toast.error('Name and Student ID are required'); return; }
+    if (!form.fullName || !form.studentId) { toast.error(language === 'fr' ? 'Nom et ID étudiant requis' : 'Name and Student ID are required'); return; }
     if (editing) { setStudents(students.map(s => s.id === editing.id ? { ...s, ...form, className: classes.find(c => c.id === form.classId)?.name } : s)); toast.success(language === 'fr' ? 'Étudiant modifié' : 'Student updated'); }
     else { setStudents([...students, { ...form, id: genId(), className: classes.find(c => c.id === form.classId)?.name, academicYear: classes.find(c => c.id === form.classId)?.academicYear || '', createdAt: new Date().toISOString() }]); toast.success(language === 'fr' ? 'Étudiant ajouté' : 'Student added'); }
     setDialogOpen(false);
@@ -861,8 +861,8 @@ function StudentsPage() {
           <div className="flex gap-2 ml-auto flex-wrap">
             <Select value={batchClassId} onValueChange={setBatchClassId}><SelectTrigger className="w-40 h-8 text-xs"><SelectValue placeholder={language === 'fr' ? 'Assigner classe...' : 'Assign class...'} /></SelectTrigger><SelectContent>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
             <Button variant="outline" size="sm" onClick={handleBatchAssign} disabled={!batchClassId}><GraduationCap className="h-4 w-4 mr-1" />{language === 'fr' ? 'Assigner' : 'Assign'}</Button>
-            <Button variant="outline" size="sm" onClick={() => { const ex = students.filter(s => selectedIds.has(s.id)); exportUtils.exportStudentsCSV(ex, classes, language); toast.success('Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
-            <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => { if (confirm(`Delete ${selectedIds.size} students?`)) { const st = useAppStore.getState(); st.setAttendance(st.attendance.filter(a => !selectedIds.has(a.studentId))); st.setGrades(st.grades.filter(g => !selectedIds.has(g.studentId))); st.setBehavior(st.behavior.filter(b => !selectedIds.has(b.studentId))); st.setIncidents(st.incidents.filter(i => !selectedIds.has(i.studentId))); st.setExamGrades(st.examGrades.filter(eg => !selectedIds.has(eg.studentId))); setStudents(students.filter(s => !selectedIds.has(s.id))); setSelectedIds(new Set()); toast.success(`${selectedIds.size} deleted`); } }}><Trash2 className="h-4 w-4 mr-1" />{t('delete', language)}</Button>
+            <Button variant="outline" size="sm" onClick={() => { const ex = students.filter(s => selectedIds.has(s.id)); exportUtils.exportStudentsCSV(ex, classes, language); toast.success(language === 'fr' ? 'Exporté !' : 'Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
+            <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => { if (confirm(`Delete ${selectedIds.size} students?`)) { const st = useAppStore.getState(); st.setAttendance(st.attendance.filter(a => !selectedIds.has(a.studentId))); st.setGrades(st.grades.filter(g => !selectedIds.has(g.studentId))); st.setBehavior(st.behavior.filter(b => !selectedIds.has(b.studentId))); st.setIncidents(st.incidents.filter(i => !selectedIds.has(i.studentId))); st.setExamGrades(st.examGrades.filter(eg => !selectedIds.has(eg.studentId))); setStudents(students.filter(s => !selectedIds.has(s.id))); setSelectedIds(new Set()); toast.success(language === 'fr' ? `${selectedIds.size} supprimé(s)` : `${selectedIds.size} deleted`); } }}><Trash2 className="h-4 w-4 mr-1" />{t('delete', language)}</Button>
             <Button variant="ghost" size="sm" onClick={() => { setSelectedIds(new Set()); setMultiSelect(false); }}><X className="h-4 w-4" /></Button>
           </div>
         </div>
@@ -877,7 +877,7 @@ function StudentsPage() {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" className={multiSelect ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-400' : ''} onClick={() => { setMultiSelect(!multiSelect); setSelectedIds(new Set()); }}><CheckCircle2 className="h-4 w-4 mr-1" />{language === 'fr' ? 'Sélection multiple' : 'Multi-select'}</Button>
           <label className="cursor-pointer"><input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} /><Button variant="outline" size="sm" className="border-orange-400 text-orange-600" asChild><span><Upload className="h-4 w-4 mr-1" />CSV</span></Button></label>
-          <Button variant="outline" size="sm" onClick={() => { exportUtils.exportStudentsCSV(students, classes, language); toast.success('Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
+          <Button variant="outline" size="sm" onClick={() => { exportUtils.exportStudentsCSV(students, classes, language); toast.success(language === 'fr' ? 'Exporté !' : 'Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
           <Button variant="outline" size="sm" onClick={() => { pdfUtils.exportStudentsPDF(students, classes, schoolInfo, language); }}><Printer className="h-4 w-4 mr-1" />PDF</Button>
           <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={openAdd}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter' : 'Add'}</Button>
         </div>
@@ -983,7 +983,7 @@ function CrudPage<T extends { id: string; createdAt: string }>({ title, items, s
               {columns.map(col => (
                 <TableCell key={col.key}>{col.render ? col.render(item) : String((item as Record<string, unknown>)[col.key] || '-')}</TableCell>
               ))}
-              <TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditing(item); setForm({ ...item }); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => { if (confirm(t('delete', language) + `?`)) { setItems(items.filter(i => i.id !== item.id)); toast.success('Deleted'); } }}><Trash2 className="h-4 w-4" /></Button></div></TableCell>
+              <TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditing(item); setForm({ ...item }); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => { if (confirm(t('delete', language) + `?`)) { setItems(items.filter(i => i.id !== item.id)); toast.success(language === 'fr' ? 'Supprimé' : 'Deleted'); } }}><Trash2 className="h-4 w-4" /></Button></div></TableCell>
             </TableRow>
           ))}
         </TableBody></Table></div>
@@ -1210,7 +1210,7 @@ function AttendancePage() {
     setOverrides(p => ({ ...p, [sid]: status }));
     if (status === 'absent' || status === 'late') {
       const s = students.find(st => st.id === sid);
-      if (s?.guardianPhone) setTimeout(() => { sendAbsenceWhatsApp(sid, status); toast.success(`WhatsApp opened for ${s.guardianName || 'guardian'}`); }, 500);
+      if (s?.guardianPhone) setTimeout(() => { sendAbsenceWhatsApp(sid, status); toast.success(language === 'fr' ? `WhatsApp ouvert pour ${s.guardianName || 'tuteur'}` : `WhatsApp opened for ${s.guardianName || 'guardian'}`); }, 500);
     }
   };
   const handleMarkAll = (status: AttendanceRecord['status']) => {
@@ -1226,7 +1226,7 @@ function AttendancePage() {
     const newR: AttendanceRecord[] = [];
     const newAbsences: Array<{ student: Student; status: AttendanceRecord['status'] }> = [];
     filteredStudents.forEach(s => { const st = localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) { updated.push({ ...ex, status: st }); } else { newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); } if ((st === 'absent' || st === 'late') && (!ex || ex.status !== st)) { newAbsences.push({ student: s, status: st }); } });
-    setAttendance([...updated, ...otherDayRecords, ...newR]); toast.success('Attendance saved!'); setTimeout(() => setSaving(false), 500);
+    setAttendance([...updated, ...otherDayRecords, ...newR]); toast.success(language === 'fr' ? 'Présence enregistrée !' : 'Attendance saved!'); setTimeout(() => setSaving(false), 500);
     // Send email notifications for new absences/late
     if (emailNotifEnabled && newAbsences.length > 0) { sendAbsenceEmails(newAbsences); }
     // Push notification for admin: attendance summary
@@ -1320,7 +1320,7 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
   };
   const handleQuickBulk = (status: AttendanceRecord['status']) => {
     const m: Record<string, AttendanceRecord['status']> = {}; filteredStudents.forEach(s => { m[s.id] = status; }); setQuickBulk({ ...m });
-    if (Object.keys(m).length > 0) toast.success(`${Object.keys(m).length} marked as ${status}`);
+    if (Object.keys(m).length > 0) toast.success(language === 'fr' ? `${Object.keys(m).length} marqué(s) comme ${status}` : `${Object.keys(m).length} marked as ${status}`);
   };
   const handleQuickSave = () => {
     setSaving(true);
@@ -1331,7 +1331,7 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
     const newR: AttendanceRecord[] = [];
     const newAbsences: Array<{ student: Student; status: AttendanceRecord['status'] }> = [];
     filteredStudents.forEach(s => { const st = quickBulk[s.id] || localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) { updated.push({ ...ex, status: st }); } else { newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); } if ((st === 'absent' || st === 'late') && (!ex || ex.status !== st)) { newAbsences.push({ student: s, status: st }); } });
-    setAttendance([...updated, ...otherDayRecords, ...newR]); toast.success('Attendance saved!'); setQuickBulk({}); setTimeout(() => setSaving(false), 500);
+    setAttendance([...updated, ...otherDayRecords, ...newR]); toast.success(language === 'fr' ? 'Présence enregistrée !' : 'Attendance saved!'); setQuickBulk({}); setTimeout(() => setSaving(false), 500);
     // Send email notifications for new absences/late
     if (emailNotifEnabled && newAbsences.length > 0) { sendAbsenceEmails(newAbsences); }
   };
@@ -1434,14 +1434,14 @@ function CalendarPage() {
   const selectedEvents = selectedDay ? getEventsForDay(parseInt(selectedDay.split('-')[2])) : [];
 
   const handleAddEvent = () => {
-    if (!eventForm.title || !eventForm.date) { toast.error('Title and date required'); return; }
+    if (!eventForm.title || !eventForm.date) { toast.error(language === 'fr' ? 'Titre et date requis' : 'Title and date required'); return; }
     if (editingEvent) { setCalendarEvents(events.map(e => e.id === editingEvent.id ? { ...e, ...eventForm, id: e.id, createdAt: e.createdAt } : e)); }
     else setCalendarEvents([...events, { ...eventForm, id: genId(), createdAt: new Date().toISOString() }]);
     toast.success(language === 'fr' ? 'Événement sauvegardé' : 'Event saved');
     setEventOpen(false); setEditingEvent(null); setEventForm({ title: '', date: localToday(), type: 'other', description: '', color: '#10b981' });
   };
   const openEditEvent = (e: CalendarEvent) => { setEditingEvent(e); setEventForm({ title: e.title, date: e.date, type: e.type, description: e.description || '', color: e.color || '#10b981' }); setEventOpen(true); };
-  const handleDeleteEvent = (id: string) => { if (!confirm(language === 'fr' ? 'Supprimer cet événement ?' : 'Delete this event?')) return; setCalendarEvents(events.filter(e => e.id !== id)); toast.success('Event deleted'); };
+  const handleDeleteEvent = (id: string) => { if (!confirm(language === 'fr' ? 'Supprimer cet événement ?' : 'Delete this event?')) return; setCalendarEvents(events.filter(e => e.id !== id)); toast.success(language === 'fr' ? 'Événement supprimé' : 'Event deleted'); };
 
   const typeColors: Record<string, string> = { exam: '#ef4444', holiday: '#10b981', meeting: '#3b82f6', other: '#6b7280' };
 
@@ -3069,7 +3069,7 @@ function MessagingPage() {
   const openAddTemplate = () => { setEditing(null); setForm({ name: '', content: '', category: '', lang: language === 'fr' ? 'fr' : language === 'ar' ? 'ar' : 'en', isDefault: false }); setDialogOpen(true); };
   const openEditTemplate = (t: Template) => { setEditing(t); setForm({ name: t.name, content: t.content, category: t.category || '', lang: t.lang || 'en', isDefault: !!t.isDefault }); setDialogOpen(true); };
   const handleSaveTemplate = () => {
-    if (!form.name || !form.content) { toast.error('Name and content required'); return; }
+    if (!form.name || !form.content) { toast.error(language === 'fr' ? 'Nom et contenu requis' : 'Name and content required'); return; }
     if (form.isDefault) {
       // Unset other defaults in same category
       const base = templates.filter(t => !editing || t.id !== editing.id);
@@ -4030,22 +4030,22 @@ function SettingsPage() {
   const openEditTeacher = (t: Teacher) => { setEditTeacher(t); setTForm({ name: t.name, subject: t.subject || '', email: t.email || '', phone: t.phone || '', experience: String(t.experience || 0), qualification: t.qualification || '' }); setTeacherDialog(true); };
   const saveTeacher = () => {
     if (!tForm.name) return;
-    if (editTeacher) { setTeachers(teachers.map(t => t.id === editTeacher.id ? { ...t, name: tForm.name, subject: tForm.subject, email: tForm.email, phone: tForm.phone, experience: Number(tForm.experience), qualification: tForm.qualification } : t)); toast.success('Updated'); }
-    else { setTeachers([...teachers, { id: genId(), name: tForm.name, subject: tForm.subject, email: tForm.email, phone: tForm.phone, experience: Number(tForm.experience), qualification: tForm.qualification, createdAt: new Date().toISOString() }]); toast.success('Added'); }
+    if (editTeacher) { setTeachers(teachers.map(t => t.id === editTeacher.id ? { ...t, name: tForm.name, subject: tForm.subject, email: tForm.email, phone: tForm.phone, experience: Number(tForm.experience), qualification: tForm.qualification } : t)); toast.success(language === 'fr' ? 'Enseignant mis à jour' : 'Updated'); }
+    else { setTeachers([...teachers, { id: genId(), name: tForm.name, subject: tForm.subject, email: tForm.email, phone: tForm.phone, experience: Number(tForm.experience), qualification: tForm.qualification, createdAt: new Date().toISOString() }]); toast.success(language === 'fr' ? 'Enseignant ajouté' : 'Added'); }
     setTeacherDialog(false);
   };
-  const deleteTeacher = (id: string) => { if (!confirm(language === 'fr' ? 'Supprimer cet enseignant ?' : 'Delete this teacher?')) return; setTeachers(teachers.filter(t => t.id !== id)); toast.success('Deleted'); };
+  const deleteTeacher = (id: string) => { if (!confirm(language === 'fr' ? 'Supprimer cet enseignant ?' : 'Delete this teacher?')) return; setTeachers(teachers.filter(t => t.id !== id)); toast.success(language === 'fr' ? 'Supprimé' : 'Deleted'); };
 
   // Employee handlers
   const openAddEmp = () => { setEditEmp(null); setEForm({ fullName: '', department: '', position: '', email: '', phone: '' }); setEmpDialog(true); };
   const openEditEmp = (e: Employee) => { setEditEmp(e); setEForm({ fullName: e.fullName, department: e.department || '', position: e.position || '', email: e.email || '', phone: e.phone || '' }); setEmpDialog(true); };
   const saveEmp = () => {
     if (!eForm.fullName) return;
-    if (editEmp) { setEmployees(employees.map(e => e.id === editEmp.id ? { ...e, fullName: eForm.fullName, department: eForm.department, position: eForm.position, email: eForm.email, phone: eForm.phone } : e)); toast.success('Updated'); }
-    else { setEmployees([...employees, { id: genId(), fullName: eForm.fullName, department: eForm.department, position: eForm.position, email: eForm.email, phone: eForm.phone, createdAt: new Date().toISOString() }]); toast.success('Added'); }
+    if (editEmp) { setEmployees(employees.map(e => e.id === editEmp.id ? { ...e, fullName: eForm.fullName, department: eForm.department, position: eForm.position, email: eForm.email, phone: eForm.phone } : e)); toast.success(language === 'fr' ? 'Employé mis à jour' : 'Updated'); }
+    else { setEmployees([...employees, { id: genId(), fullName: eForm.fullName, department: eForm.department, position: eForm.position, email: eForm.email, phone: eForm.phone, createdAt: new Date().toISOString() }]); toast.success(language === 'fr' ? 'Employé ajouté' : 'Added'); }
     setEmpDialog(false);
   };
-  const deleteEmp = (id: string) => { if (!confirm(language === 'fr' ? 'Supprimer cet employé ?' : 'Delete this employee?')) return; setEmployees(employees.filter(e => e.id !== id)); toast.success('Deleted'); };
+  const deleteEmp = (id: string) => { if (!confirm(language === 'fr' ? 'Supprimer cet employé ?' : 'Delete this employee?')) return; setEmployees(employees.filter(e => e.id !== id)); toast.success(language === 'fr' ? 'Supprimé' : 'Deleted'); };
 
   // Academic Year handlers
   const openAddAy = () => { setEditAy(null); setAyForm({ name: '', level: '__none__', startDate: '', endDate: '', isCurrent: false }); setAyDialog(true); };
@@ -4065,9 +4065,9 @@ function SettingsPage() {
       const savedId = editAy ? editAy.id : updated[updated.length - 1].id;
       updated.forEach(ay => { ay.isCurrent = ay.id === savedId; });
     }
-    setAcademicYears(updated); toast.success(editAy ? 'Updated' : 'Added'); setAyDialog(false);
+    setAcademicYears(updated); toast.success(editAy ? (language === 'fr' ? 'Mis à jour' : 'Updated') : (language === 'fr' ? 'Ajouté' : 'Added')); setAyDialog(false);
   };
-  const deleteAy = (id: string) => { if (!confirm(language === 'fr' ? 'Supprimer cette année scolaire ?' : 'Delete this academic year?')) return; setAcademicYears(academicYears.filter(ay => ay.id !== id)); toast.success('Deleted'); };
+  const deleteAy = (id: string) => { if (!confirm(language === 'fr' ? 'Supprimer cette année scolaire ?' : 'Delete this academic year?')) return; setAcademicYears(academicYears.filter(ay => ay.id !== id)); toast.success(language === 'fr' ? 'Supprimé' : 'Deleted'); };
 
   // Data management
   const handleExportAll = () => { exportUtils.exportAllCSV({ students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees }, language); toast.success(language === 'fr' ? 'Exporté!' : 'Exported!'); };
@@ -4275,7 +4275,7 @@ function SettingsPage() {
         setSelectedRestoreTypes(new Set(Object.keys(preview)));
         setRestoreMode('selective'); // Default to selective
       } catch {
-        toast.error('Invalid backup file');
+        toast.error(language === 'fr' ? 'Fichier de sauvegarde invalide' : 'Invalid backup file');
       }
     };
     reader.readAsText(file);
