@@ -4049,9 +4049,19 @@ function SettingsPage() {
   const openEditAy = (ay: AcademicYear) => { setEditAy(ay); setAyForm({ name: ay.name, level: ay.level || '__none__', startDate: ay.startDate || '', endDate: ay.endDate || '', isCurrent: ay.isCurrent || false }); setAyDialog(true); };
   const saveAy = () => {
     if (!ayForm.name) return;
+    // Prevent duplicate academic year names
+    const duplicateName = academicYears.find(ay => ay.name === ayForm.name && ay.id !== editAy?.id);
+    if (duplicateName) {
+      toast.error(language === 'fr' ? 'Une année scolaire avec ce nom existe déjà' : 'An academic year with this name already exists');
+      return;
+    }
     const levelValue = ayForm.level === '__none__' ? '' : ayForm.level;
     const updated = editAy ? academicYears.map(ay => ay.id === editAy.id ? { ...ay, name: ayForm.name, level: levelValue, startDate: ayForm.startDate, endDate: ayForm.endDate, isCurrent: ayForm.isCurrent } : ay) : [...academicYears, { id: genId(), name: ayForm.name, level: levelValue, startDate: ayForm.startDate, endDate: ayForm.endDate, isCurrent: ayForm.isCurrent, createdAt: new Date().toISOString() }];
-    if (ayForm.isCurrent) { updated.forEach(ay => { ay.isCurrent = ay.name === ayForm.name || (editAy && ay.id === editAy.id) ? ayForm.isCurrent : false; }); }
+    if (ayForm.isCurrent) {
+      // Only the saved year should be current — unset all others first
+      const savedId = editAy ? editAy.id : updated[updated.length - 1].id;
+      updated.forEach(ay => { ay.isCurrent = ay.id === savedId; });
+    }
     setAcademicYears(updated); toast.success(editAy ? 'Updated' : 'Added'); setAyDialog(false);
   };
   const deleteAy = (id: string) => { if (!confirm(language === 'fr' ? 'Supprimer cette année scolaire ?' : 'Delete this academic year?')) return; setAcademicYears(academicYears.filter(ay => ay.id !== id)); toast.success('Deleted'); };
@@ -5459,10 +5469,14 @@ function CurriculumPage() {
 
   const statuses: CurriculumItem['status'][] = ['planned', 'in_progress', 'completed'];
 
+  // ID ↔ name helpers to avoid duplicate SelectItem values when years share a name
+  const yearIdToName = (id: string) => academicYears?.find(y => y.id === id)?.name || '';
+  const yearNameToId = (name: string) => academicYears?.find(y => y.name === name)?.id || '';
+
   const filteredItems = useMemo(() => {
     let items = [...curriculum].sort((a, b) => a.order - b.order);
     if (selectedModule) items = items.filter(i => i.moduleId === selectedModule);
-    if (selectedYear) items = items.filter(i => i.academicYear === selectedYear);
+    if (selectedYear) items = items.filter(i => i.academicYear === yearIdToName(selectedYear));
     return items;
   }, [curriculum, selectedModule, selectedYear]);
 
@@ -5538,7 +5552,7 @@ function CurriculumPage() {
             <Label>{t('academic_year', language)}</Label>
             <Select value={selectedYear} onValueChange={setSelectedYear}>
               <SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Toutes les années' : 'All years'} /></SelectTrigger>
-              <SelectContent>{(academicYears || []).filter(y => y.name).map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}</SelectContent>
+              <SelectContent>{(academicYears || []).filter(y => y.name).map(y => <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
@@ -5602,7 +5616,7 @@ function CurriculumPage() {
             <div className="space-y-2"><Label>{t('topic_description', language)}</Label><Textarea value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>{t('modules', language)} *</Label><Select value={form.moduleId} onValueChange={v => setForm({ ...form, moduleId: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-2"><Label>{t('academic_year', language)}</Label><Select value={form.academicYear || undefined} onValueChange={v => setForm({ ...form, academicYear: v })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{(academicYears || []).filter(y => y.name).map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>{t('academic_year', language)}</Label><Select value={yearNameToId(form.academicYear || '') || undefined} onValueChange={v => setForm({ ...form, academicYear: yearIdToName(v) })}><SelectTrigger><SelectValue placeholder={language === 'fr' ? 'Sélectionner' : 'Select'} /></SelectTrigger><SelectContent>{(academicYears || []).filter(y => y.name).map(y => <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2"><Label>{t('hours_allocated', language)}</Label><Input type="number" min={1} value={form.hours} onChange={e => setForm({ ...form, hours: Number(e.target.value) })} /></div>
