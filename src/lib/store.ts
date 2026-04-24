@@ -80,6 +80,17 @@ let _loadingFromApi = false;
 let _lastPull401Time = 0; // Cooldown after sync/pull 401 to prevent console spam
 const PULL_401_COOLDOWN = 5 * 60 * 1000; // 5 minutes
 
+// Push retry queue
+let _pushQueue: Array<() => Promise<void>> = [];
+let _isPushing = false;
+let _consecutiveFailures = 0;
+const MAX_CONSECUTIVE_FAILURES = 5;
+let _pushFailureWarned = false;
+
+// Push batching
+let _pushBatchTimer: ReturnType<typeof setTimeout> | null = null;
+const PUSH_BATCH_DELAY = 500; // ms — coalesce rapid setter calls
+
 // D1 Cloud Sync status
 export type D1SyncStatus = 'idle' | 'syncing' | 'error' | 'success';
 export interface D1SyncState {
@@ -126,9 +137,12 @@ function getTenantId(): string {
 }
 
 // ========== Immediate D1 Push ==========
-// Every setter pushes to D1 immediately (no debounce) — D1 is the single source of truth.
+// Renamed to pushToD1Now — the actual push implementation.
+// Setters call pushToD1Async() which debounces and queues.
 
-async function pushToD1(): Promise<boolean> {
+async function pushToD1Now(): Promise<boolean> {
+  if (_isPushing) return false;
+  _isPushing = true;
   try {
     updateD1SyncState({ status: 'syncing' });
     const state = useAppStore.getState();
@@ -159,26 +173,78 @@ async function pushToD1(): Promise<boolean> {
     if (!res.ok) {
       if (res.status === 401) _lastPull401Time = 0;
       updateD1SyncState({ status: 'error' });
+      _consecutiveFailures++;
+      if (_consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !_pushFailureWarned) {
+        _pushFailureWarned = true;
+        try {
+          const { toast: showToast } = await import('sonner');
+          showToast.warning('Sync paused — check your connection');
+        } catch {
+          console.warn('[store] Push failures exceeded threshold, sync paused');
+        }
+      }
       return false;
     }
     const data = await res.json();
     if (data.success) {
       updateD1SyncState({ status: 'success', lastCloudSync: new Date().toISOString(), cloudConnected: true });
+      _consecutiveFailures = 0;
+      _pushFailureWarned = false;
       return true;
     }
     updateD1SyncState({ status: 'error' });
+    _consecutiveFailures++;
     return false;
   } catch (err) {
     updateD1SyncState({ status: 'error', cloudConnected: false });
+    _consecutiveFailures++;
+    if (_consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !_pushFailureWarned) {
+      _pushFailureWarned = true;
+      try {
+        const { toast: showToast } = await import('sonner');
+        showToast.warning('Sync paused — check your connection');
+      } catch {
+        console.warn('[store] Push failures exceeded threshold, sync paused');
+      }
+    }
     return false;
+  } finally {
+    _isPushing = false;
   }
 }
 
-// Fire-and-forget push to D1 (non-blocking, error-tolerant)
+// Drain queued pushes sequentially
+async function drainPushQueue() {
+  if (_pushQueue.length === 0) return;
+  while (_pushQueue.length > 0) {
+    const fn = _pushQueue.shift();
+    if (fn) await fn().catch(() => {});
+  }
+}
+
+// Debounced, queue-aware push to D1
 function pushToD1Async() {
   // Don't push while loading from D1 — prevents overwriting cloud data with stale data
   if (_loadingFromApi) return;
-  pushToD1().catch(() => {});
+  // If failures have exceeded threshold, queue for later retry
+  if (_consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+    if (_pushQueue.length < 50) _pushQueue.push(() => pushToD1Now().then(() => drainPushQueue()));
+    return;
+  }
+  // Debounce: coalesce rapid setter calls into one push
+  if (_pushBatchTimer) clearTimeout(_pushBatchTimer);
+  _pushBatchTimer = setTimeout(() => {
+    _pushBatchTimer = null;
+    pushToD1Now().then(() => drainPushQueue()).catch(() => {});
+  }, PUSH_BATCH_DELAY);
+}
+
+// Manual retry — resets failure count and drains the queue
+export function retrySync() {
+  _consecutiveFailures = 0;
+  _pushFailureWarned = false;
+  if (_pushBatchTimer) { clearTimeout(_pushBatchTimer); _pushBatchTimer = null; }
+  pushToD1Now().then(() => drainPushQueue()).catch(() => {});
 }
 
 // Manual sync to cloud (called from Settings UI)
@@ -469,6 +535,17 @@ export const useAppStore = create<AppState>((set) => ({
           if (cloudRes.status === 401) {
             _lastPull401Time = Date.now();
             if (token && typeof window !== 'undefined') {
+              // Show session expired toast
+              try {
+                const authData = localStorage.getItem('attendance_auth');
+                if (authData) {
+                  const { toast: showToast } = await import('sonner');
+                  const lang = localStorage.getItem('attendance_language') || 'en';
+                  showToast.error(lang === 'fr' ? 'Session expirée — veuillez vous reconnecter' : 'Session expired — please log in again');
+                }
+              } catch {
+                console.warn('[store] Could not show session expired toast');
+              }
               console.warn('[store] Token rejected by D1 (401), forcing re-login');
               setApiToken(null);
               localStorage.removeItem('api_token');

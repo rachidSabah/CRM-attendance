@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
-import { useAppStore, syncToCloud, loadFromCloud, getCloudSyncStatus, sendAttendanceReminders } from '@/lib/store';
+import { useAppStore, syncToCloud, loadFromCloud, getCloudSyncStatus, sendAttendanceReminders, retrySync } from '@/lib/store';
 import { setApiToken, localApi } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
@@ -6568,11 +6568,12 @@ function setPushNotifPref(v: boolean): void {
 
 // ==================== MAIN APP COMPONENT ====================
 export default function App() {
-  const { isAuthenticated, currentUser, currentPage, loadAllData, language } = useAppStore();
+  const { isAuthenticated, currentUser, currentPage, loadAllData, language, logout } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [profileStudent, setProfileStudent] = useState<Student | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
 
   // Load auth state and data on mount
   useEffect(() => {
@@ -6617,6 +6618,61 @@ export default function App() {
       }
     });
     return unsub;
+  }, []);
+
+  // Offline detection
+  useEffect(() => {
+    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => {
+      setIsOffline(false);
+      // Reload data when coming back online
+      if (isAuthenticated) {
+        useAppStore.getState().loadAllData();
+      }
+    };
+    setIsOffline(typeof navigator !== 'undefined' && !navigator.onLine);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [isAuthenticated]);
+
+  // Session keepalive — check every 5 minutes
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (res.status === 401) {
+          toast.error(language === 'fr' ? 'Session expirée' : 'Session expired');
+          logout();
+        }
+      } catch {}
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, language, logout]);
+
+  // Global unhandled promise rejection handler
+  useEffect(() => {
+    const handler = (event: PromiseRejectionEvent) => {
+      console.error('[Unhandled Promise]', event.reason);
+      if (event.reason?.message?.includes('fetch') || event.reason?.status) {
+        toast.error(String(event.reason?.message || 'An unexpected error occurred'));
+      }
+    };
+    window.addEventListener('unhandledrejection', handler);
+    return () => window.removeEventListener('unhandledrejection', handler);
+  }, []);
+
+  // Global error handler
+  useEffect(() => {
+    const handler = (event: ErrorEvent) => {
+      console.error('[Global Error]', event.error);
+    };
+    window.addEventListener('error', handler);
+    return () => window.removeEventListener('error', handler);
   }, []);
 
   if (loading) {
@@ -6675,6 +6731,12 @@ export default function App() {
     <div className="min-h-screen flex bg-background">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col min-h-screen lg:ml-0">
+        {isOffline && (
+          <div className="bg-red-600 text-white text-sm text-center py-2 px-4 flex items-center justify-center gap-2">
+            <WifiOff className="h-4 w-4" />
+            {language === 'fr' ? "Vous êtes hors ligne — les modifications seront synchronisées à la reconnexion" : "You're offline — changes will sync when reconnected"}
+          </div>
+        )}
         <Header onMenuClick={() => setSidebarOpen(true)} onExportClick={() => setExportOpen(true)} />
         <main className="flex-1 p-4 md:p-6">
           {renderPage()}

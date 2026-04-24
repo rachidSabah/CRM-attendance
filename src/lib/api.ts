@@ -28,11 +28,15 @@ export function localAuthHeaders(): Record<string, string> {
 
 /** Local API fetch with auth headers — for /api/* endpoints */
 export async function localApi(method: string, endpoint: string, body?: unknown): Promise<Response> {
-  return fetch(endpoint, {
+  const res = await fetch(endpoint, {
     method,
     headers: localAuthHeaders(),
     body: body ? JSON.stringify(body) : undefined,
   });
+  if (!res.ok && res.status !== 401) {
+    console.warn(`[API] ${method} ${endpoint} returned ${res.status}`);
+  }
+  return res;
 }
 
 async function apiRequest(method: string, endpoint: string, body?: unknown): Promise<Record<string, unknown> | null> {
