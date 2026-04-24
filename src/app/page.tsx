@@ -5026,9 +5026,9 @@ function CloudSyncSettings() {
         <div className="rounded-lg border p-3 bg-muted/30 space-y-1.5">
           <h4 className="text-sm font-semibold flex items-center gap-1.5"><Info className="h-4 w-4" />{language === 'fr' ? 'Comment ça marche' : 'How it works'}</h4>
           <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
-            <li>{language === 'fr' ? 'Les données sont automatiquement synchronisées vers D1 après chaque modification (délai 5s)' : 'Data auto-syncs to D1 after each change (5s debounce)'}</li>
-            <li>{language === 'fr' ? 'Au chargement, les données locales sont complétées par les données cloud si plus récentes' : 'On load, local data is supplemented by cloud data if newer'}</li>
-            <li>{language === 'fr' ? 'Le localStorage reste la source principale — D1 est un backup/cloud' : 'localStorage remains primary — D1 is backup/cloud'}</li>
+            <li>{language === 'fr' ? 'Les données sont synchronisées vers D1 immédiatement après chaque modification' : 'Data syncs to D1 immediately after every change'}</li>
+            <li>{language === 'fr' ? 'Au chargement, toutes les données sont récupérées depuis D1 — seule source de vérité' : 'On load, all data is fetched from D1 — the single source of truth'}</li>
+            <li>{language === 'fr' ? 'Aucune donnée métier stockée localement — D1 est la base de données principale' : 'No business data stored locally — D1 is the primary database'}</li>
           </ul>
         </div>
       </CardContent></Card>
