@@ -71,23 +71,12 @@ interface AppState {
   loadAllData: () => Promise<void>;
 }
 
-function loadLocal<T>(key: string): T[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    return JSON.parse(localStorage.getItem(key) || '[]');
-  } catch { return []; }
-}
+// ========== D1-Only Architecture ==========
+// No localStorage for business data. All data lives in D1.
+// Only auth tokens, language, primary color, and UI preferences stay in localStorage.
 
-function loadLocalObj<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback;
-  try {
-    return JSON.parse(localStorage.getItem(key) || 'null') || fallback;
-  } catch { return fallback; }
-}
-
-// ========== API Sync System ==========
+// ========== D1 Cloud Sync System ==========
 let _loadingFromApi = false;
-let _d1PushTimer: ReturnType<typeof setTimeout> | null = null;
 let _lastPull401Time = 0; // Cooldown after sync/pull 401 to prevent console spam
 const PULL_401_COOLDOWN = 5 * 60 * 1000; // 5 minutes
 
@@ -136,21 +125,8 @@ function getTenantId(): string {
   return 'default';
 }
 
-function scheduleApiSync() {
-  // Only trigger D1 cloud sync — external API does not support entity sync
-  scheduleD1Push();
-}
-
-// ========== D1 Cloud Sync System ==========
-let _pushRetryCount = 0;
-const MAX_PUSH_RETRIES = 3;
-
-function scheduleD1Push() {
-  // Don't push while loading from API — prevents overwriting cloud data with stale local data
-  if (_loadingFromApi) return;
-  if (_d1PushTimer) clearTimeout(_d1PushTimer);
-  _d1PushTimer = setTimeout(pushToD1, 3000); // 3 second debounce (reduced from 5s)
-}
+// ========== Immediate D1 Push ==========
+// Every setter pushes to D1 immediately (no debounce) — D1 is the single source of truth.
 
 async function pushToD1(): Promise<boolean> {
   try {
@@ -181,14 +157,12 @@ async function pushToD1(): Promise<boolean> {
     };
     const res = await localApi('POST', '/api/sync/push', payload);
     if (!res.ok) {
-      // If 401, token is bad — reset cooldown to allow pull retry on next load
       if (res.status === 401) _lastPull401Time = 0;
       updateD1SyncState({ status: 'error' });
       return false;
     }
     const data = await res.json();
     if (data.success) {
-      _pushRetryCount = 0;
       updateD1SyncState({ status: 'success', lastCloudSync: new Date().toISOString(), cloudConnected: true });
       return true;
     }
@@ -198,6 +172,13 @@ async function pushToD1(): Promise<boolean> {
     updateD1SyncState({ status: 'error', cloudConnected: false });
     return false;
   }
+}
+
+// Fire-and-forget push to D1 (non-blocking, error-tolerant)
+function pushToD1Async() {
+  // Don't push while loading from D1 — prevents overwriting cloud data with stale data
+  if (_loadingFromApi) return;
+  pushToD1().catch(() => {});
 }
 
 // Manual sync to cloud (called from Settings UI)
@@ -388,7 +369,7 @@ export const useAppStore = create<AppState>((set) => ({
           tenantId: currentUser.tenantId,
           isSuperAdmin: currentUser.is_super_admin || false,
         }));
-        // CRITICAL: Load data from D1 after login so incognito/new sessions get persisted data
+        // Load all data from D1 after login
         setTimeout(() => { useAppStore.getState().loadAllData(); }, 300);
         return true;
       }
@@ -402,24 +383,27 @@ export const useAppStore = create<AppState>((set) => ({
     localStorage.removeItem('attendance_auth');
   },
 
-  setStudents: (s) => { set({ students: s }); localStorage.setItem('attendance_students', JSON.stringify(s)); scheduleApiSync(); scheduleD1Push(); },
-  setClasses: (c) => { set({ classes: c }); localStorage.setItem('attendance_classes', JSON.stringify(c)); scheduleApiSync(); scheduleD1Push(); },
-  setModules: (m) => { set({ modules: m }); localStorage.setItem('attendance_modules', JSON.stringify(m)); scheduleApiSync(); scheduleD1Push(); },
-  setAttendance: (a) => { set({ attendance: a }); localStorage.setItem('attendance_records', JSON.stringify(a)); scheduleApiSync(); scheduleD1Push(); },
-  setGrades: (g) => { set({ grades: g }); localStorage.setItem('attendance_grades', JSON.stringify(g)); scheduleApiSync(); scheduleD1Push(); },
-  setBehavior: (b) => { set({ behavior: b }); localStorage.setItem('attendance_behavior', JSON.stringify(b)); scheduleApiSync(); scheduleD1Push(); },
-  setTasks: (t) => { set({ tasks: t }); localStorage.setItem('attendance_tasks', JSON.stringify(t)); scheduleApiSync(); scheduleD1Push(); },
-  setIncidents: (i) => { set({ incidents: i }); localStorage.setItem('attendance_incidents', JSON.stringify(i)); scheduleApiSync(); scheduleD1Push(); },
-  setTeachers: (t) => { set({ teachers: t }); localStorage.setItem('attendance_teachers', JSON.stringify(t)); scheduleApiSync(); scheduleD1Push(); },
-  setEmployees: (e) => { set({ employees: e }); localStorage.setItem('attendance_employees', JSON.stringify(e)); scheduleApiSync(); scheduleD1Push(); },
-  setTemplates: (t) => { set({ templates: t }); localStorage.setItem('attendance_templates', JSON.stringify(t)); scheduleApiSync(); scheduleD1Push(); },
-  setAcademicYears: (y) => { set({ academicYears: y }); localStorage.setItem('attendance_academic_years', JSON.stringify(y)); scheduleApiSync(); scheduleD1Push(); },
-  setSchoolInfo: (i) => { set({ schoolInfo: i }); localStorage.setItem('attendance_school_info', JSON.stringify(i)); scheduleApiSync(); scheduleD1Push(); },
+  // ===== D1-Only Setters =====
+  // Each setter updates Zustand state in memory and immediately pushes to D1.
+  // No localStorage writes for business data — D1 is the single source of truth.
+  setStudents: (s) => { set({ students: s }); pushToD1Async(); },
+  setClasses: (c) => { set({ classes: c }); pushToD1Async(); },
+  setModules: (m) => { set({ modules: m }); pushToD1Async(); },
+  setAttendance: (a) => { set({ attendance: a }); pushToD1Async(); },
+  setGrades: (g) => { set({ grades: g }); pushToD1Async(); },
+  setBehavior: (b) => { set({ behavior: b }); pushToD1Async(); },
+  setTasks: (t) => { set({ tasks: t }); pushToD1Async(); },
+  setIncidents: (i) => { set({ incidents: i }); pushToD1Async(); },
+  setTeachers: (t) => { set({ teachers: t }); pushToD1Async(); },
+  setEmployees: (e) => { set({ employees: e }); pushToD1Async(); },
+  setTemplates: (t) => { set({ templates: t }); pushToD1Async(); },
+  setAcademicYears: (y) => { set({ academicYears: y }); pushToD1Async(); },
+  setSchoolInfo: (i) => { set({ schoolInfo: i }); pushToD1Async(); },
   setNotifications: (n) => { set({ notifications: n }); },
-  setSchedules: (s) => { set({ schedules: s }); localStorage.setItem('attendance_schedules', JSON.stringify(s)); scheduleApiSync(); scheduleD1Push(); },
-  setExams: (e) => { set({ exams: e }); localStorage.setItem('attendance_exams', JSON.stringify(e)); scheduleApiSync(); scheduleD1Push(); },
-  setExamGrades: (eg) => { set({ examGrades: eg }); localStorage.setItem('attendance_exam_grades', JSON.stringify(eg)); scheduleApiSync(); scheduleD1Push(); },
-  setCurriculum: (c) => { set({ curriculum: c }); localStorage.setItem('attendance_curriculum', JSON.stringify(c)); scheduleApiSync(); scheduleD1Push(); },
+  setSchedules: (s) => { set({ schedules: s }); pushToD1Async(); },
+  setExams: (e) => { set({ exams: e }); pushToD1Async(); },
+  setExamGrades: (eg) => { set({ examGrades: eg }); pushToD1Async(); },
+  setCurriculum: (c) => { set({ curriculum: c }); pushToD1Async(); },
   addAuditLog: (action, entityType, entityId, entityName, details) => {
     const state = useAppStore.getState();
     const user = state.currentUser;
@@ -436,18 +420,15 @@ export const useAppStore = create<AppState>((set) => ({
     };
     const newLog = [entry, ...state.auditLog].slice(0, 2000); // Keep last 2000 entries
     set({ auditLog: newLog });
-    localStorage.setItem('attendance_audit_log', JSON.stringify(newLog));
-    // Sync audit log periodically
-    // Audit logs stored locally only (external API does not have audit-log endpoint)
+    // Audit logs are kept in memory only (not synced to D1 — no endpoint)
   },
-  setAuditLog: (logs) => { set({ auditLog: logs }); localStorage.setItem('attendance_audit_log', JSON.stringify(logs)); },
-  setSavedSchedules: (s) => { set({ savedSchedules: s }); localStorage.setItem('attendance_saved_schedules', JSON.stringify(s)); scheduleApiSync(); scheduleD1Push(); },
-  setCalendarEvents: (e) => { set({ calendarEvents: e }); localStorage.setItem('calendar_events', JSON.stringify(e)); scheduleApiSync(); scheduleD1Push(); },
-  setAdmins: (a) => { set({ admins: a }); localStorage.setItem('attendance_admins', JSON.stringify(a)); scheduleD1Push(); },
+  setAuditLog: (logs) => { set({ auditLog: logs }); },
+  setSavedSchedules: (s) => { set({ savedSchedules: s }); pushToD1Async(); },
+  setCalendarEvents: (e) => { set({ calendarEvents: e }); pushToD1Async(); },
+  setAdmins: (a) => { set({ admins: a }); pushToD1Async(); },
+
+  // Purge all in-memory data and reload from D1 (no localStorage cleanup needed for business data)
   purgeCache: () => {
-    const keep = ['attendance_auth', 'attendance_primary_color'];
-    const keys = Object.keys(localStorage);
-    keys.forEach(k => { if (!keep.includes(k)) localStorage.removeItem(k); });
     set({
       students: [], classes: [], modules: [], attendance: [], grades: [],
       behavior: [], tasks: [], incidents: [], teachers: [], employees: [],
@@ -455,162 +436,85 @@ export const useAppStore = create<AppState>((set) => ({
       admins: [], schedules: [], exams: [], examGrades: [], curriculum: [],
       auditLog: [], savedSchedules: [], calendarEvents: [],
     });
+    // Only keep auth and UI preferences in localStorage
+    const keep = ['attendance_auth', 'attendance_primary_color', 'attendance_language', 'attendance_d1_sync_state'];
+    const keys = Object.keys(localStorage);
+    keys.forEach(k => { if (!keep.includes(k)) localStorage.removeItem(k); });
+    // Reload fresh data from D1
+    setTimeout(() => { useAppStore.getState().loadAllData(); }, 100);
   },
-  setPrimaryColor: (color) => { set({ primaryColor: color }); localStorage.setItem('attendance_primary_color', color); document.documentElement.style.setProperty('--app-primary-color', color); scheduleApiSync(); },
+
+  setPrimaryColor: (color) => { set({ primaryColor: color }); localStorage.setItem('attendance_primary_color', color); document.documentElement.style.setProperty('--app-primary-color', color); },
 
   loadAllData: async () => {
-    // Load local cache first for instant UI
+    // Load UI preferences from localStorage (these stay local)
     const savedLang = (typeof window !== 'undefined' ? localStorage.getItem('attendance_language') : null) as 'en' | 'fr' | null;
-    set({
-      students: loadLocal('attendance_students'),
-      classes: loadLocal('attendance_classes'),
-      modules: loadLocal('attendance_modules'),
-      attendance: loadLocal('attendance_records'),
-      grades: loadLocal('attendance_grades'),
-      behavior: loadLocal('attendance_behavior'),
-      tasks: loadLocal('attendance_tasks'),
-      incidents: loadLocal('attendance_incidents'),
-      teachers: loadLocal('attendance_teachers'),
-      employees: loadLocal('attendance_employees'),
-      templates: loadLocal('attendance_templates'),
-      academicYears: loadLocal('attendance_academic_years'),
-      schoolInfo: loadLocalObj('attendance_school_info', {}),
-      primaryColor: typeof window !== 'undefined' ? localStorage.getItem('attendance_primary_color') || '#10b981' : '#10b981',
-      admins: loadLocal('attendance_admins'),
-      schedules: loadLocal('attendance_schedules'),
-      exams: loadLocal('attendance_exams'),
-      examGrades: loadLocal('attendance_exam_grades'),
-      curriculum: loadLocal('attendance_curriculum'),
-      auditLog: loadLocal('attendance_audit_log'),
-      savedSchedules: loadLocal('attendance_saved_schedules'),
-      calendarEvents: loadLocal('calendar_events'),
-      language: savedLang || 'en',
-    });
-
-    // Apply primary color from cache
-    const cachedColor = localStorage.getItem('attendance_primary_color') || '#10b981';
+    const cachedColor = typeof window !== 'undefined' ? localStorage.getItem('attendance_primary_color') || '#10b981' : '#10b981';
     document.documentElement.style.setProperty('--app-primary-color', cachedColor);
-
-    // Apply saved language
     if (savedLang) {
       document.documentElement.lang = savedLang;
+      document.documentElement.dir = savedLang === 'ar' ? 'rtl' : 'ltr';
     }
 
-    // Mark as loading from API to prevent sync-back
+    // Mark as loading from D1 to prevent push-back
     _loadingFromApi = true;
 
     try {
-      // Pull from D1 cloud database to get latest saved data
-      try {
-        const token = typeof window !== 'undefined' ? localStorage.getItem('api_token') : null;
-        if (token) {
-          const tenantId = getTenantId();
-          const cloudRes = await localApi('GET', `/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
-          if (!cloudRes.ok) {
-            if (cloudRes.status === 401) {
-              _lastPull401Time = Date.now();
-              // If we had a saved token, it's stale/invalid — force re-login
-              if (token && typeof window !== 'undefined') {
-                console.warn('[store] Saved token rejected by D1 (401), forcing re-login');
-                setApiToken(null);
-                localStorage.removeItem('api_token');
-                localStorage.removeItem('attendance_auth');
-                set({ currentUser: null, isAuthenticated: false });
-                return; // Stop loading — user will see login screen
-              }
-            }
-          } else {
-            const cloudData = await cloudRes.json();
-            if (cloudData?.success && cloudData.data) {
-              const cd = cloudData.data;
-              const currentState = useAppStore.getState();
-
-              // Smart merge: merge local + cloud by ID, prefer the one with more records
-              // This ensures D1 data is used when it's the authoritative source
-              const mergeById = (local: Array<Record<string, unknown>>, cloudKey: string) => {
-                const cloud = cd[cloudKey];
-                if (!Array.isArray(cloud)) return local;
-                // If local is empty, use cloud
-                if (local.length === 0) return cloud;
-                // Otherwise merge by ID — union of both, cloud as base, local overwrites
-                const map = new Map<string, Record<string, unknown>>();
-                for (const item of cloud) {
-                  const id = String(item.id || '');
-                  if (id) map.set(id, item);
-                }
-                for (const item of local) {
-                  const id = String(item.id || '');
-                  if (id) map.set(id, item); // local overwrites cloud
-                }
-                return Array.from(map.values());
-              };
-
-              const merged = {
-                students: mergeById(currentState.students as unknown as Array<Record<string, unknown>>, 'students') as unknown as Student[],
-                classes: mergeById(currentState.classes as unknown as Array<Record<string, unknown>>, 'classes') as unknown as Class[],
-                modules: mergeById(currentState.modules as unknown as Array<Record<string, unknown>>, 'modules') as unknown as Module[],
-                attendance: mergeById(currentState.attendance as unknown as Array<Record<string, unknown>>, 'attendance') as unknown as AttendanceRecord[],
-                grades: mergeById(currentState.grades as unknown as Array<Record<string, unknown>>, 'grades') as unknown as Grade[],
-                behavior: mergeById(currentState.behavior as unknown as Array<Record<string, unknown>>, 'behavior') as unknown as BehaviorRecord[],
-                tasks: mergeById(currentState.tasks as unknown as Array<Record<string, unknown>>, 'tasks') as unknown as Task[],
-                incidents: mergeById(currentState.incidents as unknown as Array<Record<string, unknown>>, 'incidents') as unknown as Incident[],
-                teachers: mergeById(currentState.teachers as unknown as Array<Record<string, unknown>>, 'teachers') as unknown as Teacher[],
-                employees: mergeById(currentState.employees as unknown as Array<Record<string, unknown>>, 'employees') as unknown as Employee[],
-                templates: mergeById(currentState.templates as unknown as Array<Record<string, unknown>>, 'templates') as unknown as Template[],
-                academicYears: mergeById(currentState.academicYears as unknown as Array<Record<string, unknown>>, 'academicYears') as unknown as AcademicYear[],
-                schedules: mergeById(currentState.schedules as unknown as Array<Record<string, unknown>>, 'schedules') as unknown as ClassScheduleEntry[],
-                exams: mergeById(currentState.exams as unknown as Array<Record<string, unknown>>, 'exams') as unknown as Exam[],
-                examGrades: mergeById(currentState.examGrades as unknown as Array<Record<string, unknown>>, 'examGrades') as unknown as ExamGrade[],
-                curriculum: mergeById(currentState.curriculum as unknown as Array<Record<string, unknown>>, 'curriculum') as unknown as CurriculumItem[],
-                savedSchedules: mergeById(currentState.savedSchedules as unknown as Array<Record<string, unknown>>, 'savedSchedules') as unknown as SavedSchedule[],
-                calendarEvents: mergeById(currentState.calendarEvents as unknown as Array<Record<string, unknown>>, 'calendarEvents') as unknown as CalendarEvent[],
-              };
-              set(merged);
-
-              // Populate admins from cloud (stripped of passwords/tokens by server)
-              if (Array.isArray(cd.admins) && cd.admins.length > 0) {
-                set({ admins: cd.admins as Record<string, unknown>[] });
-                localStorage.setItem('attendance_admins', JSON.stringify(cd.admins));
-              }
-
-              // Also persist merged data to localStorage so it's available on next load
-              localStorage.setItem('attendance_students', JSON.stringify(merged.students));
-              localStorage.setItem('attendance_classes', JSON.stringify(merged.classes));
-              localStorage.setItem('attendance_modules', JSON.stringify(merged.modules));
-              localStorage.setItem('attendance_records', JSON.stringify(merged.attendance));
-              localStorage.setItem('attendance_grades', JSON.stringify(merged.grades));
-              localStorage.setItem('attendance_behavior', JSON.stringify(merged.behavior));
-              localStorage.setItem('attendance_tasks', JSON.stringify(merged.tasks));
-              localStorage.setItem('attendance_incidents', JSON.stringify(merged.incidents));
-              localStorage.setItem('attendance_teachers', JSON.stringify(merged.teachers));
-              localStorage.setItem('attendance_employees', JSON.stringify(merged.employees));
-              localStorage.setItem('attendance_templates', JSON.stringify(merged.templates));
-              localStorage.setItem('attendance_academic_years', JSON.stringify(merged.academicYears));
-              localStorage.setItem('attendance_schedules', JSON.stringify(merged.schedules));
-              localStorage.setItem('attendance_exams', JSON.stringify(merged.exams));
-              localStorage.setItem('attendance_exam_grades', JSON.stringify(merged.examGrades));
-              localStorage.setItem('attendance_curriculum', JSON.stringify(merged.curriculum));
-              localStorage.setItem('calendar_events', JSON.stringify(merged.calendarEvents));
-
-              // Merge school info
-              if (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(cd.schoolInfo).length > 0) {
-                const mergedInfo = { ...cd.schoolInfo as Record<string, unknown>, ...currentState.schoolInfo as Record<string, unknown> };
-                set({ schoolInfo: mergedInfo as SchoolInfo });
-                localStorage.setItem('attendance_school_info', JSON.stringify(mergedInfo));
-              }
-
-              updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });
+      // Pull ALL data from D1 — no local cache, D1 is the single source of truth
+      const token = typeof window !== 'undefined' ? localStorage.getItem('api_token') : null;
+      if (token) {
+        const tenantId = getTenantId();
+        const cloudRes = await localApi('GET', `/api/sync/pull?tenant_id=${encodeURIComponent(tenantId)}`);
+        if (!cloudRes.ok) {
+          if (cloudRes.status === 401) {
+            _lastPull401Time = Date.now();
+            if (token && typeof window !== 'undefined') {
+              console.warn('[store] Token rejected by D1 (401), forcing re-login');
+              setApiToken(null);
+              localStorage.removeItem('api_token');
+              localStorage.removeItem('attendance_auth');
+              set({ currentUser: null, isAuthenticated: false });
+              return;
             }
           }
-        }
-      } catch {}
+        } else {
+          const cloudData = await cloudRes.json();
+          if (cloudData?.success && cloudData.data) {
+            const cd = cloudData.data;
+            // Load directly from D1 — no merge with local, D1 is authoritative
+            set({
+              students: (cd.students || []) as Student[],
+              classes: (cd.classes || []) as Class[],
+              modules: (cd.modules || []) as Module[],
+              attendance: (cd.attendance || []) as AttendanceRecord[],
+              grades: (cd.grades || []) as Grade[],
+              behavior: (cd.behavior || []) as BehaviorRecord[],
+              tasks: (cd.tasks || []) as Task[],
+              incidents: (cd.incidents || []) as Incident[],
+              teachers: (cd.teachers || []) as Teacher[],
+              employees: (cd.employees || []) as Employee[],
+              templates: (cd.templates || []) as Template[],
+              academicYears: (cd.academicYears || []) as AcademicYear[],
+              schedules: (cd.schedules || []) as ClassScheduleEntry[],
+              exams: (cd.exams || []) as Exam[],
+              examGrades: (cd.examGrades || []) as ExamGrade[],
+              curriculum: (cd.curriculum || []) as CurriculumItem[],
+              savedSchedules: (cd.savedSchedules || []) as SavedSchedule[],
+              calendarEvents: (cd.calendarEvents || []) as CalendarEvent[],
+              admins: (cd.admins || []) as Record<string, unknown>[],
+              schoolInfo: (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(cd.schoolInfo).length > 0) ? cd.schoolInfo as SchoolInfo : {},
+              primaryColor: cachedColor,
+              language: savedLang || 'en',
+            });
 
+            updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });
+          }
+        }
+      }
     } catch (e) {
       // Silently handle errors during data load
     } finally {
       _loadingFromApi = false;
-      // DO NOT auto-push after load — the push.js admin cleanup can delete tokens.
-      // Only push when the user makes actual data changes (via setStudents, etc.)
     }
   },
 }));

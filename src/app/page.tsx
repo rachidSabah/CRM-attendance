@@ -4241,7 +4241,7 @@ function SettingsPage() {
       toast.success(`${language === 'fr' ? 'Sauvegarde' : 'Backup'} ${isInc} ${language === 'fr' ? 'créée!' : 'created!'}`);
     }
 
-    // Upload to D1 cloud sync happens automatically via store.ts scheduleD1Push()
+    // Upload to D1 cloud sync happens automatically via store.ts pushToD1Async()
   };
 
   // Restore backup - supports full and selective restore
@@ -4308,33 +4308,11 @@ function SettingsPage() {
       templates: (v) => setTemplates(v as Template[]),
     };
 
-    const lsKeyMap: Record<string, string> = {
-      students: 'attendance_students',
-      classes: 'attendance_classes',
-      modules: 'attendance_modules',
-      attendance: 'attendance_records',
-      grades: 'attendance_grades',
-      behavior: 'attendance_behavior',
-      tasks: 'attendance_tasks',
-      incidents: 'attendance_incidents',
-      teachers: 'attendance_teachers',
-      employees: 'attendance_employees',
-      schedules: 'attendance_schedules',
-      exams: 'attendance_exams',
-      examGrades: 'attendance_exam_grades',
-      curriculum: 'attendance_curriculum',
-      academicYears: 'attendance_academic_years',
-      schoolInfo: 'attendance_school_info',
-      savedSchedules: 'attendance_saved_schedules',
-      templates: 'attendance_templates',
-    };
-
     let restoredCount = 0;
     for (const type of typesToRestore) {
       const val = data[type];
       if (val === undefined || val === null) continue;
       if (setterMap[type]) setterMap[type](val);
-      if (lsKeyMap[type]) localStorage.setItem(lsKeyMap[type], JSON.stringify(val));
       restoredCount++;
     }
 
@@ -4970,12 +4948,12 @@ function CloudSyncSettings() {
     if (result.success && result.data) {
       // Apply pulled data to store
       const { setStudents, setClasses, setAttendance, setGrades, setTasks, setModules, setBehavior, setIncidents, setTeachers, setEmployees, setSchedules, setExams, setExamGrades, setCurriculum, setSchoolInfo, setAcademicYears } = useAppStore.getState();
-      if (Array.isArray(result.data.students)) { setStudents(result.data.students as Student[]); localStorage.setItem('attendance_students', JSON.stringify(result.data.students)); }
-      if (Array.isArray(result.data.classes)) { setClasses(result.data.classes as Class[]); localStorage.setItem('attendance_classes', JSON.stringify(result.data.classes)); }
-      if (Array.isArray(result.data.attendance)) { setAttendance(result.data.attendance as AttendanceRecord[]); localStorage.setItem('attendance_records', JSON.stringify(result.data.attendance)); }
-      if (Array.isArray(result.data.grades)) { setGrades(result.data.grades as Grade[]); localStorage.setItem('attendance_grades', JSON.stringify(result.data.grades)); }
-      if (Array.isArray(result.data.tasks)) { setTasks(result.data.tasks as Task[]); localStorage.setItem('attendance_tasks', JSON.stringify(result.data.tasks)); }
-      if (result.data.schoolInfo && typeof result.data.schoolInfo === 'object' && !Array.isArray(result.data.schoolInfo)) { setSchoolInfo(result.data.schoolInfo as SchoolInfo); localStorage.setItem('attendance_school_info', JSON.stringify(result.data.schoolInfo)); }
+      if (Array.isArray(result.data.students)) { setStudents(result.data.students as Student[]); }
+      if (Array.isArray(result.data.classes)) { setClasses(result.data.classes as Class[]); }
+      if (Array.isArray(result.data.attendance)) { setAttendance(result.data.attendance as AttendanceRecord[]); }
+      if (Array.isArray(result.data.grades)) { setGrades(result.data.grades as Grade[]); }
+      if (Array.isArray(result.data.tasks)) { setTasks(result.data.tasks as Task[]); }
+      if (result.data.schoolInfo && typeof result.data.schoolInfo === 'object' && !Array.isArray(result.data.schoolInfo)) { setSchoolInfo(result.data.schoolInfo as SchoolInfo); }
       setLastSyncResult(`${language === 'fr' ? 'Données récupérées du cloud' : 'Data pulled from cloud'}`);
       toast.success(language === 'fr' ? 'Données chargées depuis le cloud' : 'Data loaded from cloud');
     } else {
