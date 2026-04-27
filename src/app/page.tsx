@@ -5400,7 +5400,7 @@ function ExamsPage() {
         <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0 sm:p-6">
           <DialogHeader className="shrink-0 px-4 pt-4 sm:px-0 sm:pt-0">
             <DialogTitle className="text-base sm:text-lg pr-8">{t('enter_scores', language)} — {gradingExam?.title}</DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">{gradingExam?.date} • Max: {gradingExam.maxScore} • {getModule(gradingExam?.moduleId || '')?.name || '-'}</DialogDescription>
+            <DialogDescription className="text-xs sm:text-sm">{gradingExam?.date} • Max: {gradingExam?.maxScore} • {getModule(gradingExam?.moduleId || '')?.name || '-'}</DialogDescription>
           </DialogHeader>
           {gradingExam && (
             <ScrollArea className="flex-1 min-h-0 px-4 sm:px-0">
