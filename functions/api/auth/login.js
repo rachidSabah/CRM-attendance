@@ -36,7 +36,9 @@ async function handleLogin(context) {
       } catch (e) { console.warn('[auth/login] D1 lookup failed:', e.message || e); }
     }
 
-    // Step 2: If user exists in D1 → try D1 password first
+    // Step 2: If user exists in D1 → D1 is the SOLE authority for password
+    // Once a user is synced to D1, password changes made here must be permanent.
+    // We NEVER fall through to the external API to overwrite a D1 user's password.
     if (d1User) {
       if (d1User.password === password) {
         // D1 login successful — generate session token
@@ -68,11 +70,16 @@ async function handleLogin(context) {
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
       }
-      // D1 password doesn't match — fall through to try external API
+      // D1 password doesn't match and user EXISTS in D1 — reject immediately.
+      // Do NOT fall through to external API, which would overwrite the user's
+      // personalized D1 password with the external API's (possibly stale) one.
+      return new Response(
+        JSON.stringify({ success: false, error: 'Invalid credentials' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
-    // Step 3: Try external API (user NOT in D1, or D1 password didn't match)
-    // This allows login even when D1 has an outdated password
+    // Step 3: User does NOT exist in D1 → try external API as initial bootstrap
     try {
       const loginData = { username, password };
       if (slug) loginData.slug = slug;
@@ -84,7 +91,7 @@ async function handleLogin(context) {
       if (extRes.ok) {
         const extData = await extRes.json();
         if (extData.success) {
-          // Sync full profile from external API to D1 (updates password if it was wrong in D1)
+          // First-time sync: create D1 user from external API profile
           try {
             if (db && extData.token) {
               const extUser = extData.user || {};

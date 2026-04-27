@@ -5397,13 +5397,13 @@ function ExamsPage() {
 
       {/* Grade Exam Dialog */}
       <Dialog open={gradeDialogOpen} onOpenChange={setGradeDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0 sm:p-6">
-          <DialogHeader className="shrink-0 px-4 pt-4 sm:px-0 sm:pt-0">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="shrink-0 px-4 pt-4 pb-2 sm:px-6 sm:pt-6 bg-background z-10 border-b">
             <DialogTitle className="text-base sm:text-lg pr-8">{t('enter_scores', language)} — {gradingExam?.title}</DialogTitle>
             <DialogDescription className="text-xs sm:text-sm">{gradingExam?.date} • Max: {gradingExam?.maxScore} • {getModule(gradingExam?.moduleId || '')?.name || '-'}</DialogDescription>
           </DialogHeader>
           {gradingExam && (
-            <ScrollArea className="flex-1 min-h-0 px-4 sm:px-0">
+            <div className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 py-3">
               {/* Desktop: table layout */}
               <div className="hidden sm:block">
                 <Table>
@@ -5445,12 +5445,13 @@ function ExamsPage() {
                   );
                 })}
               </div>
-            </ScrollArea>
+            </div>
           )}
-          <DialogFooter className="shrink-0 flex-row gap-2 border-t pt-3 px-4 pb-4 sm:px-0 sm:pb-0 sm:border-t-0 sm:pt-2">
+          {/* Floating footer - always visible above content */}
+          <div className="shrink-0 border-t bg-background px-4 py-3 sm:px-6 flex flex-row gap-2 z-20 shadow-[0_-4px_12px_rgba(0,0,0,0.1)]">
             <Button variant="outline" onClick={() => setGradeDialogOpen(false)} className="flex-1 sm:flex-initial">{t('cancel', language)}</Button>
             <Button className="bg-emerald-600 hover:bg-emerald-700 flex-1 sm:flex-initial" onClick={handleSaveGrades}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
