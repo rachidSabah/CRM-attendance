@@ -5397,40 +5397,59 @@ function ExamsPage() {
 
       {/* Grade Exam Dialog */}
       <Dialog open={gradeDialogOpen} onOpenChange={setGradeDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
-          <DialogHeader className="shrink-0">
-            <DialogTitle>{t('enter_scores', language)} — {gradingExam?.title}</DialogTitle>
-            <DialogDescription>{gradingExam?.date} • Max: {gradingExam?.maxScore} • {getModule(gradingExam?.moduleId || '')?.name || '-'}</DialogDescription>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0 sm:p-6">
+          <DialogHeader className="shrink-0 px-4 pt-4 sm:px-0 sm:pt-0">
+            <DialogTitle className="text-base sm:text-lg pr-8">{t('enter_scores', language)} — {gradingExam?.title}</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">{gradingExam?.date} • Max: {gradingExam.maxScore} • {getModule(gradingExam?.moduleId || '')?.name || '-'}</DialogDescription>
           </DialogHeader>
           {gradingExam && (
-            <ScrollArea className="flex-1 min-h-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('students', language)}</TableHead>
-                    <TableHead>{t('student_score', language)} / {gradingExam.maxScore}</TableHead>
-                    <TableHead className="text-right">{t('auto_calc', language)} (%)</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {students.filter(s => s.classId === gradingExam.classId && s.status === 'active').map(s => {
-                    const score = parseFloat(gradeScores[s.id] || '');
-                    const pct = !isNaN(score) && gradingExam.maxScore > 0 ? Math.round(score / gradingExam.maxScore * 1000) / 10 : 0;
-                    return (
-                      <TableRow key={s.id}>
-                        <TableCell className="font-medium">{s.fullName}</TableCell>
-                        <TableCell><Input type="number" min={0} max={gradingExam.maxScore} className="w-24" value={gradeScores[s.id] || ''} onChange={e => setGradeScores({ ...gradeScores, [s.id]: e.target.value })} /></TableCell>
-                        <TableCell className="text-right font-semibold" style={{ color: pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444' }}>{pct}%</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+            <ScrollArea className="flex-1 min-h-0 px-4 sm:px-0">
+              {/* Desktop: table layout */}
+              <div className="hidden sm:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('students', language)}</TableHead>
+                      <TableHead>{t('student_score', language)} / {gradingExam.maxScore}</TableHead>
+                      <TableHead className="text-right">{t('auto_calc', language)} (%)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {students.filter(s => s.classId === gradingExam.classId && s.status === 'active').map(s => {
+                      const score = parseFloat(gradeScores[s.id] || '');
+                      const pct = !isNaN(score) && gradingExam.maxScore > 0 ? Math.round(score / gradingExam.maxScore * 1000) / 10 : 0;
+                      return (
+                        <TableRow key={s.id}>
+                          <TableCell className="font-medium">{s.fullName}</TableCell>
+                          <TableCell><Input type="number" min={0} max={gradingExam.maxScore} className="w-24" value={gradeScores[s.id] || ''} onChange={e => setGradeScores({ ...gradeScores, [s.id]: e.target.value })} /></TableCell>
+                          <TableCell className="text-right font-semibold" style={{ color: pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444' }}>{pct}%</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              {/* Mobile: card layout */}
+              <div className="sm:hidden space-y-3 pb-2">
+                {students.filter(s => s.classId === gradingExam.classId && s.status === 'active').map(s => {
+                  const score = parseFloat(gradeScores[s.id] || '');
+                  const pct = !isNaN(score) && gradingExam.maxScore > 0 ? Math.round(score / gradingExam.maxScore * 1000) / 10 : 0;
+                  return (
+                    <div key={s.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/30">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{s.fullName}</p>
+                        <p className="text-xs font-semibold mt-0.5" style={{ color: pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444' }}>{pct}%</p>
+                      </div>
+                      <Input type="number" min={0} max={gradingExam.maxScore} className="w-20 text-center shrink-0" placeholder="0" value={gradeScores[s.id] || ''} onChange={e => setGradeScores({ ...gradeScores, [s.id]: e.target.value })} />
+                    </div>
+                  );
+                })}
+              </div>
             </ScrollArea>
           )}
-          <DialogFooter className="shrink-0 pt-2">
-            <Button variant="outline" onClick={() => setGradeDialogOpen(false)}>{t('cancel', language)}</Button>
-            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveGrades}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
+          <DialogFooter className="shrink-0 flex-row gap-2 border-t pt-3 px-4 pb-4 sm:px-0 sm:pb-0 sm:border-t-0 sm:pt-2">
+            <Button variant="outline" onClick={() => setGradeDialogOpen(false)} className="flex-1 sm:flex-initial">{t('cancel', language)}</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 flex-1 sm:flex-initial" onClick={handleSaveGrades}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
