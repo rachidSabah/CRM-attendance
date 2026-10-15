@@ -64,6 +64,9 @@ import { JustificationsDialog } from '@/components/JustificationsDialog';
 import { EscalationsDialog } from '@/components/EscalationsDialog';
 import { BulletinDialog } from '@/components/BulletinDialog';
 import { BulkImportDialog } from '@/components/BulkImportDialog';
+import { CertificateGenerator } from '@/components/CertificateGenerator';
+import { AiAutopilot } from '@/components/AiAutopilot';
+import { ParentPortal } from '@/components/ParentPortal';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 
@@ -87,6 +90,9 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'exams', labelKey: 'exams', icon: <FileCheck className="h-5 w-5" />, allowedRoles: ['admin', 'teacher', 'super_admin'] },
   { id: 'curriculum', labelKey: 'curriculum', icon: <ListChecks className="h-5 w-5" />, allowedRoles: ['admin', 'super_admin'] },
   { id: 'reports', labelKey: 'reports', icon: <BarChart3 className="h-5 w-5" />, allowedRoles: ['admin', 'teacher', 'super_admin'] },
+  { id: 'certificates', labelKey: 'certificates', icon: <FileText className="h-5 w-5 text-emerald-600" />, allowedRoles: ['admin', 'super_admin'] },
+  { id: 'autopilot', labelKey: 'autopilot', icon: <Zap className="h-5 w-5 text-blue-500" />, allowedRoles: ['admin', 'super_admin'] },
+  { id: 'parent-portal', labelKey: 'parent_portal', icon: <Smartphone className="h-5 w-5 text-emerald-500" />, allowedRoles: ['admin', 'teacher', 'employee', 'super_admin'] },
   { id: 'settings', labelKey: 'settings', icon: <Settings className="h-5 w-5" />, allowedRoles: ['admin', 'super_admin'] },
   { id: 'superadmin', labelKey: 'super_admin', icon: <Shield className="h-5 w-5" />, superAdminOnly: true, allowedRoles: ['super_admin'] },
 ];
@@ -5128,6 +5134,7 @@ function SettingsPage() {
           <TabsTrigger value="cloudsync" className="flex items-center gap-1.5"><Cloud className="h-4 w-4" />{language === 'fr' ? 'Cloud Sync' : 'Cloud Sync'}</TabsTrigger>
           <TabsTrigger value="reminders" className="flex items-center gap-1.5"><BellRing className="h-4 w-4" />{language === 'fr' ? 'Rappels Auto' : 'Auto Reminders'}</TabsTrigger>
           <TabsTrigger value="whatsapp" className="flex items-center gap-1.5"><MessageCircle className="h-4 w-4 text-emerald-600" />{language === 'fr' ? 'WhatsApp & Escalades' : 'WhatsApp & Escalation'}</TabsTrigger>
+          <TabsTrigger value="ai" className="flex items-center gap-1.5"><Sparkles className="h-4 w-4 text-blue-500" />{language === 'fr' ? 'Paramètres IA (Gemini)' : 'Gemini AI'}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -5567,8 +5574,237 @@ function SettingsPage() {
         <TabsContent value="whatsapp" className="space-y-4">
           <WhatsAppSettingsSection />
         </TabsContent>
+        <TabsContent value="ai" className="space-y-4">
+          <AiSettingsSection />
+        </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function AiSettingsSection() {
+  const { language, setCurrentPage } = useAppStore();
+  const [hasKey, setHasKey] = useState(false);
+  const [maskedKey, setMaskedKey] = useState('');
+  const [inputKey, setInputKey] = useState('');
+  const [defaultModel, setDefaultModel] = useState('gemini-2.5-flash');
+  const [isFromEnv, setIsFromEnv] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; latencyMs?: number } | null>(null);
+
+  const fetchConfig = async () => {
+    try {
+      const token = localStorage.getItem('auth_token') || '';
+      const res = await fetch('/api/ai/config', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHasKey(Boolean(data.hasKey));
+        setMaskedKey(data.maskedKey || '');
+        if (data.defaultModel) setDefaultModel(data.defaultModel);
+        setIsFromEnv(Boolean(data.isFromEnv));
+      }
+    } catch (e) {
+      console.warn('Failed to fetch AI config:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchConfig();
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const token = localStorage.getItem('auth_token') || '';
+      const res = await fetch('/api/ai/config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          apiKey: inputKey.trim() || undefined,
+          defaultModel
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Erreur lors de la sauvegarde');
+      }
+      toast.success(language === 'fr' ? 'Configuration IA enregistrée avec succès' : 'AI configuration saved');
+      setInputKey('');
+      await fetchConfig();
+    } catch (err: any) {
+      toast.error(err.message || 'Échec de la sauvegarde');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const token = localStorage.getItem('auth_token') || '';
+      const res = await fetch('/api/ai/test', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          apiKey: inputKey.trim() || undefined,
+          model: defaultModel
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setTestResult({
+          success: false,
+          message: data.error || 'Échec de la connexion à l’API Gemini'
+        });
+      } else {
+        setTestResult({
+          success: true,
+          message: data.message || 'Connexion réussie',
+          latencyMs: data.latencyMs
+        });
+        toast.success(language === 'fr' ? 'Test de connexion Gemini réussi !' : 'Gemini connection test successful!');
+      }
+    } catch (err: any) {
+      setTestResult({
+        success: false,
+        message: err.message || 'Erreur réseau lors du test'
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-blue-600" />
+          {language === 'fr' ? 'Configuration Google Gemini AI Autopilot' : 'Google Gemini AI Configuration'}
+        </CardTitle>
+        <CardDescription>
+          {language === 'fr'
+            ? 'Connectez l’intelligence artificielle Gemini pour l’analyse prédictive d’assiduité, la détection des décrochages et la rédaction des alertes disciplinaires.'
+            : 'Configure Gemini AI connection for attendance analytics, anomaly detection and parent notice drafting.'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="flex items-center justify-between p-4 rounded-xl border bg-muted/30">
+          <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full ${hasKey ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+            <div>
+              <p className="text-sm font-semibold">
+                {hasKey
+                  ? (language === 'fr' ? 'Clé API Gemini Active' : 'Gemini API Key Active')
+                  : (language === 'fr' ? 'Aucune Clé API Configurée' : 'No API Key Configured')}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {hasKey
+                  ? `${isFromEnv ? 'Définie via Cloudflare Secrets' : 'Enregistrée dans la base D1'} (${maskedKey || '••••••••'})`
+                  : (language === 'fr' ? 'L\'Autopilot fonctionne en mode restreint tant qu\'aucune clé valide n\'est fournie.' : 'Autopilot is restricted until a valid key is provided.')}
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setCurrentPage('autopilot')}
+            className="gap-1.5 text-xs"
+          >
+            <Zap className="h-3.5 w-3.5 text-blue-500" />
+            {language === 'fr' ? 'Ouvrir l’Autopilot' : 'Open Autopilot'}
+          </Button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold">
+              {language === 'fr' ? 'Clé API Google Gemini (Secrète)' : 'Google Gemini API Key (Secret)'}
+            </Label>
+            <Input
+              type="password"
+              placeholder={hasKey ? '•••••••••••••••••••••••••••••••••••••• (Laisser vide pour conserver)' : 'AIzaSy...'}
+              value={inputKey}
+              onChange={e => setInputKey(e.target.value)}
+              className="font-mono text-xs h-9"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {language === 'fr'
+                ? 'La clé est stockée côté serveur de manière chiffrée et n\'est jamais transmise aux navigateurs des utilisateurs.'
+                : 'Key is securely stored server-side and never exposed to client browsers.'}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">
+                {language === 'fr' ? 'Modèle par défaut' : 'Default Model'}
+              </Label>
+              <Select value={defaultModel} onValueChange={setDefaultModel}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash (Recommandé - Rapide & Économique)</SelectItem>
+                  <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro (Raisonnement Avancé)</SelectItem>
+                  <SelectItem value="gemini-2.0-flash">Gemini 2.0 Flash</SelectItem>
+                  <SelectItem value="gemini-1.5-flash">Gemini 1.5 Flash</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {testResult && (
+            <div className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 ${testResult.success ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-500/30 text-emerald-900 dark:text-emerald-200' : 'bg-red-50 dark:bg-red-950/30 border-red-500/30 text-red-900 dark:text-red-200'}`}>
+              {testResult.success ? <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" /> : <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />}
+              <div className="space-y-1 flex-1">
+                <div className="font-semibold flex items-center justify-between">
+                  <span>{testResult.success ? 'Connexion Validée' : 'Échec du Test'}</span>
+                  {testResult.latencyMs && <span className="font-mono text-[10px]">{testResult.latencyMs} ms</span>}
+                </div>
+                <p className="text-[11px] opacity-90">{testResult.message}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleTest}
+              disabled={testing || (!hasKey && !inputKey.trim())}
+              className="gap-2 text-xs h-9"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${testing ? 'animate-spin' : ''}`} />
+              {testing ? 'Test en cours...' : (language === 'fr' ? 'Tester la Connexion' : 'Test Connection')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSave}
+              disabled={saving}
+              className="gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs h-9"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {saving ? 'Enregistrement...' : (language === 'fr' ? 'Enregistrer les Paramètres IA' : 'Save AI Settings')}
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -7686,6 +7922,9 @@ export default function App() {
       case 'incidents': return <IncidentsPage />;
       case 'messaging': return <MessagingPage />;
       case 'reports': return <ReportsPage />;
+      case 'certificates': return <CertificateGenerator />;
+      case 'autopilot': return <AiAutopilot />;
+      case 'parent-portal': return <ParentPortal />;
       case 'exams': return <ExamsPage />;
       case 'curriculum': return <CurriculumPage />;
       case 'settings': return <SettingsPage />;

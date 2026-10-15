@@ -12,9 +12,13 @@
 
 const EXTERNAL_API = 'https://infohas-attendance-api.rachidelsabah.workers.dev/api';
 
-// Endpoints that do NOT require authentication
+// Endpoints that do NOT require admin authentication
 const PUBLIC_PATHS = [
   '/api/auth/login',
+  '/api/justifications/submit',
+  '/api/parent/request-otp',
+  '/api/parent/verify-otp',
+  '/api/parent/attendance',
 ];
 
 export async function validateRequest(request, db) {

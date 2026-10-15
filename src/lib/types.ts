@@ -306,4 +306,4 @@ export interface SavedSchedule {
   createdBy: string;
 }
 
-export type PageName = 'dashboard' | 'students' | 'classes' | 'modules' | 'attendance' | 'calendar' | 'schedule' | 'grades' | 'behavior' | 'tasks' | 'incidents' | 'messaging' | 'reports' | 'exams' | 'curriculum' | 'settings' | 'superadmin';
+export type PageName = 'dashboard' | 'students' | 'classes' | 'modules' | 'attendance' | 'calendar' | 'schedule' | 'grades' | 'behavior' | 'tasks' | 'incidents' | 'messaging' | 'reports' | 'exams' | 'curriculum' | 'settings' | 'superadmin' | 'certificates' | 'autopilot' | 'parent-portal';
