@@ -56,13 +56,14 @@ import {
   Flame, Award, Zap, Globe, Database, Activity, ToggleLeft, CreditCard, IdCard,
   Palette, HardDrive, ChevronDown, Info, RotateCcw, Archive, Cloud, FolderOpen,
   FileCheck, ListChecks, Target, Smartphone, WifiOff, History, FileUp,
-  AlertOctagon, Paperclip, BellRing, QrCode, ShieldAlert
+  AlertOctagon, Paperclip, BellRing, QrCode, ShieldAlert, FileSpreadsheet
 } from 'lucide-react';
 
 import { QrScannerDialog } from '@/components/QrScannerDialog';
 import { JustificationsDialog } from '@/components/JustificationsDialog';
 import { EscalationsDialog } from '@/components/EscalationsDialog';
 import { BulletinDialog } from '@/components/BulletinDialog';
+import { BulkImportDialog } from '@/components/BulkImportDialog';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 
@@ -939,6 +940,7 @@ function StudentsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [profileStudent, setProfileStudent] = useState<Student | null>(null);
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [form, setForm] = useState({ fullName: '', studentId: '', classId: '', status: 'active' as Student['status'], guardianName: '', guardianPhone: '', guardianEmail: '', phone: '', email: '', address: '', notes: '', group: '', photo: '' as string });
   const [sortBy, setSortBy] = useState('name_asc');
   const [multiSelect, setMultiSelect] = useState(false);
@@ -1072,6 +1074,16 @@ function StudentsPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" className={multiSelect ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-400' : ''} onClick={() => { setMultiSelect(!multiSelect); setSelectedIds(new Set()); }}><CheckCircle2 className="h-4 w-4 mr-1" />{language === 'fr' ? 'Sélection multiple' : 'Multi-select'}</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 font-medium"
+            onClick={() => setBulkImportOpen(true)}
+            title={language === 'fr' ? 'Importer des stagiaires depuis un fichier Excel (.xlsx / .xls / .csv)' : 'Bulk import students from Excel file'}
+          >
+            <FileSpreadsheet className="h-4 w-4 mr-1 text-emerald-600" />
+            {language === 'fr' ? 'Import Excel' : 'Excel Import'}
+          </Button>
           <label className="cursor-pointer"><input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} /><Button variant="outline" size="sm" className="border-orange-400 text-orange-600" asChild><span><Upload className="h-4 w-4 mr-1" />CSV</span></Button></label>
           <Button variant="outline" size="sm" onClick={() => { exportUtils.exportStudentsCSV(scopedStudents, classes, language); toast.success(language === 'fr' ? 'Exporté !' : 'Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
           <Button
@@ -1185,6 +1197,7 @@ function StudentsPage() {
       </DialogContent></Dialog>
 
       {profileStudent && <Student360Profile student={profileStudent} onClose={() => setProfileStudent(null)} />}
+      <BulkImportDialog open={bulkImportOpen} onOpenChange={setBulkImportOpen} />
     </div>
   );
 }
@@ -7117,6 +7130,7 @@ function ImportWizardSection() {
   const [importing, setImporting] = useState(false);
   const [imported, setImported] = useState(0);
   const [fileName, setFileName] = useState('');
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
 
   const parseExcelFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -7331,7 +7345,7 @@ function ImportWizardSection() {
             </div>
             <div>
               <Label className="mb-1.5 block text-sm">{language === 'fr' ? 'Fichier' : 'File'}</Label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <label className="cursor-pointer">
                   <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={parseExcelFile} />
                   <Button variant="outline" asChild><span><FileUp className="h-4 w-4 mr-1" />{t('upload', language) || 'Upload'}</span></Button>
@@ -7339,6 +7353,17 @@ function ImportWizardSection() {
                 <Button variant="outline" size="sm" onClick={handleDownloadTemplate} className="gap-1">
                   <Download className="h-4 w-4" />{language === 'fr' ? 'Modèle' : 'Template'}
                 </Button>
+                {importType === 'students' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBulkModalOpen(true)}
+                    className="gap-1 bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 font-medium"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                    {language === 'fr' ? 'Excel Avancé' : 'Advanced Excel'}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -7416,6 +7441,7 @@ function ImportWizardSection() {
           )}
         </CardContent>
       </Card>
+      <BulkImportDialog open={bulkModalOpen} onOpenChange={setBulkModalOpen} />
     </div>
   );
 }
