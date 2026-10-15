@@ -5,8 +5,11 @@ import {
   exportIndividualStudentPDF,
   exportClassGroupReportPDF,
   exportProgressReportPDF,
-} from './pdf.ts';
-import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Incident, SchoolInfo } from './types.ts';
+  exportStudentBadgesPDF,
+  exportBulletinSemestrielPDF,
+  exportAbsenceWarningLetterPDF,
+} from './pdf';
+import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Incident, SchoolInfo } from './types';
 
 test('createSmartDoc selects orientation and format adaptively', () => {
   // Portrait when small columns and normal width
@@ -166,3 +169,46 @@ test('exportClassGroupReportPDF generates matrix and summary without errors', ()
     );
   });
 });
+
+test('exportStudentBadgesPDF generates badges sheet with QR codes without errors', async () => {
+  const dummyStudents: Student[] = [
+    { id: 'st_1', fullName: 'Yasmine Ibnoghazala', studentId: 'F01/26', classId: 'cls_1', status: 'active', createdAt: '' },
+    { id: 'st_2', fullName: 'Douae Mourchid', studentId: 'F02/26', classId: 'cls_1', status: 'active', createdAt: '' },
+  ];
+  const dummyClasses: Class[] = [{ id: 'cls_1', name: 'Group Dubai', createdAt: '' }];
+
+  await assert.doesNotReject(async () => {
+    await exportStudentBadgesPDF(dummyStudents, dummyClasses, { name: 'INFOHAS' }, 'fr');
+  });
+});
+
+test('exportBulletinSemestrielPDF calculates weighted average and passes without errors', () => {
+  const dummyStudent: Student = { id: 'st_1', fullName: 'Yasmine Ibnoghazala', studentId: 'F01/26', classId: 'cls_1', status: 'active', createdAt: '' };
+  const dummyClass: Class = { id: 'cls_1', name: 'Group Dubai', createdAt: '' };
+  const dummyModules: Module[] = [
+    { id: 'm1', name: 'Sécurité Aérienne', code: 'M01', coef: 2, createdAt: '' },
+    { id: 'm2', name: 'Anglais Aéronautique', code: 'M02', coef: 3, createdAt: '' },
+  ];
+  const dummyGrades: Grade[] = [
+    { id: 'g1', studentId: 'st_1', moduleId: 'm1', percentage: 80, createdAt: '' },
+    { id: 'g2', studentId: 'st_1', moduleId: 'm2', percentage: 85, createdAt: '' },
+  ];
+  const dummyAtt: AttendanceRecord[] = [
+    { id: 'a1', studentId: 'st_1', date: '2026-10-01', status: 'present', createdAt: '' },
+  ];
+
+  assert.doesNotThrow(() => {
+    exportBulletinSemestrielPDF(dummyStudent, dummyClass, dummyModules, dummyGrades, dummyAtt, { name: 'INFOHAS' }, 'fr');
+  });
+});
+
+test('exportAbsenceWarningLetterPDF generates official warning letter without errors', () => {
+  const dummyStudent: Student = { id: 'st_1', fullName: 'Yasmine Ibnoghazala', studentId: 'F01/26', classId: 'cls_1', status: 'active', createdAt: '' };
+  const dummyClass: Class = { id: 'cls_1', name: 'Group Dubai', createdAt: '' };
+  const absenceDates = ['2026-10-01', '2026-10-05', '2026-10-08', '2026-10-10', '2026-10-12'];
+
+  assert.doesNotThrow(() => {
+    exportAbsenceWarningLetterPDF(dummyStudent, dummyClass, absenceDates, { name: 'INFOHAS' }, 'fr', 'warning_2');
+  });
+});
+

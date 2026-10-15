@@ -26,6 +26,7 @@ const ENTITY_TYPE_MAP = {
   curriculum_items: 'curriculum',
   calendar_events: 'calendarEvents',
   saved_schedules: 'savedSchedules',
+  justifications: 'justifications',
 };
 
 async function handlePull(context) {

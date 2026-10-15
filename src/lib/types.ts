@@ -28,6 +28,8 @@ export interface Student {
   notes?: string;
   photo?: string | null;
   group?: string;
+  disciplinaryStatus?: 'normal' | 'warning_1' | 'warning_2' | 'discipline_council';
+  examLocked?: boolean;
   createdAt: string;
 }
 
@@ -39,6 +41,7 @@ export interface Class {
   room?: string;
   capacity?: number;
   academicYear?: string;
+  assignedTeacherIds?: string[];
   createdAt: string;
 }
 
@@ -49,6 +52,7 @@ export interface Module {
   year?: string;
   semester?: string;
   hours?: number;
+  coef?: number;
   description?: string;
   createdAt: string;
 }
@@ -59,7 +63,26 @@ export interface AttendanceRecord {
   date: string;
   status: 'present' | 'absent' | 'late' | 'excused';
   notes?: string;
+  justificationId?: string;
+  justificationReason?: string;
+  arrivalTime?: string;
   createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ExcuseJustification {
+  id: string;
+  studentId: string;
+  studentName?: string;
+  className?: string;
+  date: string;
+  reason: string;
+  attachment?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewNotes?: string;
 }
 
 export interface Grade {
@@ -175,6 +198,14 @@ export interface SchoolInfo {
   email?: string;
   logo?: string;
   field?: string;
+  whatsappMode?: 'wame' | 'baileys' | 'hybrid';
+  whatsappDispatchMode?: 'wame' | 'baileys' | 'hybrid';
+  whatsappGatewayUrl?: string;
+  baileysGatewayUrl?: string;
+  absenceThreshold1?: number;
+  absenceThreshold2?: number;
+  absenceThreshold3?: number;
+  absenceThresholds?: { warning1: number; warning2: number; council: number };
 }
 
 export interface CalendarEvent {

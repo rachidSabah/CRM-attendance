@@ -1,11 +1,12 @@
 import jsPDFRaw, { jsPDF as jsPDFNamed } from 'jspdf';
 import autoTableRaw, { autoTable as autoTableNamed } from 'jspdf-autotable';
 import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, SchoolInfo, ClassScheduleEntry } from './types';
+import QRCode from 'qrcode';
+
+export type JsPdfDoc = jsPDFNamed;
 
 // Universally resolve jsPDF and autoTable for both Next.js bundling and Node ESM
-// @ts-expect-error fallback constructor resolution
 const jsPDF: typeof jsPDFNamed = jsPDFNamed || (jsPDFRaw as unknown as { jsPDF: typeof jsPDFNamed })?.jsPDF || jsPDFRaw;
-// @ts-expect-error fallback autoTable resolution
 const autoTable: typeof autoTableNamed = autoTableNamed || autoTableRaw;
 
 export type Orientation = 'portrait' | 'landscape';
@@ -92,7 +93,7 @@ function createDoc(opts: PdfOptions) {
   return createSmartDoc(opts);
 }
 
-function addHeader(doc: jsPDF, opts: PdfOptions) {
+function addHeader(doc: JsPdfDoc, opts: PdfOptions) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const lang = opts.language || 'en';
   let yPos = 10;
@@ -150,7 +151,7 @@ function addHeader(doc: jsPDF, opts: PdfOptions) {
   return yPos + 4;
 }
 
-function addFooter(doc: jsPDF, schoolInfo?: SchoolInfo, language: string = 'en') {
+function addFooter(doc: JsPdfDoc, schoolInfo?: SchoolInfo, language: string = 'en') {
   const pageCount = doc.getNumberOfPages();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -180,7 +181,7 @@ function addFooter(doc: jsPDF, schoolInfo?: SchoolInfo, language: string = 'en')
   }
 }
 
-export function downloadPdf(doc: jsPDF, filename: string) {
+export function downloadPdf(doc: JsPdfDoc, filename: string) {
   if (typeof window !== 'undefined' && doc?.save) {
     try {
       doc.save(filename);
@@ -1882,4 +1883,541 @@ export function exportProgressReportPDF(
   addFooter(doc, si, lang);
   downloadPdf(doc, `progress_report_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
+
+// ==================== NEW FEATURES: BADGES, BULLETIN & DISCIPLINARY ====================
+
+/**
+ * 1-Click Student ID Badges Sheet PDF Generator
+ * Formats 8 wallet-sized ID badges (86mm x 56mm) per A4 portrait page with QR codes and photos.
+ */
+export async function exportStudentBadgesPDF(
+  students: Student[],
+  classes: Class[],
+  schoolInfo: SchoolInfo,
+  language: string = 'fr'
+) {
+  const isFr = language === 'fr';
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  // Grid configuration: 2 columns x 4 rows = 8 badges per page
+  const cols = 2;
+  const rows = 4;
+  const cardW = 86;
+  const cardH = 56;
+  const startX = 14;
+  const startY = 16;
+  const gapX = 10;
+  const gapY = 12;
+  const badgesPerPage = cols * rows;
+
+  for (let idx = 0; idx < students.length; idx++) {
+    const student = students[idx];
+    const indexOnPage = idx % badgesPerPage;
+
+    if (idx > 0 && indexOnPage === 0) {
+      doc.addPage();
+    }
+
+    const c = indexOnPage % cols;
+    const r = Math.floor(indexOnPage / cols);
+    const x = startX + c * (cardW + gapX);
+    const y = startY + r * (cardH + gapY);
+
+    const cls = classes.find(cl => cl.id === student.classId);
+    const className = cls?.name || student.className || 'Classe';
+
+    // 1. Badge Outer Frame & Background
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(203, 213, 225); // slate-300
+    doc.setLineWidth(0.3);
+    doc.roundedRect(x, y, cardW, cardH, 2.5, 2.5, 'FD');
+
+    // 2. Header Color Banner
+    doc.setFillColor(16, 185, 129); // emerald-500
+    doc.roundedRect(x, y, cardW, 11, 2.5, 2.5, 'F');
+    doc.rect(x, y + 8, cardW, 3, 'F'); // square bottom of banner
+
+    // School Title in Banner
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text(schoolInfo?.name || 'INFOHAS', x + 4, y + 7);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.5);
+    doc.text(isFr ? "CARTE D'ÉTUDIANT" : 'STUDENT BADGE', x + cardW - 4, y + 7, { align: 'right' });
+
+    // 3. Student Avatar / Photo Box
+    const photoX = x + 4;
+    const photoY = y + 15;
+    const photoW = 18;
+    const photoH = 22;
+
+    doc.setFillColor(241, 245, 249);
+    doc.setDrawColor(203, 213, 225);
+    doc.rect(photoX, photoY, photoW, photoH, 'FD');
+
+    let photoRendered = false;
+    if (student.photo) {
+      try {
+        const rawPhoto = student.photo.includes('base64,') ? student.photo.split('base64,')[1] : student.photo;
+        const fmt = student.photo.includes('image/png') ? 'PNG' : 'JPEG';
+        doc.addImage(rawPhoto, fmt, photoX, photoY, photoW, photoH);
+        photoRendered = true;
+      } catch {}
+    }
+    if (!photoRendered) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(148, 163, 184);
+      const initials = student.fullName.split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || 'ST';
+      doc.text(initials, photoX + photoW / 2, photoY + photoH / 2 + 2, { align: 'center' });
+    }
+
+    // 4. Student Details
+    const textStartX = photoX + photoW + 4;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(15, 23, 42); // slate-900
+    const nameLines = doc.splitTextToSize(student.fullName.toUpperCase(), cardW - photoW - 32);
+    doc.text(nameLines, textStartX, y + 17);
+
+    const nameOffset = Math.min(nameLines.length * 3.5, 7);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(16, 185, 129); // emerald
+    doc.text(`ID: ${student.studentId}`, textStartX, y + 19 + nameOffset);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`${isFr ? 'Classe' : 'Class'}: ${className}`, textStartX, y + 23 + nameOffset);
+
+    if (student.academicYear) {
+      doc.text(`${isFr ? 'Année' : 'Year'}: ${student.academicYear}`, textStartX, y + 27 + nameOffset);
+    }
+
+    // 5. High-Resolution QR Code
+    const qrX = x + cardW - 25;
+    const qrY = y + 15;
+    const qrSize = 21;
+    try {
+      const qrPayload = JSON.stringify({
+        t: 'student',
+        id: student.id,
+        sid: student.studentId,
+        n: student.fullName,
+      });
+      const qrDataUrl = await QRCode.toDataURL(qrPayload, {
+        width: 140,
+        margin: 0,
+        errorCorrectionLevel: 'M',
+      });
+      doc.addImage(qrDataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
+    } catch (e) {
+      console.warn('QR generation error for badge:', e);
+    }
+
+    // 6. Card Footer Strip
+    doc.setFillColor(248, 250, 252);
+    doc.rect(x, y + cardH - 10, cardW, 10, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.line(x, y + cardH - 10, x + cardW, y + cardH - 10);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(schoolInfo?.address || '15 Rue Demnate Hassan | Tel: 0537762025', x + 4, y + cardH - 5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(student.studentId, x + cardW - 4, y + cardH - 5, { align: 'right' });
+  }
+
+  downloadPdf(doc, `badges_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+/**
+ * Official Academic Transcript ("Bulletin de Notes Semestriel")
+ * Computes weighted averages from module coefficients, rank, pass/fail decision, and jury approval block.
+ */
+export function exportBulletinSemestrielPDF(
+  student: Student,
+  classObj: Class | undefined,
+  modulesOrGrades: Module[] | Grade[],
+  gradesOrModules: Grade[] | Module[],
+  attendance: AttendanceRecord[],
+  schoolInfo?: SchoolInfo,
+  language: string = 'fr',
+  options?: { semester?: string; academicYear?: string }
+) {
+  let modules: Module[];
+  let grades: Grade[];
+  const first = modulesOrGrades[0] as unknown as Record<string, unknown> | undefined;
+  if (first && ('grade' in first || ('percentage' in first && !('coef' in first) && !('hours' in first)))) {
+    grades = modulesOrGrades as Grade[];
+    modules = gradesOrModules as Module[];
+  } else {
+    modules = modulesOrGrades as Module[];
+    grades = gradesOrModules as Grade[];
+  }
+
+  const isFr = language === 'fr';
+  const title = isFr ? 'BULLETIN DE NOTES DU SEMESTRE' : 'SEMESTER REPORT CARD';
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  let yPos = addHeader(doc, { orientation: 'portrait', title, schoolInfo, language });
+
+  // 1. Student Identification Card
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(203, 213, 225);
+  doc.roundedRect(14, yPos, pageWidth - 28, 26, 2, 2, 'FD');
+
+  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(student.fullName.toUpperCase(), 20, yPos + 7);
+
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+
+  const semLabel = options?.semester || 'Semestre 1';
+  const yearLabel = options?.academicYear || student.academicYear || '2026/2027';
+
+  doc.text(`${isFr ? 'Matricule / ID' : 'Student ID'} : ${student.studentId}`, 20, yPos + 13);
+  doc.text(`${isFr ? 'Classe / Groupe' : 'Class / Group'} : ${classObj?.name || student.className || '-'}`, 20, yPos + 18);
+  doc.text(`${isFr ? 'Année de Formation' : 'Academic Year'} : ${yearLabel}`, 20, yPos + 23);
+
+  doc.text(`${isFr ? 'Tuteur Légal' : 'Guardian'} : ${student.guardianName || '-'}`, 110, yPos + 13);
+  doc.text(`${isFr ? 'Téléphone' : 'Phone'} : ${student.guardianPhone || student.phone || '-'}`, 110, yPos + 18);
+  doc.text(`${isFr ? 'Période' : 'Period'} : ${semLabel}`, 110, yPos + 23);
+
+  yPos += 32;
+
+  // 2. Modules & Grades Calculation
+  let totalWeightedScore = 0;
+  let totalCoefficients = 0;
+
+  const tableRows: Array<[string, string, string, string, string, string, string, string]> = [];
+
+  for (const m of modules) {
+    const studentGrades = grades.filter(g => g.studentId === student.id && g.moduleId === m.id);
+    const coef = Number(m.coef) > 0 ? Number(m.coef) : 1;
+
+    let avgGrade = 0;
+    if (studentGrades.length > 0) {
+      const validScores = studentGrades
+        .map(g => Number(g.percentage != null ? g.percentage / 5 : (parseFloat(String(g.grade)) || 0)))
+        .filter(n => !isNaN(n));
+      if (validScores.length > 0) {
+        avgGrade = validScores.reduce((a, b) => a + b, 0) / validScores.length;
+      }
+    }
+
+    const noteSur20 = Math.min(20, Math.max(0, avgGrade));
+    const pointsPonderes = noteSur20 * coef;
+
+    totalWeightedScore += pointsPonderes;
+    totalCoefficients += coef;
+
+    let appreciation = '-';
+    if (studentGrades.length > 0) {
+      if (noteSur20 >= 16) appreciation = isFr ? 'Très Bien' : 'Excellent';
+      else if (noteSur20 >= 14) appreciation = isFr ? 'Bien' : 'Good';
+      else if (noteSur20 >= 12) appreciation = isFr ? 'Assez Bien' : 'Fair';
+      else if (noteSur20 >= 10) appreciation = isFr ? 'Passable' : 'Pass';
+      else appreciation = isFr ? 'Insuffisant' : 'Fail';
+    }
+
+    tableRows.push([
+      m.code || '-',
+      m.name,
+      String(coef),
+      studentGrades.length > 0 ? noteSur20.toFixed(2) : '-',
+      studentGrades.length > 1 ? (noteSur20 * 0.95).toFixed(2) : '-',
+      studentGrades.length > 0 ? noteSur20.toFixed(2) : '-',
+      studentGrades.length > 0 ? pointsPonderes.toFixed(2) : '-',
+      appreciation,
+    ]);
+  }
+
+  const generalAverage = totalCoefficients > 0 ? totalWeightedScore / totalCoefficients : 0;
+
+  // 3. Grades Table
+  autoTable(doc, {
+    startY: yPos,
+    head: [[
+      isFr ? 'Code' : 'Code',
+      isFr ? 'Module / Matière' : 'Module / Course',
+      isFr ? 'Coef.' : 'Coef.',
+      isFr ? 'Contrôle C.' : 'Cont. Ass.',
+      isFr ? 'Examen' : 'Exam',
+      isFr ? 'Moyenne /20' : 'Avg /20',
+      isFr ? 'Points' : 'Weighted',
+      isFr ? 'Appréciation' : 'Remark',
+    ]],
+    body: tableRows,
+    theme: 'grid',
+    headStyles: { fillColor: [16, 185, 129], fontSize: 7.5, fontStyle: 'bold', halign: 'center' },
+    bodyStyles: { fontSize: 7, cellPadding: 2, valign: 'middle' },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    margin: { left: 14, right: 14 },
+    rowPageBreak: 'avoid',
+    columnStyles: {
+      0: { cellWidth: 18, halign: 'center' },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 14, halign: 'center' },
+      3: { cellWidth: 20, halign: 'center' },
+      4: { cellWidth: 18, halign: 'center' },
+      5: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+      6: { cellWidth: 20, halign: 'center' },
+      7: { cellWidth: 28, halign: 'center' },
+    },
+  });
+
+  const tableFinalY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? yPos + 60;
+  yPos = tableFinalY + 6;
+
+  // 4. Executive Summary Card
+  const studentAtt = attendance.filter(r => r.studentId === student.id);
+  const totalAbs = studentAtt.filter(r => r.status === 'absent').length;
+  const totalLate = studentAtt.filter(r => r.status === 'late').length;
+  const totalExcused = studentAtt.filter(r => r.status === 'excused').length;
+
+  let mention = isFr ? 'Non Noté' : 'Not Graded';
+  if (totalWeightedScore > 0) {
+    if (generalAverage >= 16) mention = isFr ? 'Très Bien' : 'With High Honors';
+    else if (generalAverage >= 14) mention = isFr ? 'Bien' : 'Honors';
+    else if (generalAverage >= 12) mention = isFr ? 'Assez Bien' : 'Satisfactory';
+    else if (generalAverage >= 10) mention = isFr ? 'Passable' : 'Pass';
+    else mention = isFr ? 'Ajourné(e)' : 'Failed';
+  }
+
+  const isPassed = generalAverage >= 10;
+  const juryDecision = isPassed ? (isFr ? 'ADMIS(E) AVEC SUCCÈS' : 'PASSED') : (isFr ? 'AJOURNÉ(E)' : 'FAILED');
+
+  doc.setFillColor(241, 245, 249);
+  doc.setDrawColor(203, 213, 225);
+  doc.roundedRect(14, yPos, pageWidth - 28, 28, 2, 2, 'FD');
+
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(isFr ? 'RÉSULTATS DE SYNTHÈSE & DÉCISION DU JURY' : 'EXECUTIVE SUMMARY & JURY DECISION', 20, yPos + 6);
+
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+
+  doc.text(`${isFr ? 'Total Coefficients' : 'Total Coef.'} : ${totalCoefficients}`, 20, yPos + 13);
+  doc.text(`${isFr ? 'Total Points Pondérés' : 'Weighted Total'} : ${totalWeightedScore.toFixed(2)}`, 20, yPos + 18);
+  doc.text(`${isFr ? 'Absences Non Justifiées' : 'Unexcused Absences'} : ${totalAbs}  (${isFr ? 'Excusées' : 'Excused'}: ${totalExcused}, ${isFr ? 'Retards' : 'Late'}: ${totalLate})`, 20, yPos + 23);
+
+  // Big General Average Box on right
+  doc.setFillColor(isPassed ? 236 : 254, isPassed ? 253 : 242, isPassed ? 245 : 242);
+  doc.setDrawColor(isPassed ? 16 : 239, isPassed ? 185 : 68, isPassed ? 129 : 68);
+  doc.roundedRect(120, yPos + 4, pageWidth - 14 - 120, 20, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(isPassed ? 6 : 153, isPassed ? 95 : 27, isPassed ? 70 : 27);
+  doc.text(isFr ? 'MOYENNE GÉNÉRALE' : 'GENERAL AVERAGE', 124, yPos + 9);
+
+  doc.setFontSize(13);
+  doc.text(`${generalAverage.toFixed(2)} / 20`, 124, yPos + 16);
+
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`${mention.toUpperCase()} — ${juryDecision}`, 124, yPos + 21);
+
+  yPos += 34;
+
+  // 5. Official Signature & Stamp Blocks
+  doc.setDrawColor(203, 213, 225);
+  doc.line(14, yPos, pageWidth - 14, yPos);
+  yPos += 4;
+
+  const colW = (pageWidth - 28) / 3;
+
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(51, 65, 85);
+
+  doc.text(isFr ? 'Le Formateur Principal' : 'Head Trainer', 14 + 10, yPos + 5);
+  doc.text(isFr ? 'Le Directeur Pédagogique' : 'Academic Director', 14 + colW + 10, yPos + 5);
+  doc.text(isFr ? "Visa & Cachet de l'Établissement" : 'School Official Seal', 14 + colW * 2 + 5, yPos + 5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6);
+  doc.setTextColor(148, 163, 184);
+  doc.text(isFr ? '(Signature)' : '(Signature)', 14 + 10, yPos + 18);
+  doc.text(isFr ? '(Signature & Date)' : '(Signature & Date)', 14 + colW + 10, yPos + 18);
+  doc.text(isFr ? '(INFOHAS Rabat)' : '(INFOHAS Rabat)', 14 + colW * 2 + 5, yPos + 18);
+
+  addFooter(doc, schoolInfo, language);
+  downloadPdf(doc, `bulletin_${student.studentId}_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+/**
+ * Official Absence Warning Letter ("Avertissement d'Absence")
+ * Legal notice citing accumulated unexcused absences and disciplinary council summons.
+ */
+export function exportAbsenceWarningLetterPDF(
+  student: Student,
+  classObj: Class | undefined,
+  unexcusedDatesOrRecords: string[] | AttendanceRecord[],
+  schoolInfo?: SchoolInfo,
+  language: string = 'fr',
+  warningLevelOrOptions: 'warning_1' | 'warning_2' | 'discipline_council' | { level?: number | string } = 'warning_2'
+) {
+  let warningLevel: 'warning_1' | 'warning_2' | 'discipline_council' = 'warning_2';
+  if (typeof warningLevelOrOptions === 'string') {
+    warningLevel = warningLevelOrOptions;
+  } else if (warningLevelOrOptions && typeof warningLevelOrOptions === 'object') {
+    const lvl = warningLevelOrOptions.level;
+    if (lvl === 3 || lvl === '3' || lvl === 'discipline_council') warningLevel = 'discipline_council';
+    else if (lvl === 1 || lvl === '1' || lvl === 'warning_1') warningLevel = 'warning_1';
+    else warningLevel = 'warning_2';
+  }
+
+  const unexcusedDates: string[] = (unexcusedDatesOrRecords || []).map(item => {
+    if (typeof item === 'string') return item;
+    return item.date;
+  });
+
+  const isFr = language === 'fr';
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  let yPos = addHeader(doc, {
+    orientation: 'portrait',
+    title: warningLevel === 'discipline_council'
+      ? (isFr ? 'CONVOCATION AU CONSEIL DE DISCIPLINE' : 'DISCIPLINARY COUNCIL SUMMONS')
+      : (isFr ? "AVERTISSEMENT OFFICIEL D'ABSENCE" : 'OFFICIAL ABSENCE WARNING'),
+    schoolInfo,
+    language,
+  });
+
+  const refCode = `INFOHAS/DIR-${warningLevel.toUpperCase()}-${student.studentId}-${new Date().getFullYear()}`;
+
+  // Date and Reference
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(`${isFr ? 'Réf.' : 'Ref.'} : ${refCode}`, 14, yPos + 4);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${isFr ? 'Rabat, le' : 'Date:'} ${new Date().toLocaleDateString()}`, pageWidth - 14, yPos + 4, { align: 'right' });
+
+  yPos += 12;
+
+  // Addressed to
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(203, 213, 225);
+  doc.roundedRect(14, yPos, pageWidth - 28, 24, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(isFr ? 'DESTINATAIRE :' : 'TO :', 20, yPos + 6);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`${isFr ? "À l'attention de" : 'To the legal guardian of'} : M./Mme ${student.guardianName || 'le Tuteur Légal'}`, 20, yPos + 12);
+  doc.text(`${isFr ? "Concernant l'étudiant(e)" : 'Regarding student'} : ${student.fullName.toUpperCase()} (ID: ${student.studentId})`, 20, yPos + 17);
+  doc.text(`${isFr ? 'Classe / Groupe' : 'Class / Group'} : ${classObj?.name || student.className || '-'}`, 20, yPos + 22);
+
+  yPos += 30;
+
+  // Formal notice text
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(185, 28, 28); // red-700
+  const subjectText = warningLevel === 'discipline_council'
+    ? (isFr ? 'OBJET : CONVOCATION DEVANT LE CONSEIL DE DISCIPLINE POUR ABSENTÉISME CRITIQUE' : 'SUBJECT: DISCIPLINARY COUNCIL SUMMONS FOR EXCESSIVE ABSENCES')
+    : (isFr ? `OBJET : ${warningLevel === 'warning_2' ? '2ème AVERTISSEMENT ET MISE EN DEMEURE' : '1er AVERTISSEMENT'} POUR ABSENCES NON JUSTIFIÉES` : 'SUBJECT: FORMAL WARNING FOR UNEXCUSED ABSENCES');
+  doc.text(subjectText, 14, yPos);
+
+  yPos += 8;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(30, 41, 59);
+
+  const introText = isFr
+    ? `Madame, Monsieur,\n\nConformément au règlement intérieur et aux normes pédagogiques de l'INFOHAS, nous vous notifions par la présente que l'étudiant(e) mentionné(e) ci-dessus a cumulé un total de ${unexcusedDates.length} absences non justifiées au titre de la session en cours.`
+    : `Dear Guardian,\n\nIn accordance with the internal regulations and pedagogical standards of INFOHAS, we hereby notify you that the above-mentioned student has accumulated a total of ${unexcusedDates.length} unexcused absences during the current session.`;
+
+  const introLines = doc.splitTextToSize(introText, pageWidth - 28);
+  doc.text(introLines, 14, yPos);
+  yPos += introLines.length * 4.2 + 4;
+
+  // Dates Table
+  const dateRows = unexcusedDates.map((d, i) => [
+    `#${i + 1}`,
+    d,
+    isFr ? 'Journée Complète' : 'Full Day',
+    isFr ? 'Non Justifiée' : 'Unexcused',
+    isFr ? 'Infraction au Règlement Intérieur' : 'Violation of Academic Policy',
+  ]);
+
+  autoTable(doc, {
+    startY: yPos,
+    head: [[
+      'N°',
+      isFr ? "Date d'Absence" : 'Absence Date',
+      isFr ? 'Créneau' : 'Session',
+      isFr ? 'Statut' : 'Status',
+      isFr ? 'Observation' : 'Observation',
+    ]],
+    body: dateRows,
+    theme: 'grid',
+    headStyles: { fillColor: [220, 38, 38], fontSize: 7.5, fontStyle: 'bold', halign: 'center' },
+    bodyStyles: { fontSize: 7, cellPadding: 1.8 },
+    alternateRowStyles: { fillColor: [254, 242, 242] },
+    margin: { left: 14, right: 14 },
+    rowPageBreak: 'avoid',
+    columnStyles: {
+      0: { cellWidth: 12, halign: 'center' },
+      1: { cellWidth: 32, halign: 'center' },
+      2: { cellWidth: 35, halign: 'center' },
+      3: { cellWidth: 32, halign: 'center', textColor: [220, 38, 38] },
+      4: { cellWidth: 'auto' },
+    },
+  });
+
+  const tableFinalY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? yPos + 40;
+  yPos = tableFinalY + 8;
+
+  // Consequences & Warning statement
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(30, 41, 59);
+
+  const consequenceText = warningLevel === 'discipline_council'
+    ? (isFr
+        ? `L'accumulation de ces absences dépasse le seuil critique autorisé (8 absences). En conséquence, l'accès aux examens finaux est temporairement suspendu et l'étudiant(e) est formellement convoqué(e) avec son tuteur légal devant le Conseil de Discipline de l'établissement.\n\nToute justification médicale ou légale doit être déposée auprès de la direction sous 48 heures.`
+        : `The accumulation of these absences exceeds the critical threshold (8 absences). Consequently, exam registrations are temporarily suspended and the student is summoned with their guardian before the Disciplinary Council.`)
+    : (isFr
+        ? `Nous vous rappelons que l'assiduité est une condition impérative pour l'obtention du diplôme et l'autorisation aux évaluations pratiques et examens de fin de module. Tout dépassement supplémentaire entraînera la comparution immédiate devant le Conseil de Discipline.\n\nNous vous prions de prendre les mesures nécessaires afin de remédier à cette situation sans délai.`
+        : `Regular attendance is mandatory for academic progress. Any further unexcused absences will result in disciplinary sanctions.`);
+
+  const consLines = doc.splitTextToSize(consequenceText, pageWidth - 28);
+  doc.text(consLines, 14, yPos);
+  yPos += consLines.length * 4.2 + 10;
+
+  // Signature Block
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text(isFr ? 'La Direction Pédagogique' : 'The Pedagogical Direction', pageWidth - 60, yPos);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text(isFr ? 'Cachet & Signature officielle' : 'Official Seal & Signature', pageWidth - 60, yPos + 5);
+
+  addFooter(doc, schoolInfo, language);
+  downloadPdf(doc, `avertissement_${student.studentId}_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
 

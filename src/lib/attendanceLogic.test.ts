@@ -6,7 +6,7 @@ import {
   calculateAttendanceStats,
   type AttendanceRecordLike,
   type StudentLike,
-} from './attendanceLogic.ts';
+} from './attendanceLogic';
 
 test('recordAttendance adds new records and preserves other dates', () => {
   const existing: AttendanceRecordLike[] = [

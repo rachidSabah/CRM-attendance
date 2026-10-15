@@ -56,8 +56,13 @@ import {
   Flame, Award, Zap, Globe, Database, Activity, ToggleLeft, CreditCard, IdCard,
   Palette, HardDrive, ChevronDown, Info, RotateCcw, Archive, Cloud, FolderOpen,
   FileCheck, ListChecks, Target, Smartphone, WifiOff, History, FileUp,
-  AlertOctagon, Paperclip, BellRing
+  AlertOctagon, Paperclip, BellRing, QrCode, ShieldAlert
 } from 'lucide-react';
+
+import { QrScannerDialog } from '@/components/QrScannerDialog';
+import { JustificationsDialog } from '@/components/JustificationsDialog';
+import { EscalationsDialog } from '@/components/EscalationsDialog';
+import { BulletinDialog } from '@/components/BulletinDialog';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 
@@ -344,7 +349,7 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
   };
 
   const handleReport = () => {
-    const csvEsc = (v: string) => `"${String(v || '').replace(/"/g, '""')}"`;
+    const csvEsc = (v?: string | null) => `"${String(v || '').replace(/"/g, '""')}"`;
     const csvContent = `Student Report - ${student.fullName}\n\nBasic Info\nName,${csvEsc(student.fullName)}\nID,${csvEsc(student.studentId)}\nClass,${csvEsc(studentClass?.name)}\nAcademic Year,${csvEsc(student.academicYear)}\nStatus,${csvEsc(student.status)}\nGuardian,${csvEsc(student.guardianName)}\nPhone,${csvEsc(student.guardianPhone)}\nEmail,${csvEsc(student.email)}\n\nAttendance Summary\nTotal Days,${total}\nPresent,${present}\nAbsent,${absent}\nLate,${late}\nExcused,${excused}\nRate,${rate}%\nCurrent Streak,${curStreak}\nBest Streak,${bestStreak}\n\nRecent Grades\n${sg.slice(0, 10).map(g => `${csvEsc(modules.find(m => m.id === g.moduleId)?.name)},${csvEsc(g.grade)},${g.percentage || '-'}%`).join('\n')}`;
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `report_${student.studentId}.csv`; a.click();
@@ -368,6 +373,13 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
               {bestStreak > 2 && <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">⭐ {bestStreak}</Badge>}
               {avgGrade > 0 && <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">{language === 'fr' ? 'Moy : ' : 'Avg: '}{Math.round(avgGrade)}%</Badge>}
               {totalBp !== 0 && <Badge className={totalBp > 0 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}>{totalBp > 0 ? '+' : ''}{totalBp} {language === 'fr' ? 'pts' : 'pts'}</Badge>}
+              {absent >= 8 ? (
+                <Badge className="bg-red-600 text-white font-bold animate-pulse">⛔ Conseil Discipline</Badge>
+              ) : absent >= 5 ? (
+                <Badge className="bg-orange-600 text-white font-bold">⚠️ Avertissement 2</Badge>
+              ) : absent >= 3 ? (
+                <Badge className="bg-amber-600 text-white font-bold">⚠️ Avertissement 1</Badge>
+              ) : null}
             </div>
           </div>
           <div className="flex flex-wrap gap-2 shrink-0 w-full sm:w-auto">
@@ -377,6 +389,44 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
               onClick={() => handleExportPdf('auto')}
             >
               <FileText className="h-4 w-4 mr-1.5" />{language === 'fr' ? 'Rapport PDF' : 'PDF Report'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 sm:flex-none text-xs border-indigo-300 text-indigo-700 bg-indigo-50/50 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:text-indigo-300"
+              onClick={() => {
+                const st = useAppStore.getState();
+                pdfUtils.exportBulletinSemestrielPDF(student, studentClass, st.grades, st.modules, st.attendance, st.schoolInfo, language, { semester: 'Semestre 1' });
+                toast.success(language === 'fr' ? 'Bulletin semestriel généré' : 'Semester report card generated');
+              }}
+            >
+              <FileCheck className="h-4 w-4 mr-1.5 text-indigo-600" />{language === 'fr' ? 'Bulletin' : 'Report Card'}
+            </Button>
+            {absent >= 3 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 sm:flex-none text-xs border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-300 font-medium"
+                onClick={() => {
+                  const level = absent >= 8 ? 3 : absent >= 5 ? 2 : 1;
+                  const st = useAppStore.getState();
+                  pdfUtils.exportAbsenceWarningLetterPDF(student, studentClass, sa, st.schoolInfo, language, { level });
+                  toast.success(language === 'fr' ? `Lettre d'avertissement palier ${level} générée` : `Warning letter level ${level} generated`);
+                }}
+              >
+                <AlertTriangle className="h-4 w-4 mr-1.5 text-amber-600" />{language === 'fr' ? `Avertissement (${absent >= 8 ? 'Palier 3' : absent >= 5 ? 'Palier 2' : 'Palier 1'})` : `Warning (${absent >= 8 ? 'L3' : absent >= 5 ? 'L2' : 'L1'})`}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 sm:flex-none text-xs border-emerald-300 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300"
+              onClick={async () => {
+                await pdfUtils.exportStudentBadgesPDF([student], classes, useAppStore.getState().schoolInfo, language);
+                toast.success(language === 'fr' ? 'Badge QR généré' : 'QR Badge generated');
+              }}
+            >
+              <QrCode className="h-4 w-4 mr-1.5" />{language === 'fr' ? 'Badge QR' : 'QR Badge'}
             </Button>
             <Button variant="outline" size="sm" className="flex-1 sm:flex-none text-xs" onClick={handleReport}>
               <FileDown className="h-4 w-4 mr-1" />CSV
@@ -882,7 +932,7 @@ function DashboardPage() {
 
 // ==================== STUDENTS PAGE ====================
 function StudentsPage() {
-  const { students, classes, language, setStudents, setCurrentPage, academicYears, schoolInfo } = useAppStore();
+  const { students, classes, language, setStudents, setCurrentPage, academicYears, schoolInfo, currentUser } = useAppStore();
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -895,7 +945,28 @@ function StudentsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchClassId, setBatchClassId] = useState('');
 
-  const filtered = students.filter(s => {
+  // Teacher scoping
+  const visibleClasses = useMemo(() => {
+    if (currentUser?.role === 'teacher') {
+      const teacherName = (currentUser.fullName || currentUser.username || '').toLowerCase();
+      const teacherId = currentUser.id;
+      return classes.filter(c =>
+        (c.teacher && c.teacher.toLowerCase() === teacherName) ||
+        (c.assignedTeacherIds && c.assignedTeacherIds.includes(teacherId))
+      );
+    }
+    return classes;
+  }, [classes, currentUser]);
+
+  const scopedStudents = useMemo(() => {
+    if (currentUser?.role === 'teacher') {
+      const allowedClassIds = new Set(visibleClasses.map(c => c.id));
+      return students.filter(s => allowedClassIds.has(s.classId));
+    }
+    return students;
+  }, [students, visibleClasses, currentUser]);
+
+  const filtered = scopedStudents.filter(s => {
     const ms = (s.fullName || '').toLowerCase().includes(search.toLowerCase()) || (s.studentId || '').toLowerCase().includes(search.toLowerCase()) || (s.guardianName || '').toLowerCase().includes(search.toLowerCase());
     return ms && (classFilter === 'all' || s.classId === classFilter) && (statusFilter === 'all' || s.status === statusFilter);
   }).sort((a, b) => { if (sortBy === 'name_asc') return (a.fullName || '').localeCompare(b.fullName || ''); if (sortBy === 'name_desc') return (b.fullName || '').localeCompare(a.fullName || ''); if (sortBy === 'id') return (a.studentId || '').localeCompare(b.studentId || ''); if (sortBy === 'date') return (b.createdAt || '').localeCompare(a.createdAt || ''); return 0; });
@@ -995,15 +1066,27 @@ function StudentsPage() {
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1 flex flex-wrap gap-2">
           <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder={language === 'fr' ? 'Rechercher étudiants...' : 'Search students...'} value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
-          <Select value={classFilter} onValueChange={setClassFilter}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Toutes les Classes' : 'All Classes'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+          <Select value={classFilter} onValueChange={setClassFilter}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Toutes les Classes' : 'All Classes'}</SelectItem>{visibleClasses.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Statut' : 'Status'}</SelectItem><SelectItem value="active">{t('active', language)}</SelectItem><SelectItem value="abandoned">{t('abandoned', language)}</SelectItem><SelectItem value="graduated">{t('graduated', language)}</SelectItem><SelectItem value="terminated">{t('terminated', language)}</SelectItem></SelectContent></Select>
           <Select value={sortBy} onValueChange={setSortBy}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="name_asc">{language === 'fr' ? 'Nom A-Z' : 'Name A-Z'}</SelectItem><SelectItem value="name_desc">{language === 'fr' ? 'Nom Z-A' : 'Name Z-A'}</SelectItem><SelectItem value="id">{language === 'fr' ? 'ID Étudiant' : 'Student ID'}</SelectItem><SelectItem value="date">{language === 'fr' ? 'Date' : 'Date'}</SelectItem></SelectContent></Select>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" className={multiSelect ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-400' : ''} onClick={() => { setMultiSelect(!multiSelect); setSelectedIds(new Set()); }}><CheckCircle2 className="h-4 w-4 mr-1" />{language === 'fr' ? 'Sélection multiple' : 'Multi-select'}</Button>
           <label className="cursor-pointer"><input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} /><Button variant="outline" size="sm" className="border-orange-400 text-orange-600" asChild><span><Upload className="h-4 w-4 mr-1" />CSV</span></Button></label>
-          <Button variant="outline" size="sm" onClick={() => { exportUtils.exportStudentsCSV(students, classes, language); toast.success(language === 'fr' ? 'Exporté !' : 'Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
-          <Button variant="outline" size="sm" onClick={() => { pdfUtils.exportStudentsPDF(students, classes, schoolInfo, language); }}><Printer className="h-4 w-4 mr-1" />PDF</Button>
+          <Button variant="outline" size="sm" onClick={() => { exportUtils.exportStudentsCSV(scopedStudents, classes, language); toast.success(language === 'fr' ? 'Exporté !' : 'Exported!'); }}><FileDown className="h-4 w-4 mr-1" />CSV</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300"
+            onClick={async () => {
+              await pdfUtils.exportStudentBadgesPDF(filtered, classes, schoolInfo, language);
+              toast.success(language === 'fr' ? 'Planche de badges QR (A4) générée !' : 'A4 QR badges sheet generated!');
+            }}
+            title={language === 'fr' ? 'Générer planche de badges A4 avec QR codes' : 'Generate A4 sheet of student QR badges'}
+          >
+            <QrCode className="h-4 w-4 mr-1" />{language === 'fr' ? 'Badges QR' : 'QR Badges'}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { pdfUtils.exportStudentsPDF(filtered, classes, schoolInfo, language); }}><Printer className="h-4 w-4 mr-1" />PDF</Button>
           <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={openAdd}><Plus className="h-4 w-4 mr-1" />{language === 'fr' ? 'Ajouter' : 'Add'}</Button>
         </div>
       </div>
@@ -1024,12 +1107,40 @@ function StudentsPage() {
                 <TableCell className="hidden xl:table-cell">{s.guardianPhone ? <><span className="text-xs">{s.guardianPhone}</span><Button variant="ghost" size="icon" className="h-6 w-6 text-emerald-600" onClick={() => window.open(`https://wa.me/${formatWhatsAppPhone(s.guardianPhone)}?text=${encodeURIComponent('Hello from school!')}`, '_blank')}><MessageCircle className="h-3.5 w-3.5" /></Button></> : '-'}</TableCell>
                 <TableCell><div className="flex gap-1">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setProfileStudent(s)}><Eye className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20" title={language === 'fr' ? 'Rapport PDF' : 'PDF Report'} onClick={() => {
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-950/20" title={language === 'fr' ? 'Bulletin Semestriel PDF' : 'Semester Report Card PDF'} onClick={() => {
+                    const st = useAppStore.getState();
+                    const sc = classes.find(c => c.id === s.classId);
+                    pdfUtils.exportBulletinSemestrielPDF(s, sc, st.grades, st.modules, st.attendance, schoolInfo, language, { semester: 'Semestre 1' });
+                    toast.success(language === 'fr' ? 'Bulletin semestriel généré' : 'Semester report card generated');
+                  }}><FileCheck className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20" title={language === 'fr' ? 'Rapport 360 PDF' : '360 PDF Report'} onClick={() => {
                     const st = useAppStore.getState();
                     const sc = classes.find(c => c.id === s.classId);
                     pdfUtils.exportIndividualStudentPDF(s, sc, st.attendance, st.grades, st.modules, st.behavior, st.incidents, schoolInfo, language);
                     toast.success(language === 'fr' ? 'Rapport PDF généré' : 'PDF Report generated');
                   }}><FileText className="h-4 w-4" /></Button>
+                  {(() => {
+                    const st = useAppStore.getState();
+                    const unexcused = st.attendance.filter(a => a.studentId === s.id && a.status === 'absent').length;
+                    if (unexcused < 3) return null;
+                    const level = unexcused >= 8 ? 3 : unexcused >= 5 ? 2 : 1;
+                    return (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+                        title={language === 'fr' ? `Avertissement absence (Palier ${level})` : `Absence warning letter (Level ${level})`}
+                        onClick={() => {
+                          const sc = classes.find(c => c.id === s.classId);
+                          const sa = st.attendance.filter(a => a.studentId === s.id);
+                          pdfUtils.exportAbsenceWarningLetterPDF(s, sc, sa, schoolInfo, language, { level });
+                          toast.success(language === 'fr' ? `Avertissement palier ${level} généré` : `Level ${level} warning generated`);
+                        }}
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                      </Button>
+                    );
+                  })()}
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4" /></Button>
                 </div></TableCell>
@@ -1234,7 +1345,7 @@ function ModulesPage() {
     const file = e.target.files?.[0]; if (!file) return;
     setImporting(true); setImportSource('pdf');
     try {
-      const pdfjsLib = await import('pdfjs-dist' as unknown as Promise<typeof import('pdfjs-dist')>);
+      const pdfjsLib = await (import('pdfjs-dist') as unknown as Promise<typeof import('pdfjs-dist')>);
       pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -1273,11 +1384,21 @@ function ModulesPage() {
 
   const confirmImport = () => {
     if (importPreview.length === 0) return;
-    const newModules: Module[] = importPreview.map(m => ({ id: genId(), name: String(m.name || ''), code: String(m.code || ''), hours: Number(m.hours) || 0, year: String(m.year || ''), semester: String(m.semester || ''), description: String(m.description || ''), createdAt: new Date().toISOString() }));
+    const newModules: Module[] = importPreview.map(m => ({
+      id: genId(),
+      name: String(m.name || ''),
+      code: String(m.code || ''),
+      coef: Number(m.coef) || 1,
+      hours: Number(m.hours) || 0,
+      year: String(m.year || ''),
+      semester: String(m.semester || ''),
+      description: String(m.description || ''),
+      createdAt: new Date().toISOString()
+    }));
     const existingKeys = new Set(modules.map(m => `${m.code || ''}_${m.name || ''}`.toLowerCase()));
     const unique = newModules.filter(m => !existingKeys.has(`${m.code || ''}_${m.name || ''}`.toLowerCase()));
     setModules([...modules, ...unique]);
-    toast.success(`${unique.length} ${language === 'fr' ? 'modules import\u00e9s' : 'modules imported'}${newModules.length - unique.length > 0 ? ` (${newModules.length - unique.length} ${language === 'fr' ? 'doublons ignor\u00e9s' : 'duplicates skipped'})` : ''}`);
+    toast.success(`${unique.length} ${language === 'fr' ? 'modules importés' : 'modules imported'}${newModules.length - unique.length > 0 ? ` (${newModules.length - unique.length} ${language === 'fr' ? 'doublons ignorés' : 'duplicates skipped'})` : ''}`);
     setImportPreview([]); setImportSource(null);
   };
 
@@ -1288,13 +1409,13 @@ function ModulesPage() {
       <Dialog open={importPreview.length > 0} onOpenChange={(open) => { if (!open) cancelImport(); }}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{language === 'fr' ? 'Aper\u00e7u de l\'import' : 'Import Preview'} &mdash; {importPreview.length} {language === 'fr' ? 'modules d\u00e9tect\u00e9s' : 'modules detected'}</DialogTitle>
-            <DialogDescription>{importSource === 'csv' ? 'CSV' : 'PDF/OCR'} &mdash; {language === 'fr' ? 'V\u00e9rifiez les donn\u00e9es avant de confirmer' : 'Review data before confirming'}</DialogDescription>
+            <DialogTitle>{language === 'fr' ? 'Aperçu de l\'import' : 'Import Preview'} &mdash; {importPreview.length} {language === 'fr' ? 'modules détectés' : 'modules detected'}</DialogTitle>
+            <DialogDescription>{importSource === 'csv' ? 'CSV' : 'PDF/OCR'} &mdash; {language === 'fr' ? 'Vérifiez les données avant de confirmer' : 'Review data before confirming'}</DialogDescription>
           </DialogHeader>
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
-              <thead><tr className="border-b bg-muted/50"><th className="px-2 py-1.5 text-left">{language === 'fr' ? 'Nom' : 'Name'}</th><th className="px-2 py-1.5 text-left">Code</th><th className="px-2 py-1.5 text-left">{language === 'fr' ? 'Heures' : 'Hours'}</th><th className="px-2 py-1.5 text-left">{language === 'fr' ? 'Ann\u00e9e' : 'Year'}</th><th className="px-2 py-1.5 text-left">{language === 'fr' ? 'Semestre' : 'Semester'}</th><th className="px-2 py-1.5 text-left">Description</th></tr></thead>
-              <tbody>{importPreview.map((m, i) => (<tr key={i} className="border-b hover:bg-muted/30"><td className="px-2 py-1.5 font-medium">{String(m.name || '-')}</td><td className="px-2 py-1.5 text-muted-foreground">{String(m.code || '-')}</td><td className="px-2 py-1.5">{String(m.hours || 0)}</td><td className="px-2 py-1.5">{String(m.year || '-')}</td><td className="px-2 py-1.5">{String(m.semester || '-')}</td><td className="px-2 py-1.5 text-xs text-muted-foreground max-w-[200px] truncate">{String(m.description || '-')}</td></tr>))}</tbody>
+              <thead><tr className="border-b bg-muted/50"><th className="px-2 py-1.5 text-left">{language === 'fr' ? 'Nom' : 'Name'}</th><th className="px-2 py-1.5 text-left">Code</th><th className="px-2 py-1.5 text-left">Coef</th><th className="px-2 py-1.5 text-left">{language === 'fr' ? 'Heures' : 'Hours'}</th><th className="px-2 py-1.5 text-left">{language === 'fr' ? 'Année' : 'Year'}</th><th className="px-2 py-1.5 text-left">{language === 'fr' ? 'Semestre' : 'Semester'}</th><th className="px-2 py-1.5 text-left">Description</th></tr></thead>
+              <tbody>{importPreview.map((m, i) => (<tr key={i} className="border-b hover:bg-muted/30"><td className="px-2 py-1.5 font-medium">{String(m.name || '-')}</td><td className="px-2 py-1.5 text-muted-foreground">{String(m.code || '-')}</td><td className="px-2 py-1.5 font-semibold text-emerald-600">{String(m.coef || 1)}</td><td className="px-2 py-1.5">{String(m.hours || 0)}</td><td className="px-2 py-1.5">{String(m.year || '-')}</td><td className="px-2 py-1.5">{String(m.semester || '-')}</td><td className="px-2 py-1.5 text-xs text-muted-foreground max-w-[200px] truncate">{String(m.description || '-')}</td></tr>))}</tbody>
             </table>
           </div>
           <DialogFooter>
@@ -1309,11 +1430,20 @@ function ModulesPage() {
         {importing && <span className="text-sm text-muted-foreground flex items-center gap-1"><RefreshCw className="h-3 w-3 animate-spin" />{language === 'fr' ? 'Traitement en cours...' : 'Processing...'}</span>}
       </div>
       <CrudPage<Module> title={t('modules', language)} items={modules} setItems={setModules} columns={[
-    { key: 'name', label: language === 'fr' ? 'Nom' : 'Name' }, { key: 'code', label: 'Code' }, { key: 'year', label: language === 'fr' ? 'Année' : 'Year' }, { key: 'semester', label: language === 'fr' ? 'Semestre' : 'Semester' }, { key: 'hours', label: language === 'fr' ? 'Heures' : 'Hours' },
+    { key: 'name', label: language === 'fr' ? 'Nom' : 'Name' },
+    { key: 'code', label: 'Code' },
+    { key: 'coef', label: 'Coef.', render: (item: Module) => <span className="font-semibold text-emerald-600">{item.coef ?? 1}</span> },
+    { key: 'year', label: language === 'fr' ? 'Année' : 'Year' },
+    { key: 'semester', label: language === 'fr' ? 'Semestre' : 'Semester' },
+    { key: 'hours', label: language === 'fr' ? 'Heures' : 'Hours' },
   ]} renderForm={(item, onChange) => (
     <div className="grid gap-4">
       <div className="space-y-2"><Label>{language === 'fr' ? 'Nom du Module' : 'Module Name'} *</Label><Input value={String(item.name || '')} onChange={e => onChange({ ...item, name: e.target.value })} /></div>
-      <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>Code</Label><Input value={String(item.code || '')} onChange={e => onChange({ ...item, code: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Heures' : 'Hours'}</Label><Input type="number" value={String(item.hours || '')} onChange={e => onChange({ ...item, hours: parseInt(e.target.value) || 0 })} /></div></div>
+      <div className="grid grid-cols-3 gap-4">
+        <div className="space-y-2"><Label>Code</Label><Input value={String(item.code || '')} onChange={e => onChange({ ...item, code: e.target.value })} /></div>
+        <div className="space-y-2"><Label>Coefficient</Label><Input type="number" min="0.5" step="0.5" value={String(item.coef ?? 1)} onChange={e => onChange({ ...item, coef: parseFloat(e.target.value) || 1 })} /></div>
+        <div className="space-y-2"><Label>{language === 'fr' ? 'Heures' : 'Hours'}</Label><Input type="number" value={String(item.hours || '')} onChange={e => onChange({ ...item, hours: parseInt(e.target.value) || 0 })} /></div>
+      </div>
       <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>{language === 'fr' ? 'Année' : 'Year'}</Label><Input value={String(item.year || '')} onChange={e => onChange({ ...item, year: e.target.value })} /></div><div className="space-y-2"><Label>{language === 'fr' ? 'Semestre' : 'Semester'}</Label><Input value={String(item.semester || '')} onChange={e => onChange({ ...item, semester: e.target.value })} /></div></div>
       <div className="space-y-2"><Label>Description</Label><Textarea value={String(item.description || '')} onChange={e => onChange({ ...item, description: e.target.value })} rows={2} /></div>
     </div>
@@ -1324,7 +1454,7 @@ function ModulesPage() {
 
 // ==================== ATTENDANCE PAGE (with Quick Mode) ====================
 function AttendancePage() {
-  const { students, classes, attendance, setAttendance, templates, schoolInfo, language } = useAppStore();
+  const { students, classes, attendance, setAttendance, templates, schoolInfo, language, justifications, reviewJustification, currentUser } = useAppStore();
   const [selectedDate, setSelectedDate] = useState(localToday());
   const [selectedClass, setSelectedClass] = useState('all');
   const [overrides, setOverrides] = useState<Record<string, AttendanceRecord['status']>>({});
@@ -1332,8 +1462,33 @@ function AttendancePage() {
   const [quickMode, setQuickMode] = useState(false);
   const [quickBulk, setQuickBulk] = useState<Record<string, AttendanceRecord['status']>>({});
   const [emailNotifEnabled, setEmailNotifEnabled] = useState(() => { try { return typeof window !== 'undefined' && localStorage.getItem('attendance_email_notif') === 'true'; } catch { return false; } });
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [justificationsOpen, setJustificationsOpen] = useState(false);
+  const [escalationsOpen, setEscalationsOpen] = useState(false);
 
-  const filteredStudents = students.filter(s => s.status === 'active' && (!selectedClass || selectedClass === 'all' || s.classId === selectedClass));
+  // Teacher scoping
+  const visibleClasses = useMemo(() => {
+    if (currentUser?.role === 'teacher') {
+      const teacherName = (currentUser.fullName || currentUser.username || '').toLowerCase();
+      const teacherId = currentUser.id;
+      return classes.filter(c =>
+        (c.teacher && c.teacher.toLowerCase() === teacherName) ||
+        (c.assignedTeacherIds && c.assignedTeacherIds.includes(teacherId))
+      );
+    }
+    return classes;
+  }, [classes, currentUser]);
+
+  const scopedStudents = useMemo(() => {
+    if (currentUser?.role === 'teacher') {
+      const allowedClassIds = new Set(visibleClasses.map(c => c.id));
+      return students.filter(s => allowedClassIds.has(s.classId));
+    }
+    return students;
+  }, [students, visibleClasses, currentUser]);
+
+  const filteredStudents = scopedStudents.filter(s => s.status === 'active' && (!selectedClass || selectedClass === 'all' || s.classId === selectedClass));
+  const pendingJustificationsCount = (justifications || []).filter(j => j.status === 'pending').length;
   const baseRecords = useMemo(() => { const m: Record<string, AttendanceRecord['status']> = {}; attendance.filter(r => r.date === selectedDate).forEach(r => { m[r.studentId] = r.status; }); return m; }, [selectedDate, attendance]);
   const localRecords = useMemo(() => ({ ...baseRecords, ...overrides }), [baseRecords, overrides]);
 
@@ -1396,7 +1551,7 @@ function AttendancePage() {
 
   const counts = { present: Object.values(localRecords).filter(s => s === 'present').length, absent: Object.values(localRecords).filter(s => s === 'absent').length, late: Object.values(localRecords).filter(s => s === 'late').length, excused: Object.values(localRecords).filter(s => s === 'excused').length, unmarked: filteredStudents.length - Object.keys(localRecords).filter(id => filteredStudents.some(s => s.id === id)).length };
 
-  const sendAbsenceWhatsApp = (sid: string, forceStatus?: AttendanceRecord['status']) => {
+  const sendAbsenceWhatsApp = async (sid: string, forceStatus?: AttendanceRecord['status']) => {
     const s = students.find(st => st.id === sid); if (!s?.guardianPhone) return;
     const st = forceStatus || localRecords[sid];
     const cat = st === 'late' ? 'late' : 'absence';
@@ -1404,7 +1559,38 @@ function AttendancePage() {
     if (!tmpl) tmpl = templates.find(t => t.category === cat);
     if (!tmpl) tmpl = st === 'late' ? { id: '', name: 'Late', category: 'late', content: 'Hello {guardian_name}, {student_name} arrived late today ({date}).', createdAt: '' } : { id: '', name: 'Absence', category: 'absence', content: 'Dear {guardian_name}, {student_name} was marked absent today ({date}). Please contact us.', createdAt: '' };
     const msg = tmpl.content.replace(/{student_name}/g, s.fullName).replace(/{guardian_name}/g, s.guardianName || 'Guardian').replace(/{date}/g, new Date().toLocaleDateString()).replace(/{school_name}/g, schoolInfo?.name || 'School').replace(/{class}/g, classes.find(c => c.id === s.classId)?.name || 'class');
-    window.open(`https://wa.me/${formatWhatsAppPhone(s.guardianPhone)}?text=${encodeURIComponent(msg)}`, '_blank');
+    const normPhone = formatWhatsAppPhone(s.guardianPhone);
+    const waUrl = `https://wa.me/${normPhone}?text=${encodeURIComponent(msg)}`;
+
+    const mode = schoolInfo?.whatsappMode || 'wame';
+    if (mode === 'wame') {
+      window.open(waUrl, '_blank');
+      return;
+    }
+
+    try {
+      const res = await localApi('POST', '/api/whatsapp/dispatch', {
+        to: normPhone,
+        text: msg,
+        mode: mode === 'baileys' ? 'baileys' : 'auto',
+        gatewayUrl: schoolInfo?.whatsappGatewayUrl || 'http://127.0.0.1:8003'
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data.mode === 'baileys') {
+          toast.success(language === 'fr' ? 'WhatsApp envoyé automatiquement (Baileys) !' : 'WhatsApp sent automatically (Baileys)!');
+        } else if (data.url) {
+          window.open(data.url, '_blank');
+          if (data.notice) toast.info(data.notice);
+        } else {
+          window.open(waUrl, '_blank');
+        }
+      } else {
+        window.open(waUrl, '_blank');
+      }
+    } catch {
+      window.open(waUrl, '_blank');
+    }
   };
 
   // Email notification for absences
@@ -1537,10 +1723,42 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex gap-2 flex-1">
+        <div className="flex gap-2 flex-1 flex-wrap">
           <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="w-44" />
-          <Select value={selectedClass} onValueChange={setSelectedClass}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Toutes' : 'All'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+          <Select value={selectedClass} onValueChange={setSelectedClass}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Toutes' : 'All'}</SelectItem>{visibleClasses.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
           <Button variant={quickMode ? 'default' : 'outline'} size="sm" onClick={() => setQuickMode(!quickMode)} className={quickMode ? 'bg-emerald-600 text-white' : ''}><Zap className="h-4 w-4 mr-1" />{quickMode ? (language === 'fr' ? 'Mode Rapide' : 'Quick Mode') : (language === 'fr' ? 'Mode Normal' : 'Normal')}</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setQrScannerOpen(true)}
+            className="bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 font-medium"
+            title={language === 'fr' ? 'Pointer les présences par caméra ou scan de code-barres' : 'Scan student QR codes via camera or handheld scanner'}
+          >
+            <QrCode className="h-4 w-4 mr-1" />{language === 'fr' ? 'Scanner QR' : 'Scan QR'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setJustificationsOpen(true)}
+            className="relative border-sky-300 text-sky-700 bg-sky-50/50 hover:bg-sky-100 dark:bg-sky-950/30 dark:text-sky-300 font-medium"
+            title={language === 'fr' ? 'Consulter et valider les justificatifs d\'absence' : 'Review and approve excuse justifications'}
+          >
+            <ShieldAlert className="h-4 w-4 mr-1 text-sky-600" />{language === 'fr' ? 'Justificatifs' : 'Justifications'}
+            {pendingJustificationsCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 text-[10px] bg-sky-600 text-white rounded-full font-bold">
+                {pendingJustificationsCount}
+              </span>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEscalationsOpen(true)}
+            className="bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 font-medium"
+            title={language === 'fr' ? 'Surveiller les seuils d\'absences (3, 5, 8+) et déclencher les sanctions' : 'Absence thresholds (3, 5, 8+) and disciplinary alerts'}
+          >
+            <AlertOctagon className="h-4 w-4 mr-1 text-amber-600" />{language === 'fr' ? 'Escalade & Alertes' : 'Escalation'}
+          </Button>
         </div>
         <div className="flex flex-wrap gap-2">
           {!quickMode && <><Button variant="outline" size="sm" onClick={() => handleMarkAll('present')}><CheckCircle2 className="h-4 w-4 mr-1 text-emerald-600" />{t('present', language)}</Button>
@@ -1598,6 +1816,28 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
           })}
         </div>
       )}
+
+      {/* QR Scanner modal */}
+      <QrScannerDialog
+        open={qrScannerOpen}
+        onOpenChange={setQrScannerOpen}
+        targetDate={selectedDate}
+        onStudentScanned={(scannedStudent, record) => {
+          setOverrides(p => ({ ...p, [scannedStudent.id]: record.status }));
+        }}
+      />
+
+      {/* Excuse Justifications modal */}
+      <JustificationsDialog
+        open={justificationsOpen}
+        onOpenChange={setJustificationsOpen}
+      />
+
+      {/* Absence Escalations modal */}
+      <EscalationsDialog
+        open={escalationsOpen}
+        onOpenChange={setEscalationsOpen}
+      />
     </div>
   );
 }
@@ -2418,22 +2658,48 @@ function ExportDataDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
 
 // ==================== GRADES PAGE ====================
 function GradesPage() {
-  const { students, classes, modules, grades, language, setGrades } = useAppStore();
+  const { students, classes, modules, grades, language, setGrades, currentUser } = useAppStore();
   const [classFilter, setClassFilter] = useState('all');
   const [moduleFilter, setModuleFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [bulletinOpen, setBulletinOpen] = useState(false);
   const [editGrade, setEditGrade] = useState<Grade | null>(null);
   const [form, setForm] = useState({ studentId: '', moduleId: '', grade: '', percentage: '', date: localToday() });
 
+  // Teacher scoping
+  const visibleClasses = useMemo(() => {
+    if (currentUser?.role === 'teacher') {
+      const teacherName = (currentUser.fullName || currentUser.username || '').toLowerCase();
+      const teacherId = currentUser.id;
+      return classes.filter(c =>
+        (c.teacher && c.teacher.toLowerCase() === teacherName) ||
+        (c.assignedTeacherIds && c.assignedTeacherIds.includes(teacherId))
+      );
+    }
+    return classes;
+  }, [classes, currentUser]);
+
+  const scopedStudents = useMemo(() => {
+    if (currentUser?.role === 'teacher') {
+      const allowedClassIds = new Set(visibleClasses.map(c => c.id));
+      return students.filter(s => allowedClassIds.has(s.classId));
+    }
+    return students;
+  }, [students, visibleClasses, currentUser]);
+
   const filteredGrades = useMemo(() => {
     let g = [...grades];
+    if (currentUser?.role === 'teacher') {
+      const allowedIds = new Set(scopedStudents.map(s => s.id));
+      g = g.filter(gr => allowedIds.has(gr.studentId));
+    }
     if (classFilter !== 'all') {
-      const classStudentIds = new Set(students.filter(s => s.classId === classFilter).map(s => s.id));
+      const classStudentIds = new Set(scopedStudents.filter(s => s.classId === classFilter).map(s => s.id));
       g = g.filter(gr => classStudentIds.has(gr.studentId));
     }
     if (moduleFilter !== 'all') g = g.filter(gr => gr.moduleId === moduleFilter);
     return g.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  }, [grades, classFilter, moduleFilter, students]);
+  }, [grades, classFilter, moduleFilter, scopedStudents, currentUser]);
 
   const classAvg = filteredGrades.length > 0 ? Math.round(filteredGrades.reduce((s, g) => s + (g.percentage || 0), 0) / filteredGrades.length) : 0;
   const distData = useMemo(() => {
@@ -2472,10 +2738,23 @@ function GradesPage() {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div className="flex flex-wrap gap-2">
-          <Select value={classFilter} onValueChange={v => setClassFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('class_name', language)} /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Toutes les classes' : 'All Classes'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+          <Select value={classFilter} onValueChange={v => setClassFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('class_name', language)} /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Toutes les classes' : 'All Classes'}</SelectItem>{visibleClasses.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
           <Select value={moduleFilter} onValueChange={v => setModuleFilter(v)}><SelectTrigger className="w-40"><SelectValue placeholder={t('modules', language)} /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Tous les modules' : 'All Modules'}</SelectItem>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select>
         </div>
-        <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />{t('add', language)}</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setBulletinOpen(true)}
+            className="border-indigo-300 text-indigo-700 bg-indigo-50/50 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:text-indigo-300 font-medium"
+            title={language === 'fr' ? 'Générer et imprimer les bulletins semestriels officiels' : 'Generate and print official semester report cards'}
+          >
+            <FileCheck className="h-4 w-4 mr-1.5 text-indigo-600" />
+            {language === 'fr' ? 'Bulletins Semestriels' : 'Report Cards'}
+          </Button>
+          <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700">
+            <Plus className="h-4 w-4 mr-1" />{t('add', language)}
+          </Button>
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{language === 'fr' ? 'Moyenne de classe' : 'Class Average'}</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold" style={{ color: classAvg >= 70 ? '#10b981' : classAvg >= 50 ? '#f59e0b' : '#ef4444' }}>{classAvg}%</p><Progress value={classAvg} className="mt-2" /></CardContent></Card>
@@ -2488,7 +2767,7 @@ function GradesPage() {
       )}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent><DialogHeader><DialogTitle>{editGrade ? t('edit', language) : t('add', language)} {t('grades', language)}</DialogTitle></DialogHeader>
         <div className="grid gap-4 py-4">
-          <div className="space-y-2"><Label>{t('students', language)} *</Label><Select value={form.studentId} onValueChange={v => setForm({ ...form, studentId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{students.filter(s => classFilter === 'all' || s.classId === classFilter).map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label>{t('students', language)} *</Label><Select value={form.studentId} onValueChange={v => setForm({ ...form, studentId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{scopedStudents.filter(s => classFilter === 'all' || s.classId === classFilter).map(s => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2"><Label>{t('modules', language)} *</Label><Select value={form.moduleId} onValueChange={v => setForm({ ...form, moduleId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{modules.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2"><Label>{language === 'fr' ? 'Note' : 'Grade'}</Label><Input value={form.grade} onChange={e => setForm({ ...form, grade: e.target.value })} placeholder="A, B, 18/20" /></div>
@@ -2498,6 +2777,13 @@ function GradesPage() {
         </div>
         <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter>
       </DialogContent></Dialog>
+
+      {/* Bulletin Semestriel Modal */}
+      <BulletinDialog
+        open={bulletinOpen}
+        onOpenChange={setBulletinOpen}
+        initialClassId={classFilter !== 'all' ? classFilter : undefined}
+      />
     </div>
   );
 }
@@ -4256,7 +4542,7 @@ function SettingsPage() {
   // Load Google Identity Services script dynamically
   const loadGIS = (): Promise<void> => new Promise((resolve, reject) => {
     if (typeof window === 'undefined') return reject(new Error('No window'));
-    const w = window as unknown as Record<string, unknown>;
+    const w = window as unknown as { google?: { accounts?: { oauth2?: unknown } } };
     if (w.google?.accounts?.oauth2) { resolve(); return; }
     const s = document.createElement('script');
     s.src = 'https://accounts.google.com/gsi/client';
@@ -4828,6 +5114,7 @@ function SettingsPage() {
           <TabsTrigger value="notifications" className="flex items-center gap-1.5"><Bell className="h-4 w-4" />{language === 'fr' ? 'Notifications' : 'Notifications'}</TabsTrigger>
           <TabsTrigger value="cloudsync" className="flex items-center gap-1.5"><Cloud className="h-4 w-4" />{language === 'fr' ? 'Cloud Sync' : 'Cloud Sync'}</TabsTrigger>
           <TabsTrigger value="reminders" className="flex items-center gap-1.5"><BellRing className="h-4 w-4" />{language === 'fr' ? 'Rappels Auto' : 'Auto Reminders'}</TabsTrigger>
+          <TabsTrigger value="whatsapp" className="flex items-center gap-1.5"><MessageCircle className="h-4 w-4 text-emerald-600" />{language === 'fr' ? 'WhatsApp & Escalades' : 'WhatsApp & Escalation'}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -5264,8 +5551,184 @@ function SettingsPage() {
         <TabsContent value="reminders" className="space-y-4">
           <ReminderSettings />
         </TabsContent>
+        <TabsContent value="whatsapp" className="space-y-4">
+          <WhatsAppSettingsSection />
+        </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function WhatsAppSettingsSection() {
+  const { schoolInfo, setSchoolInfo, language } = useAppStore();
+  const [mode, setMode] = useState<'wame' | 'baileys' | 'hybrid'>(schoolInfo?.whatsappMode || 'hybrid');
+  const [gatewayUrl, setGatewayUrl] = useState(schoolInfo?.whatsappGatewayUrl || 'http://127.0.0.1:8003');
+  const [t1, setT1] = useState(schoolInfo?.absenceThreshold1 ?? 3);
+  const [t2, setT2] = useState(schoolInfo?.absenceThreshold2 ?? 5);
+  const [t3, setT3] = useState(schoolInfo?.absenceThreshold3 ?? 8);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleSave = () => {
+    setSchoolInfo({
+      ...(schoolInfo || { name: 'School' }),
+      whatsappMode: mode,
+      whatsappGatewayUrl: gatewayUrl,
+      absenceThreshold1: Number(t1) || 3,
+      absenceThreshold2: Number(t2) || 5,
+      absenceThreshold3: Number(t3) || 8,
+    });
+    toast.success(language === 'fr' ? 'Configuration WhatsApp & Escalades enregistrée' : 'WhatsApp & Escalation settings saved');
+  };
+
+  const handleTestGateway = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`${gatewayUrl.replace(/\/+$/, '')}/health`, { method: 'GET', signal: AbortSignal.timeout(3000) });
+      if (res.ok) {
+        setTestResult({
+          success: true,
+          message: language === 'fr' ? 'Passerelle Baileys connectée et opérationnelle !' : 'Baileys gateway online and healthy!'
+        });
+      } else {
+        setTestResult({
+          success: false,
+          message: `Passerelle a répondu HTTP ${res.status}`
+        });
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'offline';
+      setTestResult({
+        success: false,
+        message: language === 'fr'
+          ? `Impossible de joindre la passerelle sur ${gatewayUrl} (${errMsg}). Mode de secours wa.me disponible.`
+          : `Could not reach gateway on ${gatewayUrl} (${errMsg}). wa.me fallback will be used.`
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <MessageCircle className="h-5 w-5 text-emerald-600" />
+          {language === 'fr' ? 'Passerelle WhatsApp & Procédures Disciplinaires' : 'WhatsApp Gateway & Absence Escalation'}
+        </CardTitle>
+        <CardDescription>
+          {language === 'fr'
+            ? 'Configurez le mode d\'envoi WhatsApp (Baileys autonome ou liens directs wa.me) et les paliers d\'alertes.'
+            : 'Configure WhatsApp dispatch mechanism (Baileys daemon or wa.me deep links) and absence escalation thresholds.'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-3">
+          <Label className="font-semibold">{language === 'fr' ? 'Mode d\'expédition WhatsApp' : 'WhatsApp Dispatch Mode'}</Label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div
+              className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${mode === 'hybrid' ? 'border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20' : 'border-border hover:border-muted-foreground/50'}`}
+              onClick={() => setMode('hybrid')}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-semibold text-sm">🔄 Hybride (Recommandé)</span>
+                {mode === 'hybrid' && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
+              </div>
+              <p className="text-xs text-muted-foreground">Tente l'envoi direct via Baileys; si la passerelle est hors-ligne, bascule automatiquement sur WhatsApp Web/Desktop.</p>
+            </div>
+            <div
+              className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${mode === 'baileys' ? 'border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20' : 'border-border hover:border-muted-foreground/50'}`}
+              onClick={() => setMode('baileys')}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-semibold text-sm">🤖 Baileys Autonome</span>
+                {mode === 'baileys' && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
+              </div>
+              <p className="text-xs text-muted-foreground">Envoi silencieux en arrière-plan sans intervention humaine via le daemon local.</p>
+            </div>
+            <div
+              className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${mode === 'wame' ? 'border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20' : 'border-border hover:border-muted-foreground/50'}`}
+              onClick={() => setMode('wame')}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-semibold text-sm">📱 wa.me Standard</span>
+                {mode === 'wame' && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
+              </div>
+              <p className="text-xs text-muted-foreground">Ouvre WhatsApp Desktop ou Web dans le navigateur pour validation manuelle de chaque message.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>{language === 'fr' ? 'URL de la passerelle Baileys' : 'Baileys Gateway URL'}</Label>
+          <div className="flex gap-2">
+            <Input
+              value={gatewayUrl}
+              onChange={e => setGatewayUrl(e.target.value)}
+              placeholder="http://127.0.0.1:8003"
+              className="max-w-md font-mono text-sm"
+            />
+            <Button variant="outline" onClick={handleTestGateway} disabled={testing}>
+              {testing ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Activity className="h-4 w-4 mr-1" />}
+              {language === 'fr' ? 'Tester Connexion' : 'Test Connection'}
+            </Button>
+          </div>
+          {testResult && (
+            <div className={`p-2.5 rounded text-xs flex items-center gap-2 max-w-md ${testResult.success ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}`}>
+              {testResult.success ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />}
+              <span>{testResult.message}</span>
+            </div>
+          )}
+        </div>
+
+        <Separator />
+
+        <div className="space-y-3">
+          <Label className="font-semibold flex items-center gap-2">
+            <AlertOctagon className="h-4 w-4 text-amber-600" />
+            {language === 'fr' ? 'Paliers d\'escalade disciplinaire' : 'Absence Escalation Thresholds'}
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {language === 'fr'
+              ? 'Définissez le nombre d\'absences non justifiées déclenchant chaque niveau d\'alerte.'
+              : 'Set unexcused absence count that triggers each warning and sanction level.'}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-3 rounded-lg border bg-amber-50/30 dark:bg-amber-950/20 space-y-2">
+              <span className="font-bold text-xs text-amber-800 dark:text-amber-400">Palier 1 : Avertissement Initial</span>
+              <div className="flex items-center gap-2">
+                <Input type="number" min="1" max="20" value={t1} onChange={e => setT1(parseInt(e.target.value) || 3)} className="w-20" />
+                <span className="text-xs text-muted-foreground">absences</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">Alerte WhatsApp tuteur + email de rappel.</p>
+            </div>
+            <div className="p-3 rounded-lg border bg-orange-50/30 dark:bg-orange-950/20 space-y-2">
+              <span className="font-bold text-xs text-orange-800 dark:text-orange-400">Palier 2 : Mise en Demeure</span>
+              <div className="flex items-center gap-2">
+                <Input type="number" min="2" max="30" value={t2} onChange={e => setT2(parseInt(e.target.value) || 5)} className="w-20" />
+                <span className="text-xs text-muted-foreground">absences</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">Génération lettre officielle de mise en demeure PDF.</p>
+            </div>
+            <div className="p-3 rounded-lg border bg-red-50/30 dark:bg-red-950/20 space-y-2">
+              <span className="font-bold text-xs text-red-800 dark:text-red-400">Palier 3 : Conseil de Discipline</span>
+              <div className="flex items-center gap-2">
+                <Input type="number" min="3" max="50" value={t3} onChange={e => setT3(parseInt(e.target.value) || 8)} className="w-20" />
+                <span className="text-xs text-muted-foreground">absences</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">Convocation conseil, blocage inscription examens.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-2">
+          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>
+            <Save className="h-4 w-4 mr-1.5" />{language === 'fr' ? 'Enregistrer les paramètres' : 'Save Settings'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

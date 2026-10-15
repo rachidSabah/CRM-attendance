@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule, CalendarEvent } from './types';
+import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule, CalendarEvent, ExcuseJustification } from './types';
 import { api, setApiToken, localApi } from './api';
 
 interface AppState {
@@ -33,6 +33,7 @@ interface AppState {
   auditLog: AuditLogEntry[];
   savedSchedules: SavedSchedule[];
   calendarEvents: CalendarEvent[];
+  justifications: ExcuseJustification[];
   profileViewStudent: Student | null;
 
   // Settings
@@ -66,6 +67,9 @@ interface AppState {
   setAuditLog: (logs: AuditLogEntry[]) => void;
   setSavedSchedules: (schedules: SavedSchedule[]) => void;
   setCalendarEvents: (events: CalendarEvent[]) => void;
+  setJustifications: (justifications: ExcuseJustification[]) => void;
+  addJustification: (j: ExcuseJustification) => void;
+  reviewJustification: (id: string, status: 'approved' | 'rejected', notes?: string) => Promise<boolean>;
   setAdmins: (admins: Record<string, unknown>[]) => void;
   purgeCache: () => void;
   loadAllData: () => Promise<void>;
@@ -188,6 +192,7 @@ export async function pushToD1Now(selectivePayload?: Record<string, unknown>): P
       curriculum: state.curriculum,
       savedSchedules: state.savedSchedules,
       calendarEvents: state.calendarEvents,
+      justifications: state.justifications,
       schoolInfo: state.schoolInfo,
       admins: state.admins,
     };
@@ -426,6 +431,7 @@ export const useAppStore = create<AppState>((set) => ({
   auditLog: [],
   savedSchedules: getCachedData<SavedSchedule[]>('savedSchedules', []),
   calendarEvents: getCachedData<CalendarEvent[]>('calendarEvents', []),
+  justifications: getCachedData<ExcuseJustification[]>('justifications', []),
   profileViewStudent: null,
 
   language: 'en',
@@ -521,6 +527,44 @@ export const useAppStore = create<AppState>((set) => ({
   setAuditLog: (logs) => { set({ auditLog: logs }); },
   setSavedSchedules: (s) => { set({ savedSchedules: s }); saveCache('savedSchedules', s); pushToD1Async(); },
   setCalendarEvents: (e) => { set({ calendarEvents: e }); saveCache('calendarEvents', e); pushToD1Async(); },
+  setJustifications: (j) => { set({ justifications: j }); saveCache('justifications', j); pushToD1Async(); },
+  addJustification: (j) => {
+    const list = [j, ...useAppStore.getState().justifications];
+    set({ justifications: list });
+    saveCache('justifications', list);
+    pushToD1Async();
+  },
+  reviewJustification: async (id, status, notes) => {
+    const state = useAppStore.getState();
+    const target = state.justifications.find(j => j.id === id);
+    if (!target) return false;
+    const nowIso = new Date().toISOString();
+    const updated = state.justifications.map(j => j.id === id ? {
+      ...j,
+      status,
+      reviewedAt: nowIso,
+      reviewedBy: state.currentUser?.fullName || 'Direction',
+      reviewNotes: notes
+    } : j);
+    set({ justifications: updated });
+    saveCache('justifications', updated);
+
+    // If approved, update matching attendance record in store to excused
+    if (status === 'approved' && target.studentId && target.date) {
+      const attId = `att_${target.studentId}_${target.date}`;
+      const updatedAtt = state.attendance.map(a => (a.id === attId || (a.studentId === target.studentId && a.date === target.date)) ? {
+        ...a,
+        status: 'excused' as const,
+        justificationId: id,
+        justificationReason: target.reason,
+        notes: (a.notes ? `${a.notes} | ` : '') + `[Justifié: ${target.reason}]`
+      } : a);
+      set({ attendance: updatedAtt });
+      saveCache('attendance', updatedAtt);
+    }
+    pushToD1Async();
+    return true;
+  },
   setAdmins: (a) => { set({ admins: a }); saveCache('admins', a); pushToD1Async(); },
 
   purgeCache: () => {
@@ -529,7 +573,7 @@ export const useAppStore = create<AppState>((set) => ({
       behavior: [], tasks: [], incidents: [], teachers: [], employees: [],
       templates: [], academicYears: [], schoolInfo: {}, notifications: [],
       admins: [], schedules: [], exams: [], examGrades: [], curriculum: [],
-      auditLog: [], savedSchedules: [], calendarEvents: [],
+      auditLog: [], savedSchedules: [], calendarEvents: [], justifications: [],
     });
     const keep = ['attendance_auth', 'attendance_primary_color', 'attendance_language', 'attendance_d1_sync_state'];
     const keys = Object.keys(localStorage);
@@ -549,7 +593,7 @@ export const useAppStore = create<AppState>((set) => ({
     document.documentElement.style.setProperty('--app-primary-color', cachedColor);
     if (savedLang) {
       document.documentElement.lang = savedLang;
-      document.documentElement.dir = savedLang === 'ar' ? 'rtl' : 'ltr';
+      document.documentElement.dir = (savedLang as string) === 'ar' ? 'rtl' : 'ltr';
     }
 
     _loadingFromApi = true;
@@ -633,6 +677,7 @@ export const useAppStore = create<AppState>((set) => ({
               curriculum: (cd.curriculum || getCachedData('curriculum', [])) as CurriculumItem[],
               savedSchedules: (cd.savedSchedules || getCachedData('savedSchedules', [])) as SavedSchedule[],
               calendarEvents: (cd.calendarEvents || getCachedData('calendarEvents', [])) as CalendarEvent[],
+              justifications: (cd.justifications || getCachedData('justifications', [])) as ExcuseJustification[],
               admins: (cd.admins || getCachedData('admins', [])) as Record<string, unknown>[],
               schoolInfo: (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(cd.schoolInfo).length > 0) ? cd.schoolInfo as SchoolInfo : (getCachedData('schoolInfo', {}) as SchoolInfo),
               primaryColor: cachedColor,
@@ -658,6 +703,7 @@ export const useAppStore = create<AppState>((set) => ({
             if (cd.curriculum) saveCache('curriculum', cd.curriculum);
             if (cd.savedSchedules) saveCache('savedSchedules', cd.savedSchedules);
             if (cd.calendarEvents) saveCache('calendarEvents', cd.calendarEvents);
+            if (cd.justifications) saveCache('justifications', cd.justifications);
 
             updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });
 

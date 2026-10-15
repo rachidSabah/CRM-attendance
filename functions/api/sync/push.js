@@ -24,6 +24,7 @@ const ENTITY_TYPES = {
   curriculum: 'curriculum_items',
   calendarEvents: 'calendar_events',
   savedSchedules: 'saved_schedules',
+  justifications: 'justifications',
 };
 
 // Batch execution helper in chunks to stay well within D1 limits (up to 100 statements per batch)
