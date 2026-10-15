@@ -56,14 +56,23 @@ export async function onRequestPost(context) {
       []
     );
 
+function phoneFieldMatches(field, targetSuffix) {
+  if (!field) return false;
+  const parts = String(field).split(/[\/,;\n]|(?:\sou\s)/i);
+  return parts.some(part => {
+    const s = normalizePhoneSuffix(part);
+    return s && s === targetSuffix;
+  });
+}
+
     const matchingStudents = [];
     for (const row of studentRows) {
       try {
         const student = JSON.parse(row.data);
-        const gSuffix = normalizePhoneSuffix(student.guardianPhone);
-        const pSuffix = normalizePhoneSuffix(student.phone);
-
-        if (gSuffix === targetSuffix || pSuffix === targetSuffix) {
+        if (
+          phoneFieldMatches(student.guardianPhone, targetSuffix) ||
+          phoneFieldMatches(student.phone, targetSuffix)
+        ) {
           matchingStudents.push({
             id: student.id,
             fullName: student.fullName,
