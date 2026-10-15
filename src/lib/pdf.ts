@@ -130,7 +130,7 @@ function addHeader(doc: jsPDF, opts: PdfOptions) {
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   if (opts.schoolInfo?.field) {
-    doc.text(opts.schoolInfo.field, textX, yPos + 12);
+    doc.text(opts.schoolInfo.field, textX, yPos + 12, { maxWidth: Math.max(80, pageWidth - textX - 80) });
   }
 
   // Title and date on right
@@ -226,18 +226,19 @@ export function exportStudentsPDF(students: Student[], classes: Class[], schoolI
     body: tableData,
     theme: 'grid',
     headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
-    bodyStyles: { fontSize: 7 },
+    bodyStyles: { fontSize: 7, cellPadding: 1.8 },
     alternateRowStyles: { fillColor: [245, 247, 250] },
     margin: { left: 14, right: 14 },
+    rowPageBreak: 'avoid',
     columnStyles: {
-      0: { cellWidth: 35 },
-      1: { cellWidth: 22 },
-      2: { cellWidth: 25 },
-      3: { cellWidth: 18 },
-      4: { cellWidth: 25 },
-      5: { cellWidth: 25 },
-      6: { cellWidth: 30 },
-      7: { cellWidth: 20 },
+      0: { cellWidth: 44 }, // Nom
+      1: { cellWidth: 22, halign: 'center' }, // ID Étudiant
+      2: { cellWidth: 30 }, // Classe
+      3: { cellWidth: 20, halign: 'center' }, // Statut
+      4: { cellWidth: 50 }, // Tuteur
+      5: { cellWidth: 42 }, // Téléphone
+      6: { cellWidth: 'auto' }, // Email fills remaining page width to right margin
+      7: { cellWidth: 24, halign: 'center' }, // Créé
     },
   });
 
@@ -311,6 +312,7 @@ export function exportAttendancePDF(records: AttendanceRecord[], students: Stude
     bodyStyles: { fontSize: 7 },
     alternateRowStyles: { fillColor: [245, 247, 250] },
     margin: { left: 14, right: 14 },
+    rowPageBreak: 'avoid',
   });
 
   addFooter(doc, schoolInfo, language);
@@ -351,6 +353,7 @@ export function exportGradesPDF(grades: Grade[], students: Student[], modules: M
     bodyStyles: { fontSize: 7 },
     alternateRowStyles: { fillColor: [245, 247, 250] },
     margin: { left: 14, right: 14 },
+    rowPageBreak: 'avoid',
   });
 
   addFooter(doc, schoolInfo, language);
@@ -392,6 +395,7 @@ export function exportBehaviorPDF(records: BehaviorRecord[], students: Student[]
     bodyStyles: { fontSize: 7 },
     alternateRowStyles: { fillColor: [245, 247, 250] },
     margin: { left: 14, right: 14 },
+    rowPageBreak: 'avoid',
   });
 
   addFooter(doc, schoolInfo, language);
@@ -435,6 +439,7 @@ export function exportIncidentsPDF(incidents: Incident[], students: Student[], s
     bodyStyles: { fontSize: 7 },
     alternateRowStyles: { fillColor: [245, 247, 250] },
     margin: { left: 14, right: 14 },
+    rowPageBreak: 'avoid',
   });
 
   addFooter(doc, schoolInfo, language);
@@ -475,6 +480,7 @@ export function exportTasksPDF(tasks: Task[], schoolInfo: SchoolInfo, language: 
     bodyStyles: { fontSize: 7 },
     alternateRowStyles: { fillColor: [245, 247, 250] },
     margin: { left: 14, right: 14 },
+    rowPageBreak: 'avoid',
   });
 
   addFooter(doc, schoolInfo, language);
