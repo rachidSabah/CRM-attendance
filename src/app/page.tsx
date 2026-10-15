@@ -337,15 +337,15 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] overflow-hidden p-0 sm:p-0">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 border-b bg-muted/30">
-          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center text-xl sm:text-2xl shrink-0 overflow-hidden bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600">
+      <DialogContent className="max-w-4xl sm:max-w-4xl lg:max-w-5xl w-[96vw] max-h-[92vh] flex flex-col p-0 overflow-hidden">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-4 sm:p-5 border-b bg-muted/30">
+          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-xl sm:text-2xl shrink-0 overflow-hidden bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 font-bold">
             {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" /> : student.fullName.charAt(0)}
           </div>
           <div className="flex-1 min-w-0 w-full">
-            <h3 className="font-bold text-base sm:text-lg truncate">{student.fullName}</h3>
+            <h3 className="font-bold text-lg sm:text-xl truncate">{student.fullName}</h3>
             <p className="text-xs sm:text-sm text-muted-foreground">{student.studentId} • {studentClass?.name || '-'}</p>
-            <div className="flex flex-wrap gap-1 mt-1">
+            <div className="flex flex-wrap gap-1 mt-1.5">
               <Badge variant="secondary" className={statusColor}>{student.status}</Badge>
               <Badge variant="secondary">{student.academicYear || '-'}</Badge>
               {curStreak > 0 && <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">🔥 {curStreak}</Badge>}
@@ -354,30 +354,32 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
               {totalBp !== 0 && <Badge className={totalBp > 0 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}>{totalBp > 0 ? '+' : ''}{totalBp} {language === 'fr' ? 'pts' : 'pts'}</Badge>}
             </div>
           </div>
-          <div className="flex gap-1.5 shrink-0 w-full sm:w-auto">
+          <div className="flex gap-2 shrink-0 w-full sm:w-auto">
             <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleReport}><FileText className="h-4 w-4 mr-1" />{t('report', language) || 'Report'}</Button>
             <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleGenerateCard}><IdCard className="h-4 w-4 mr-1" />{t('generate_card', language) || 'Card'}</Button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm border-b">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm border-b bg-background">
           <div><span className="text-muted-foreground">{t('guardian', language)}:</span> <span className="font-medium ml-1">{student.guardianName || '-'}</span></div>
           <div><span className="text-muted-foreground">{t('phone', language)}:</span> <span className="font-medium ml-1">{student.guardianPhone || '-'}</span></div>
           <div><span className="text-muted-foreground">Email:</span> <span className="font-medium ml-1 break-all">{student.email || '-'}</span></div>
           <div><span className="text-muted-foreground">{language === 'fr' ? 'Adresse' : 'Address'}:</span> <span className="font-medium ml-1">{student.address || '-'}</span></div>
         </div>
 
-        <Tabs value={tab} onValueChange={setTab} className="px-3 sm:px-4">
-          <TabsList className="w-full grid grid-cols-5">
-            <TabsTrigger value="attendance" className="text-[10px] sm:text-xs px-1">{t('attendance', language)}</TabsTrigger>
-            <TabsTrigger value="trends" className="text-[10px] sm:text-xs px-1">{t('trends', language) || 'Trends'}</TabsTrigger>
-            <TabsTrigger value="grades" className="text-[10px] sm:text-xs px-1">{t('grades', language)}</TabsTrigger>
-            <TabsTrigger value="behavior" className="text-[10px] sm:text-xs px-1">{t('behavior', language)}</TabsTrigger>
-            <TabsTrigger value="incidents" className="text-[10px] sm:text-xs px-1">{t('incidents', language)}</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="px-4 sm:px-6 pt-3">
+          <Tabs value={tab} onValueChange={setTab} className="w-full">
+            <TabsList className="w-full flex overflow-x-auto sm:grid sm:grid-cols-5 p-1 gap-1">
+              <TabsTrigger value="attendance" className="text-xs sm:text-sm py-1.5 px-2 flex-1 sm:flex-none whitespace-nowrap">{t('attendance', language)}</TabsTrigger>
+              <TabsTrigger value="trends" className="text-xs sm:text-sm py-1.5 px-2 flex-1 sm:flex-none whitespace-nowrap">{t('trends', language) || 'Trends'}</TabsTrigger>
+              <TabsTrigger value="grades" className="text-xs sm:text-sm py-1.5 px-2 flex-1 sm:flex-none whitespace-nowrap">{t('grades', language)}</TabsTrigger>
+              <TabsTrigger value="behavior" className="text-xs sm:text-sm py-1.5 px-2 flex-1 sm:flex-none whitespace-nowrap">{t('behavior', language)}</TabsTrigger>
+              <TabsTrigger value="incidents" className="text-xs sm:text-sm py-1.5 px-2 flex-1 sm:flex-none whitespace-nowrap">{t('incidents', language)}</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
 
-        <ScrollArea className="h-[350px] px-3 sm:px-4 pb-4">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-3 max-h-[calc(92vh-220px)] custom-scrollbar">
           {tab === 'attendance' && <>
             <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2 mb-4">
               {[{ label: t('present', language), val: present, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30' }, { label: t('absent', language), val: absent, color: 'bg-red-100 text-red-700 dark:bg-red-900/30' }, { label: t('late', language), val: late, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30' }, { label: t('excused', language), val: excused, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30' }, { label: 'Rate', val: `${rate}%`, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30' }].map((s, i) => (
@@ -445,7 +447,7 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
               <span className="text-right sm:text-left"><span className={`font-semibold ${sevCol}`}>{inc.severity}</span> — {inc.description || '-'} <StatusBadge status={inc.status} /></span>
             </div>;
           }) : <EmptyState message={t('no_data', language)} />)}
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -601,16 +603,33 @@ function DashboardPage() {
   useEffect(() => { const t = setTimeout(() => setLoading(false), 500); return () => clearTimeout(t); }, []);
 
   const today = localToday();
-  const todayRecords = attendance.filter(r => r.date === today);
+  const activeStudents = useMemo(() => students.filter(s => s.status === 'active'), [students]);
+  const activeStudentIds = useMemo(() => new Set(activeStudents.map(s => s.id)), [activeStudents]);
+
+  const todayRecords = useMemo(() => {
+    return attendance.filter(r => r.date === today && activeStudentIds.has(r.studentId));
+  }, [attendance, today, activeStudentIds]);
+
   const presentCount = todayRecords.filter(r => r.status === 'present').length;
   const absentCount = todayRecords.filter(r => r.status === 'absent').length;
   const lateCount = todayRecords.filter(r => r.status === 'late').length;
+  const todayRate = todayRecords.length > 0 ? Math.round((presentCount / todayRecords.length) * 100) : 0;
 
   const last7Days = useMemo(() => {
     const days: Array<{ date: string; present: number; absent: number; late: number }> = [];
-    for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const ds = toLocalDate(d); const dr = attendance.filter(r => r.date === ds); days.push({ date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'short' }), present: dr.filter(r => r.status === 'present').length, absent: dr.filter(r => r.status === 'absent').length, late: dr.filter(r => r.status === 'late').length }); }
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const ds = toLocalDate(d);
+      const dr = attendance.filter(r => r.date === ds && activeStudentIds.has(r.studentId));
+      days.push({
+        date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'short' }),
+        present: dr.filter(r => r.status === 'present').length,
+        absent: dr.filter(r => r.status === 'absent').length,
+        late: dr.filter(r => r.status === 'late').length
+      });
+    }
     return days;
-  }, [attendance, language]);
+  }, [attendance, language, activeStudentIds]);
 
   // 30-day attendance trend line chart
   const last30Days = useMemo(() => {
@@ -618,12 +637,15 @@ function DashboardPage() {
     for (let i = 29; i >= 0; i--) {
       const d = new Date(); d.setDate(d.getDate() - i);
       const ds = toLocalDate(d);
-      const dr = attendance.filter(r => r.date === ds);
+      const dr = attendance.filter(r => r.date === ds && activeStudentIds.has(r.studentId));
       const rate = dr.length > 0 ? Math.round((dr.filter(r => r.status === 'present').length / dr.length) * 100) : 0;
-      days.push({ date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { month: 'short', day: 'numeric' }), rate });
+      days.push({
+        date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { month: 'short', day: 'numeric' }),
+        rate
+      });
     }
     return days;
-  }, [attendance, language]);
+  }, [attendance, language, activeStudentIds]);
 
   // Task summary
   const taskSummary = useMemo(() => ({
@@ -644,33 +666,54 @@ function DashboardPage() {
     })).filter(d => d.value > 0);
   }, [classes, students]);
 
-  // Grade distribution
+  // Grade distribution (properly mapping percentage and score/20)
   const gradeDistribution = useMemo(() => {
     const ranges = [
       { range: '0-10', min: 0, max: 10 },
       { range: '10-12', min: 10, max: 12 },
       { range: '12-14', min: 12, max: 14 },
       { range: '14-16', min: 14, max: 16 },
-      { range: '16-20', min: 16, max: 20 },
+      { range: '16-20', min: 16, max: 20.01 },
     ];
     return ranges.map(r => ({
       range: r.range,
       count: grades.filter(g => {
-        if (g.percentage == null) return false;
-        const pct = g.percentage as number;
-        return pct >= r.min && pct < (r.range === '16-20' ? 21 : r.max);
+        let score: number | null = null;
+        if (g.percentage != null) {
+          score = Number(g.percentage) / 5;
+        } else if (g.grade != null) {
+          const p = parseFloat(String(g.grade));
+          if (!isNaN(p)) score = p <= 20 ? p : p / 5;
+        }
+        if (score == null) return false;
+        return score >= r.min && score < r.max;
       }).length,
     }));
   }, [grades]);
 
-  const pieData = [{ name: t('present', language), value: presentCount, color: '#10b981' }, { name: t('absent', language), value: absentCount, color: '#ef4444' }, { name: t('late', language), value: lateCount, color: '#f59e0b' }].filter(d => d.value > 0);
-  const recentRecords = attendance.slice(-10).reverse();
+  const pieData = [
+    { name: t('present', language), value: presentCount, color: '#10b981' },
+    { name: t('absent', language), value: absentCount, color: '#ef4444' },
+    { name: t('late', language), value: lateCount, color: '#f59e0b' }
+  ].filter(d => d.value > 0);
+
+  // Recent attendance records filtered to existing students and sorted by newest date first
+  const recentRecords = useMemo(() => {
+    return attendance
+      .filter(r => students.some(st => st.id === r.studentId))
+      .sort((a, b) => {
+        const d = (b.date || '').localeCompare(a.date || '');
+        if (d !== 0) return d;
+        return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
+      })
+      .slice(0, 10);
+  }, [attendance, students]);
 
   const stats = [
-    { label: t('total_students', language), value: students.length, icon: <Users className="h-6 w-6" />, color: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30' },
-    { label: t('total_classes', language), value: classes.length, icon: <GraduationCap className="h-6 w-6" />, color: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30' },
-    { label: t('today_attendance', language), value: todayRecords.length, icon: <ClipboardCheck className="h-6 w-6" />, color: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30' },
-    { label: t('present_today', language), value: presentCount, icon: <CheckCircle2 className="h-6 w-6" />, color: 'text-purple-600 bg-purple-100 dark:bg-purple-900/30' },
+    { label: t('total_students', language), value: activeStudents.length, subtitle: `${students.length} ${language === 'fr' ? 'total' : 'total'}`, icon: <Users className="h-6 w-6" />, color: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30' },
+    { label: t('total_classes', language), value: classes.length, subtitle: `${classEnrollment.length} ${language === 'fr' ? 'actives' : 'active'}`, icon: <GraduationCap className="h-6 w-6" />, color: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30' },
+    { label: t('today_attendance', language), value: `${todayRecords.length}/${activeStudents.length}`, subtitle: `${presentCount} ${t('present', language)}, ${absentCount} ${t('absent', language)}`, icon: <ClipboardCheck className="h-6 w-6" />, color: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30' },
+    { label: language === 'fr' ? 'Taux de présence' : 'Attendance Rate', value: `${todayRate}%`, subtitle: today, icon: <CheckCircle2 className="h-6 w-6" />, color: 'text-purple-600 bg-purple-100 dark:bg-purple-900/30' },
   ];
 
   if (loading) return <div className="space-y-6"><div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}</div><Skeleton className="h-64 rounded-xl" /></div>;
@@ -678,7 +721,18 @@ function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((s, i) => <Card key={i} className="border-0 shadow-sm"><CardContent className="p-4 flex items-center gap-4"><div className={`p-3 rounded-xl ${s.color}`}>{s.icon}</div><div><p className="text-2xl font-bold">{s.value}</p><p className="text-xs text-muted-foreground">{s.label}</p></div></CardContent></Card>)}
+        {stats.map((s, i) => (
+          <Card key={i} className="border-0 shadow-sm">
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className={`p-3 rounded-xl shrink-0 ${s.color}`}>{s.icon}</div>
+              <div className="min-w-0 flex-1">
+                <p className="text-2xl font-bold truncate">{s.value}</p>
+                <p className="text-xs text-muted-foreground truncate">{s.label}</p>
+                {s.subtitle && <p className="text-[10px] text-muted-foreground/80 truncate mt-0.5">{s.subtitle}</p>}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
       <Card className="border-0 shadow-sm"><CardHeader className="pb-3"><CardTitle className="text-base">{t('quick_actions', language)}</CardTitle></CardHeader><CardContent>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -743,13 +797,57 @@ function DashboardPage() {
 
       <div className="grid lg:grid-cols-2 gap-6">
         <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-base">{language === "fr" ? "Distribution d'Aujourd'hui" : "Today's Distribution"}</CardTitle></CardHeader><CardContent><div className="h-64">{pieData.length > 0 ? <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>{pieData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}</Pie><ReTooltip /></PieChart></ResponsiveContainer> : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>}</div></CardContent></Card>
-        <Card className="border-0 shadow-sm"><CardHeader className="pb-3"><CardTitle className="text-base">{t('recent_activity', language)}</CardTitle></CardHeader><CardContent>
-          {recentRecords.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
-            <div className="max-h-64 overflow-y-auto custom-scrollbar"><Table><TableHeader><TableRow><TableHead>{t('students', language)}</TableHead><TableHead>{t('calendar', language)}</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
-              {recentRecords.map(r => { const s = students.find(st => st.id === r.studentId); return <TableRow key={r.id}><TableCell className="font-medium">{s?.fullName || 'Unknown'}</TableCell><TableCell>{r.date}</TableCell><TableCell><StatusBadge status={r.status} /></TableCell></TableRow>; })}
-            </TableBody></Table></div>
-          )}
-        </CardContent></Card>
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-3 flex flex-row items-center justify-between">
+            <CardTitle className="text-base">{t('recent_activity', language)}</CardTitle>
+            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => setCurrentPage('attendance')}>
+              {t('attendance', language)} &rarr;
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {recentRecords.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
+              <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('students', language)}</TableHead>
+                      <TableHead>{t('calendar', language)}</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentRecords.map(r => {
+                      const s = students.find(st => st.id === r.studentId);
+                      if (!s) return null;
+                      const c = classes.find(cls => cls.id === s.classId);
+                      return (
+                        <TableRow
+                          key={r.id}
+                          className="cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => useAppStore.setState({ profileViewStudent: s } as Partial<typeof useAppStore.getState>)}
+                        >
+                          <TableCell className="font-medium py-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-xs font-bold shrink-0">
+                                {s.fullName.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs sm:text-sm font-medium truncate">{s.fullName}</p>
+                                <p className="text-[10px] text-muted-foreground truncate">{c?.name || '-'}</p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs sm:text-sm text-muted-foreground py-2">{r.date}</TableCell>
+                          <TableCell className="py-2"><StatusBadge status={r.status} /></TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
