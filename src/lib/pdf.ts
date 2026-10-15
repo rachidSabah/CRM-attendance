@@ -1,14 +1,23 @@
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import jsPDFRaw, { jsPDF as jsPDFNamed } from 'jspdf';
+import autoTableRaw, { autoTable as autoTableNamed } from 'jspdf-autotable';
 import type { Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, SchoolInfo, ClassScheduleEntry } from './types';
 
-type Orientation = 'portrait' | 'landscape';
+// Universally resolve jsPDF and autoTable for both Next.js bundling and Node ESM
+// @ts-expect-error fallback constructor resolution
+const jsPDF: typeof jsPDFNamed = jsPDFNamed || (jsPDFRaw as unknown as { jsPDF: typeof jsPDFNamed })?.jsPDF || jsPDFRaw;
+// @ts-expect-error fallback autoTable resolution
+const autoTable: typeof autoTableNamed = autoTableNamed || autoTableRaw;
 
-interface PdfOptions {
-  orientation: Orientation;
+export type Orientation = 'portrait' | 'landscape';
+
+export interface PdfOptions {
+  orientation: Orientation | 'auto';
   title: string;
-  schoolInfo: SchoolInfo;
+  schoolInfo?: SchoolInfo;
   language?: string;
+  columnCount?: number;
+  estimatedContentWidthMm?: number;
+  format?: 'a4' | 'a3' | 'auto' | [number, number];
 }
 
 // ---- Translation helper ----
@@ -16,9 +25,71 @@ function t(en: string, fr: string, lang: string): string {
   return lang === 'fr' ? fr : en;
 }
 
+export function createSmartDoc(opts: PdfOptions) {
+  const cols = opts.columnCount || 6;
+  const estWidth = opts.estimatedContentWidthMm || (cols * 22);
+
+  // 1. Determine orientation
+  // A4 portrait printable width: ~182mm (210 - 28)
+  // A4 landscape printable width: ~269mm (297 - 28)
+  let orientation: Orientation = 'portrait';
+  if (opts.orientation === 'landscape') {
+    orientation = 'landscape';
+  } else if (opts.orientation === 'portrait') {
+    orientation = 'portrait';
+  } else {
+    // 'auto': default to landscape if width > 180mm or more than 6 columns
+    if (estWidth > 180 || cols > 6) {
+      orientation = 'landscape';
+    } else {
+      orientation = 'portrait';
+    }
+  }
+
+  // 2. Determine format / page dimension:
+  // If landscape content cannot fit on standard A4 (269mm printable width),
+  // automatically adapt to A3 (420mm) or custom width so content is never cut off!
+  let format: string | [number, number] = 'a4';
+
+  if (opts.format && opts.format !== 'auto') {
+    format = opts.format;
+  } else {
+    const printableNeeded = Math.max(estWidth, cols * 9);
+    if (orientation === 'landscape') {
+      if (printableNeeded > 269) {
+        if (printableNeeded <= 390) {
+          format = 'a3';
+        } else {
+          format = [Math.ceil(printableNeeded + 35), 210];
+        }
+      }
+    } else {
+      if (printableNeeded > 182) {
+        orientation = 'landscape';
+        if (printableNeeded > 269) {
+          format = printableNeeded <= 390 ? 'a3' : [Math.ceil(printableNeeded + 35), 210];
+        }
+      }
+    }
+  }
+
+  const doc = new jsPDF({
+    orientation,
+    unit: 'mm',
+    format,
+  });
+
+  return {
+    doc,
+    orientation,
+    format,
+    pageWidth: doc.internal.pageSize.getWidth(),
+    pageHeight: doc.internal.pageSize.getHeight(),
+  };
+}
+
 function createDoc(opts: PdfOptions) {
-  const doc = new jsPDF({ orientation: opts.orientation, unit: 'mm', format: 'a4' });
-  return { doc, pageWidth: doc.internal.pageSize.getWidth() };
+  return createSmartDoc(opts);
 }
 
 function addHeader(doc: jsPDF, opts: PdfOptions) {
@@ -27,7 +98,7 @@ function addHeader(doc: jsPDF, opts: PdfOptions) {
   let yPos = 10;
 
   // Logo on left
-  if (opts.schoolInfo.logo) {
+  if (opts.schoolInfo?.logo) {
     try {
       const logoStr = opts.schoolInfo.logo;
       let imgData: string;
@@ -52,13 +123,13 @@ function addHeader(doc: jsPDF, opts: PdfOptions) {
   }
 
   // School name + field on left
-  const textX = opts.schoolInfo.logo ? 32 : 14;
+  const textX = opts.schoolInfo?.logo ? 32 : 14;
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
-  doc.text(opts.schoolInfo.name || 'INFOHAS', textX, yPos + 6);
+  doc.text(opts.schoolInfo?.name || 'INFOHAS', textX, yPos + 6);
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  if (opts.schoolInfo.field) {
+  if (opts.schoolInfo?.field) {
     doc.text(opts.schoolInfo.field, textX, yPos + 12);
   }
 
@@ -79,7 +150,7 @@ function addHeader(doc: jsPDF, opts: PdfOptions) {
   return yPos + 4;
 }
 
-function addFooter(doc: jsPDF, schoolInfo: SchoolInfo, language: string = 'en') {
+function addFooter(doc: jsPDF, schoolInfo?: SchoolInfo, language: string = 'en') {
   const pageCount = doc.getNumberOfPages();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -94,9 +165,9 @@ function addFooter(doc: jsPDF, schoolInfo: SchoolInfo, language: string = 'en') 
     const emailLabel = t('Email:', 'Email :', language);
 
     const footerParts = [
-      schoolInfo.address || '',
-      schoolInfo.phone ? `${telLabel} ${schoolInfo.phone}` : '',
-      schoolInfo.email ? `${emailLabel} ${schoolInfo.email}` : ''
+      schoolInfo?.address || '',
+      schoolInfo?.phone ? `${telLabel} ${schoolInfo.phone}` : '',
+      schoolInfo?.email ? `${emailLabel} ${schoolInfo.email}` : ''
     ].filter(Boolean);
 
     const footerText = footerParts.join('  |  ');
@@ -109,8 +180,14 @@ function addFooter(doc: jsPDF, schoolInfo: SchoolInfo, language: string = 'en') 
   }
 }
 
-function downloadPdf(doc: jsPDF, filename: string) {
-  doc.save(filename);
+export function downloadPdf(doc: jsPDF, filename: string) {
+  if (typeof window !== 'undefined' && doc?.save) {
+    try {
+      doc.save(filename);
+    } catch (e) {
+      console.warn('PDF download error:', e);
+    }
+  }
 }
 
 // ==================== EXPORT FUNCTIONS ====================
@@ -909,72 +986,894 @@ export function exportAllSchedulesPDF(
   doc.save(`all_schedules_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
+// ==================== INDIVIDUAL STUDENT REPORT PDF ====================
+export interface ExportIndividualOptions {
+  orientation?: 'portrait' | 'landscape' | 'auto';
+  includeHistory?: boolean;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export function exportIndividualStudentPDF(
+  student: Student,
+  studentClass: Class | undefined,
+  attendance: AttendanceRecord[],
+  grades: Grade[],
+  modules: Module[],
+  behavior: BehaviorRecord[],
+  incidents: Incident[],
+  schoolInfo?: SchoolInfo,
+  language: string = 'en',
+  options: ExportIndividualOptions = {}
+) {
+  const lang = language;
+  const isFr = lang === 'fr';
+
+  // Filter attendance records for this student
+  let studentAtt = attendance.filter(a => a.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  if (options.dateFrom) studentAtt = studentAtt.filter(a => a.date >= options.dateFrom!);
+  if (options.dateTo) studentAtt = studentAtt.filter(a => a.date <= options.dateTo!);
+
+  // Filter grades, behavior, incidents
+  const studentGrades = grades.filter(g => g.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const studentBehavior = behavior.filter(b => b.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const studentIncidents = incidents.filter(i => i.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  // KPI Calculations
+  const totalAtt = studentAtt.length;
+  const present = studentAtt.filter(a => a.status === 'present').length;
+  const absent = studentAtt.filter(a => a.status === 'absent').length;
+  const late = studentAtt.filter(a => a.status === 'late').length;
+  const excused = studentAtt.filter(a => a.status === 'excused').length;
+  const attRate = totalAtt > 0 ? Math.round((present / totalAtt) * 100) : 0;
+
+  // Streaks
+  let curStreak = 0;
+  for (const r of studentAtt) { if (r.status === 'present') curStreak++; else break; }
+  let bestStreak = 0, tmp = 0;
+  for (const r of [...studentAtt].sort((a, b) => (a.date || '').localeCompare(b.date || ''))) {
+    if (r.status === 'present') { tmp++; bestStreak = Math.max(bestStreak, tmp); } else tmp = 0;
+  }
+
+  // Academic average
+  const validGrades = studentGrades.filter(g => g.percentage != null);
+  const avgGrade = validGrades.length > 0
+    ? Math.round(validGrades.reduce((sum, g) => sum + (g.percentage as number), 0) / validGrades.length)
+    : 0;
+
+  // Behavior points
+  const totalBehaviorPoints = studentBehavior.reduce((sum, b) => sum + (b.points || 0), 0);
+  const posCount = studentBehavior.filter(b => b.type === 'positive').length;
+  const negCount = studentBehavior.filter(b => b.type === 'negative').length;
+
+  const title = isFr ? "FICHE DE SUIVI INDIVIDUELLE" : "INDIVIDUAL STUDENT REPORT";
+  const preferredOrientation = options.orientation || 'auto';
+
+  // Smart document creation with auto orientation
+  const { doc, pageWidth, pageHeight } = createSmartDoc({
+    title,
+    schoolInfo,
+    language: lang,
+    columnCount: preferredOrientation === 'landscape' ? 8 : 4,
+    estimatedContentWidthMm: preferredOrientation === 'landscape' ? 220 : 170,
+    orientation: preferredOrientation === 'auto' ? 'portrait' : preferredOrientation,
+  });
+
+  let yPos = addHeader(doc, { orientation: preferredOrientation === 'landscape' ? 'landscape' : 'portrait', title, schoolInfo, language: lang });
+
+  // 1. Student Identity Header Box
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.3);
+  const boxHeight = 32;
+  doc.roundedRect(14, yPos, pageWidth - 28, boxHeight, 3, 3, 'FD');
+
+  let textLeft = 20;
+  if (student.photo) {
+    try {
+      let photoData = student.photo;
+      let format = 'JPEG';
+      if (photoData.includes('base64,')) {
+        const parts = photoData.split('base64,');
+        photoData = parts[1];
+        const m = parts[0].match(/data:image\/(png|jpeg|jpg|gif|webp)/i);
+        if (m) format = m[1].toUpperCase() === 'PNG' ? 'PNG' : 'JPEG';
+      }
+      doc.addImage(photoData, format, 18, yPos + 4, 24, 24);
+      textLeft = 46;
+    } catch {
+      doc.setFillColor(209, 250, 229);
+      doc.circle(28, yPos + 16, 10, 'F');
+      doc.setTextColor(5, 150, 105);
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text(student.fullName.charAt(0).toUpperCase(), 28, yPos + 19.5, { align: 'center' });
+      textLeft = 44;
+    }
+  } else {
+    doc.setFillColor(209, 250, 229);
+    doc.circle(28, yPos + 16, 10, 'F');
+    doc.setTextColor(5, 150, 105);
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text(student.fullName.charAt(0).toUpperCase(), 28, yPos + 19.5, { align: 'center' });
+    textLeft = 44;
+  }
+
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text(student.fullName, textLeft, yPos + 8);
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(`${isFr ? 'ID Étudiant' : 'Student ID'}: ${student.studentId || '-'}  |  ${isFr ? 'Classe' : 'Class'}: ${studentClass?.name || student.className || '-'}  |  ${isFr ? 'Année' : 'Year'}: ${student.academicYear || '-'}`, textLeft, yPos + 14);
+
+  const statusLabel = student.status?.toUpperCase() || 'ACTIVE';
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  if (student.status === 'active') doc.setTextColor(16, 185, 129);
+  else if (student.status === 'abandoned') doc.setTextColor(245, 158, 11);
+  else if (student.status === 'terminated') doc.setTextColor(239, 68, 68);
+  else doc.setTextColor(59, 130, 246);
+  doc.text(`[${statusLabel}]`, textLeft, yPos + 20);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(71, 85, 105);
+  const colRightX = Math.max(textLeft + 80, pageWidth - 90);
+  doc.text(`${isFr ? 'Tuteur' : 'Guardian'}: ${student.guardianName || '-'}`, colRightX, yPos + 8);
+  doc.text(`${isFr ? 'Tél' : 'Phone'}: ${student.guardianPhone || student.phone || '-'}`, colRightX, yPos + 14);
+  doc.text(`Email: ${student.email || student.guardianEmail || '-'}`, colRightX, yPos + 20);
+  if (student.address) {
+    doc.text(`${isFr ? 'Adresse' : 'Address'}: ${student.address.slice(0, 35)}`, colRightX, yPos + 26);
+  }
+
+  yPos += boxHeight + 6;
+
+  // 2. Executive KPI Summary Cards
+  const kpiCount = 4;
+  const kpiGap = 4;
+  const kpiWidth = (pageWidth - 28 - (kpiGap * (kpiCount - 1))) / kpiCount;
+  const kpiHeight = 16;
+
+  const kpis = [
+    {
+      title: isFr ? 'Taux de Présence' : 'Attendance Rate',
+      val: `${attRate}%`,
+      sub: `${present}P • ${absent}A • ${late}L • ${excused}E`,
+      color: attRate >= 90 ? [16, 185, 129] : (attRate >= 75 ? [245, 158, 11] : [239, 68, 68]),
+    },
+    {
+      title: isFr ? 'Série Présence' : 'Attendance Streak',
+      val: curStreak > 0 ? `${curStreak} ${isFr ? 'jrs' : 'days'}` : '0',
+      sub: `${isFr ? 'Record' : 'Best'}: ${bestStreak} ${isFr ? 'jrs' : 'days'}`,
+      color: [14, 165, 233],
+    },
+    {
+      title: isFr ? 'Moyenne Générale' : 'Academic Average',
+      val: validGrades.length > 0 ? `${avgGrade}%` : 'N/A',
+      sub: `${validGrades.length} ${isFr ? 'notes saisies' : 'grades recorded'}`,
+      color: avgGrade >= 70 ? [16, 185, 129] : (avgGrade >= 50 ? [245, 158, 11] : [239, 68, 68]),
+    },
+    {
+      title: isFr ? 'Points Comportement' : 'Behavior Score',
+      val: `${totalBehaviorPoints >= 0 ? '+' : ''}${totalBehaviorPoints} pts`,
+      sub: `${posCount} + / ${negCount} - / ${studentIncidents.length} ${isFr ? 'inc.' : 'inc.'}`,
+      color: totalBehaviorPoints >= 0 ? [16, 185, 129] : [239, 68, 68],
+    },
+  ];
+
+  kpis.forEach((kpi, idx) => {
+    const kX = 14 + idx * (kpiWidth + kpiGap);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(kX, yPos, kpiWidth, kpiHeight, 2, 2, 'FD');
+
+    doc.setFillColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.rect(kX, yPos, 2, kpiHeight, 'F');
+
+    doc.setFontSize(6.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text(kpi.title, kX + 5, yPos + 4.5);
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.text(kpi.val, kX + 5, yPos + 10);
+
+    doc.setFontSize(6);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(148, 163, 184);
+    doc.text(kpi.sub, kX + 5, yPos + 14);
+  });
+
+  yPos += kpiHeight + 6;
+
+  // 3. Section: Academic Grades / Evaluations
+  doc.setFontSize(9.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(16, 185, 129);
+  doc.text(isFr ? "1. ÉVALUATIONS ACADÉMIQUES & NOTES" : "1. ACADEMIC EVALUATIONS & GRADES", 14, yPos);
+  yPos += 3;
+
+  const gradesTableData = studentGrades.map(g => {
+    const mod = modules.find(m => m.id === g.moduleId);
+    const pct = g.percentage != null ? `${g.percentage}%` : '-';
+    const status = g.percentage != null
+      ? (g.percentage >= 50 ? (isFr ? 'Validé' : 'Passed') : (isFr ? 'Non validé' : 'Failed'))
+      : '-';
+    return [
+      mod?.name || (isFr ? 'Module' : 'Module'),
+      mod?.code || '-',
+      g.grade || '-',
+      pct,
+      g.date || '-',
+      status,
+    ];
+  });
+
+  if (gradesTableData.length === 0) {
+    gradesTableData.push([
+      isFr ? 'Aucune note enregistrée' : 'No grades recorded',
+      '-', '-', '-', '-', '-'
+    ]);
+  }
+
+  autoTable(doc, {
+    startY: yPos,
+    head: [[
+      isFr ? 'Module / Matière' : 'Module / Course',
+      isFr ? 'Code' : 'Code',
+      isFr ? 'Note' : 'Grade',
+      isFr ? 'Pourcentage' : 'Percentage',
+      isFr ? 'Date' : 'Date',
+      isFr ? 'Résultat' : 'Status',
+    ]],
+    body: gradesTableData,
+    theme: 'grid',
+    headStyles: { fillColor: [16, 185, 129], fontSize: 7, fontStyle: 'bold', halign: 'center' },
+    bodyStyles: { fontSize: 6.5, cellPadding: 1.2 },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    margin: { left: 14, right: 14 },
+    columnStyles: {
+      0: { cellWidth: 'auto' },
+      1: { cellWidth: 20, halign: 'center' },
+      2: { cellWidth: 18, halign: 'center' },
+      3: { cellWidth: 24, halign: 'center' },
+      4: { cellWidth: 24, halign: 'center' },
+      5: { cellWidth: 24, halign: 'center' },
+    },
+  });
+
+  yPos = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? yPos) + 6;
+
+  if (yPos > pageHeight - 65) {
+    doc.addPage();
+    yPos = 20;
+  }
+
+  // 4. Section: Attendance History
+  doc.setFontSize(9.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(16, 185, 129);
+  doc.text(isFr ? "2. HISTORIQUE DE PRÉSENCE DÉTAILLÉ" : "2. DETAILED ATTENDANCE HISTORY", 14, yPos);
+  yPos += 3;
+
+  const attTableData = studentAtt.slice(0, 35).map(a => {
+    let dayName = '-';
+    try {
+      const d = new Date(a.date + 'T00:00:00');
+      dayName = d.toLocaleDateString(isFr ? 'fr-FR' : 'en-US', { weekday: 'short' });
+    } catch {}
+
+    const statusMap = {
+      present: isFr ? 'Présent' : 'Present',
+      absent: isFr ? 'Absent' : 'Absent',
+      late: isFr ? 'En Retard' : 'Late',
+      excused: isFr ? 'Excusé' : 'Excused',
+    };
+
+    return [
+      a.date,
+      dayName,
+      statusMap[a.status] || a.status,
+      a.notes || '-',
+    ];
+  });
+
+  if (attTableData.length === 0) {
+    attTableData.push([
+      isFr ? 'Aucun enregistrement' : 'No records',
+      '-', '-', '-'
+    ]);
+  }
+
+  autoTable(doc, {
+    startY: yPos,
+    head: [[
+      isFr ? 'Date' : 'Date',
+      isFr ? 'Jour' : 'Day',
+      isFr ? 'Statut' : 'Status',
+      isFr ? 'Remarques / Observations' : 'Notes / Remarks',
+    ]],
+    body: attTableData,
+    theme: 'grid',
+    headStyles: { fillColor: [16, 185, 129], fontSize: 7, fontStyle: 'bold', halign: 'center' },
+    bodyStyles: { fontSize: 6.5, cellPadding: 1.2 },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    margin: { left: 14, right: 14 },
+    columnStyles: {
+      0: { cellWidth: 26, halign: 'center' },
+      1: { cellWidth: 20, halign: 'center' },
+      2: { cellWidth: 26, halign: 'center' },
+      3: { cellWidth: 'auto' },
+    },
+  });
+
+  yPos = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? yPos) + 6;
+
+  // 5. Behavior & Incidents (if any)
+  if (studentBehavior.length > 0 || studentIncidents.length > 0) {
+    if (yPos > pageHeight - 55) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    doc.setFontSize(9.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(16, 185, 129);
+    doc.text(isFr ? "3. COMPORTEMENT & INCIDENTS" : "3. BEHAVIOR & INCIDENTS", 14, yPos);
+    yPos += 3;
+
+    const behTableData = [
+      ...studentBehavior.map(b => [
+        b.date,
+        b.type === 'positive' ? (isFr ? 'Positif (+)' : 'Positive (+)') : (isFr ? 'Négatif (-)' : 'Negative (-)'),
+        b.description,
+        `${b.points != null && b.points > 0 ? '+' : ''}${b.points || 0} pts`,
+        b.teacher || '-',
+      ]),
+      ...studentIncidents.map(i => [
+        i.date || '-',
+        isFr ? `Incident: ${i.severity}` : `Incident: ${i.severity}`,
+        `${i.incidentType || ''}: ${i.description || ''}`,
+        i.actionTaken || (isFr ? 'En cours' : 'Pending'),
+        i.reportedBy || '-',
+      ]),
+    ];
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [[
+        isFr ? 'Date' : 'Date',
+        isFr ? 'Type' : 'Type',
+        isFr ? 'Description' : 'Description',
+        isFr ? 'Points / Action' : 'Points / Action',
+        isFr ? 'Enseignant / Signalé' : 'Teacher / Reported',
+      ]],
+      body: behTableData,
+      theme: 'grid',
+      headStyles: { fillColor: [16, 185, 129], fontSize: 7, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 6.5, cellPadding: 1.2 },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { left: 14, right: 14 },
+      columnStyles: {
+        0: { cellWidth: 24, halign: 'center' },
+        1: { cellWidth: 26 },
+        2: { cellWidth: 'auto' },
+        3: { cellWidth: 28, halign: 'center' },
+        4: { cellWidth: 32 },
+      },
+    });
+
+    yPos = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? yPos) + 8;
+  }
+
+  // 6. Signature Block
+  if (yPos > pageHeight - 35) {
+    doc.addPage();
+    yPos = 20;
+  }
+
+  const sigBoxWidth = (pageWidth - 36) / 2;
+  const sigBoxHeight = 22;
+
+  doc.setFillColor(252, 252, 252);
+  doc.setDrawColor(203, 213, 225);
+  doc.roundedRect(14, yPos, sigBoxWidth, sigBoxHeight, 2, 2, 'FD');
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(71, 85, 105);
+  doc.text(isFr ? "Signature du Tuteur / Parent" : "Parent / Guardian Signature", 18, yPos + 5);
+
+  doc.roundedRect(14 + sigBoxWidth + 8, yPos, sigBoxWidth, sigBoxHeight, 2, 2, 'FD');
+  doc.text(isFr ? "Cachet et Signature de la Direction" : "School Stamp & Director Signature", 14 + sigBoxWidth + 12, yPos + 5);
+
+  addFooter(doc, schoolInfo, lang);
+
+  const cleanName = (student.studentId || student.fullName).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `student_report_${cleanName}_${new Date().toISOString().slice(0, 10)}.pdf`;
+  downloadPdf(doc, filename);
+}
+
+// ==================== GROUP / CLASS REPORT PDF ====================
+export interface GroupReportOptions {
+  dateFrom?: string;
+  dateTo?: string;
+  mode?: 'matrix' | 'summary' | 'auto';
+  orientation?: 'portrait' | 'landscape' | 'auto';
+}
+
+export function exportClassGroupReportPDF(
+  targetClass: Class | undefined,
+  students: Student[],
+  attendance: AttendanceRecord[],
+  grades: Grade[],
+  modules: Module[],
+  schoolInfo?: SchoolInfo,
+  language: string = 'en',
+  options: GroupReportOptions = {}
+) {
+  const lang = language;
+  const isFr = lang === 'fr';
+
+  const classStudents = targetClass
+    ? students.filter(s => s.classId === targetClass.id && s.status === 'active')
+    : students.filter(s => s.status === 'active');
+
+  const classStudentIds = new Set(classStudents.map(s => s.id));
+
+  let classAtt = attendance.filter(a => classStudentIds.has(a.studentId));
+  if (options.dateFrom) classAtt = classAtt.filter(a => a.date >= options.dateFrom!);
+  if (options.dateTo) classAtt = classAtt.filter(a => a.date <= options.dateTo!);
+
+  const distinctDates = Array.from(new Set(classAtt.map(a => a.date))).sort();
+  const isMatrix = options.mode === 'matrix' || (options.mode !== 'summary' && distinctDates.length > 0 && distinctDates.length <= 31);
+
+  if (isMatrix && distinctDates.length > 0) {
+    // ---- MATRIX MODE (DATES AS COLUMNS) ----
+    const dateColsCount = distinctDates.length;
+    // Estimated width: # (7mm) + Name (32mm) + ID (16mm) + Stats (P, A, L, Rate) (30mm) + Dates (6.5mm each)
+    const estimatedWidth = 85 + (dateColsCount * 6.5);
+
+    const title = targetClass
+      ? `${isFr ? 'GRILLE DE PRÉSENCE' : 'ATTENDANCE MATRIX'} - ${targetClass.name.toUpperCase()}`
+      : (isFr ? 'GRILLE DE PRÉSENCE GLOBALE' : 'GLOBAL ATTENDANCE MATRIX');
+
+    // Automatically determine orientation and format (A4 Landscape, A3, or custom width if > 269mm)
+    const { doc, pageWidth } = createSmartDoc({
+      title,
+      schoolInfo,
+      language: lang,
+      columnCount: dateColsCount + 6,
+      estimatedContentWidthMm: estimatedWidth,
+      orientation: 'landscape',
+    });
+
+    let yPos = addHeader(doc, { orientation: 'landscape', title, schoolInfo, language: lang });
+
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    const rangeText = `${isFr ? 'Période' : 'Period'}: ${options.dateFrom || distinctDates[0]} → ${options.dateTo || distinctDates[distinctDates.length - 1]}  |  ${isFr ? 'Total Étudiants' : 'Total Students'}: ${classStudents.length}  |  ${isFr ? 'Séances' : 'Dates'}: ${dateColsCount}`;
+    doc.text(rangeText, 14, yPos);
+    yPos += 5;
+
+    const dateHeaders = distinctDates.map(d => {
+      const parts = d.split('-');
+      return parts.length === 3 ? `${parts[2]}/${parts[1]}` : d;
+    });
+
+    const headRow = [
+      '#',
+      isFr ? 'Étudiant' : 'Student',
+      'ID',
+      ...dateHeaders,
+      'P',
+      'A',
+      'L',
+      isFr ? 'Taux' : 'Rate',
+    ];
+
+    const attMap = new Map<string, string>();
+    classAtt.forEach(a => {
+      attMap.set(`${a.studentId}_${a.date}`, a.status);
+    });
+
+    const bodyRows = classStudents.map((st, idx) => {
+      let pCount = 0;
+      let aCount = 0;
+      let lCount = 0;
+      let totalMarked = 0;
+
+      const dateStatuses = distinctDates.map(d => {
+        const status = attMap.get(`${st.id}_${d}`);
+        if (status === 'present') { pCount++; totalMarked++; return 'P'; }
+        if (status === 'absent') { aCount++; totalMarked++; return 'A'; }
+        if (status === 'late') { lCount++; totalMarked++; return 'L'; }
+        if (status === 'excused') { totalMarked++; return 'E'; }
+        return '-';
+      });
+
+      const rate = totalMarked > 0 ? `${Math.round((pCount / totalMarked) * 100)}%` : '-';
+
+      return [
+        String(idx + 1),
+        st.fullName,
+        st.studentId || '-',
+        ...dateStatuses,
+        String(pCount),
+        String(aCount),
+        String(lCount),
+        rate,
+      ];
+    });
+
+    const colStyles: Record<number, { cellWidth?: number; halign?: 'left' | 'center' | 'right' }> = {
+      0: { cellWidth: 7, halign: 'center' },
+      1: { cellWidth: 32, halign: 'left' },
+      2: { cellWidth: 16, halign: 'center' },
+    };
+
+    for (let i = 0; i < dateColsCount; i++) {
+      colStyles[3 + i] = { cellWidth: dateColsCount > 20 ? 5.5 : 7, halign: 'center' };
+    }
+
+    const sumIdx = 3 + dateColsCount;
+    colStyles[sumIdx] = { cellWidth: 7, halign: 'center' };
+    colStyles[sumIdx + 1] = { cellWidth: 7, halign: 'center' };
+    colStyles[sumIdx + 2] = { cellWidth: 7, halign: 'center' };
+    colStyles[sumIdx + 3] = { cellWidth: 11, halign: 'center' };
+
+    const fontSize = dateColsCount > 25 ? 5 : (dateColsCount > 15 ? 5.5 : 6.5);
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [headRow],
+      body: bodyRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [16, 185, 129],
+        fontSize: fontSize,
+        fontStyle: 'bold',
+        halign: 'center',
+        cellPadding: 1,
+      },
+      bodyStyles: {
+        fontSize: fontSize,
+        cellPadding: 1,
+        valign: 'middle',
+      },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { left: 14, right: 14 },
+      tableWidth: 'wrap',
+      columnStyles: colStyles,
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index >= 3 && data.column.index < 3 + dateColsCount) {
+          const val = String(data.cell.raw);
+          if (val === 'P') {
+            data.cell.styles.textColor = [16, 185, 129];
+            data.cell.styles.fontStyle = 'bold';
+          } else if (val === 'A') {
+            data.cell.styles.textColor = [239, 68, 68];
+            data.cell.styles.fontStyle = 'bold';
+          } else if (val === 'L') {
+            data.cell.styles.textColor = [245, 158, 11];
+          } else if (val === 'E') {
+            data.cell.styles.textColor = [59, 130, 246];
+          }
+        }
+      },
+    });
+
+    addFooter(doc, schoolInfo, lang);
+    const cleanClassName = (targetClass?.name || 'all').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `attendance_matrix_${cleanClassName}_${new Date().toISOString().slice(0, 10)}.pdf`;
+    downloadPdf(doc, filename);
+
+  } else {
+    // ---- SUMMARY ROSTER MODE ----
+    const title = targetClass
+      ? `${isFr ? 'RAPPORT DE CLASSE' : 'CLASS REPORT'} - ${targetClass.name.toUpperCase()}`
+      : (isFr ? 'RAPPORT DE GROUPE' : 'GROUP REPORT');
+
+    const { doc, pageWidth } = createSmartDoc({
+      title,
+      schoolInfo,
+      language: lang,
+      columnCount: 11,
+      estimatedContentWidthMm: 240,
+      orientation: 'landscape',
+    });
+
+    let yPos = addHeader(doc, { orientation: 'landscape', title, schoolInfo, language: lang });
+
+    const classGrades = grades.filter(g => classStudentIds.has(g.studentId));
+    const totalPresent = classAtt.filter(a => a.status === 'present').length;
+    const totalAbsent = classAtt.filter(a => a.status === 'absent').length;
+    const totalLate = classAtt.filter(a => a.status === 'late').length;
+    const totalRecords = classAtt.length;
+    const classAttRate = totalRecords > 0 ? Math.round((totalPresent / totalRecords) * 100) : 0;
+
+    const validGrades = classGrades.filter(g => g.percentage != null);
+    const classAvgGrade = validGrades.length > 0
+      ? Math.round(validGrades.reduce((sum, g) => sum + (g.percentage as number), 0) / validGrades.length)
+      : 0;
+
+    const kpiCount = 4;
+    const kpiGap = 4;
+    const kpiWidth = (pageWidth - 28 - (kpiGap * (kpiCount - 1))) / kpiCount;
+    const kpiHeight = 14;
+
+    const summaryKpis = [
+      { label: isFr ? 'Étudiants Inscrits' : 'Enrolled Students', val: String(classStudents.length), color: [16, 185, 129] },
+      { label: isFr ? 'Taux Présence Global' : 'Overall Attendance', val: `${classAttRate}%`, color: classAttRate >= 80 ? [16, 185, 129] : [245, 158, 11] },
+      { label: isFr ? 'Moyenne Académique' : 'Academic Average', val: `${classAvgGrade}%`, color: [14, 165, 233] },
+      { label: isFr ? 'Total Absences' : 'Total Absences', val: `${totalAbsent} (${totalLate} ${isFr ? 'retards' : 'late'})`, color: [239, 68, 68] },
+    ];
+
+    summaryKpis.forEach((kpi, idx) => {
+      const kX = 14 + idx * (kpiWidth + kpiGap);
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(kX, yPos, kpiWidth, kpiHeight, 2, 2, 'FD');
+
+      doc.setFillColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+      doc.rect(kX, yPos, 2, kpiHeight, 'F');
+
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.text(kpi.label, kX + 5, yPos + 4.5);
+
+      doc.setFontSize(9.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+      doc.text(kpi.val, kX + 5, yPos + 10.5);
+    });
+
+    yPos += kpiHeight + 6;
+
+    const tableData = classStudents.map((st, idx) => {
+      const stAtt = classAtt.filter(a => a.studentId === st.id);
+      const stPresent = stAtt.filter(a => a.status === 'present').length;
+      const stAbsent = stAtt.filter(a => a.status === 'absent').length;
+      const stLate = stAtt.filter(a => a.status === 'late').length;
+      const stRate = stAtt.length > 0 ? `${Math.round((stPresent / stAtt.length) * 100)}%` : '-';
+
+      const stGrades = classGrades.filter(g => g.studentId === st.id && g.percentage != null);
+      const stAvg = stGrades.length > 0
+        ? `${Math.round(stGrades.reduce((sum, g) => sum + (g.percentage as number), 0) / stGrades.length)}%`
+        : '-';
+
+      return [
+        String(idx + 1),
+        st.fullName,
+        st.studentId || '-',
+        targetClass?.name || st.className || '-',
+        String(stAtt.length),
+        String(stPresent),
+        String(stAbsent),
+        String(stLate),
+        stRate,
+        stAvg,
+        st.status?.toUpperCase() || 'ACTIVE',
+      ];
+    });
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [[
+        '#',
+        isFr ? 'Nom & Prénom' : 'Full Name',
+        'ID',
+        isFr ? 'Classe' : 'Class',
+        isFr ? 'Total' : 'Total',
+        isFr ? 'Présent' : 'Present',
+        isFr ? 'Absent' : 'Absent',
+        isFr ? 'Retard' : 'Late',
+        isFr ? 'Taux Présence' : 'Att. Rate',
+        isFr ? 'Moyenne' : 'Avg Grade',
+        isFr ? 'Statut' : 'Status',
+      ]],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [16, 185, 129], fontSize: 7.5, fontStyle: 'bold', halign: 'center' },
+      bodyStyles: { fontSize: 7, cellPadding: 1.5, valign: 'middle' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { left: 14, right: 14 },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 'auto' },
+        2: { cellWidth: 20, halign: 'center' },
+        3: { cellWidth: 24 },
+        4: { cellWidth: 14, halign: 'center' },
+        5: { cellWidth: 16, halign: 'center' },
+        6: { cellWidth: 16, halign: 'center' },
+        7: { cellWidth: 16, halign: 'center' },
+        8: { cellWidth: 22, halign: 'center' },
+        9: { cellWidth: 20, halign: 'center' },
+        10: { cellWidth: 20, halign: 'center' },
+      },
+    });
+
+    addFooter(doc, schoolInfo, lang);
+    const cleanClassName = (targetClass?.name || 'all').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `class_report_${cleanClassName}_${new Date().toISOString().slice(0, 10)}.pdf`;
+    downloadPdf(doc, filename);
+  }
+}
+
 // ==================== PROGRESS REPORT PDF ====================
 export function exportProgressReportPDF(
   reports: Array<Record<string, unknown>>,
-  _classSummary: Record<string, number>,
-  schoolInfo: Record<string, string | undefined>,
-  _dateRange: Record<string, string>,
-  teacherComment: string,
+  classSummary: Record<string, number> = {},
+  schoolInfo?: SchoolInfo | Record<string, string | undefined>,
+  dateRange: Record<string, string> = {},
+  teacherComment: string = '',
   language: string = 'en'
 ) {
   const lang = language;
+  const isFr = lang === 'fr';
   const si = schoolInfo as SchoolInfo;
-  const title = lang === 'fr' ? 'Bulletin de Progres' : 'Progress Report';
-  const { doc } = createDoc({ orientation: 'landscape', title, schoolInfo: si, language: lang });
+  const title = isFr ? 'BULLETIN DE PROGRÈS' : 'PROGRESS REPORT';
+
+  const hasNestedStudent = reports.length > 0 && typeof reports[0]?.student === 'object';
+  const cols = hasNestedStudent ? 8 : 5;
+
+  const { doc, pageWidth } = createSmartDoc({
+    title,
+    schoolInfo: si,
+    language: lang,
+    columnCount: cols,
+    estimatedContentWidthMm: cols * 25,
+    orientation: 'landscape',
+  });
+
   let startY = addHeader(doc, { orientation: 'landscape', title, schoolInfo: si, language: lang });
 
   if (reports.length === 0) {
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
-    doc.text(lang === 'fr' ? 'Aucune donnee de progression disponible' : 'No progress data available', 14, startY + 20);
+    doc.text(isFr ? 'Aucune donnée de progression disponible' : 'No progress data available', 14, startY + 15);
     addFooter(doc, si, lang);
     downloadPdf(doc, `progress_report_${new Date().toISOString().slice(0, 10)}.pdf`);
     return;
   }
 
-  // Table header
-  const head = [[
-    t('Student', 'Étudiant', lang),
-    t('Module', 'Module', lang),
-    t('Grade', 'Note', lang),
-    '%',
-    t('Status', 'Statut', lang),
-  ]];
+  // Summary KPI Cards if classSummary provided
+  if (classSummary && (classSummary.totalStudents || classSummary.avgAtt || classSummary.avgGrade)) {
+    const kpiCount = 3;
+    const kpiGap = 6;
+    const kpiWidth = (pageWidth - 28 - (kpiGap * (kpiCount - 1))) / kpiCount;
+    const kpiHeight = 14;
 
-  const body = reports.map(r => [
-    String(r.studentName || r.fullName || '-'),
-    String(r.moduleName || r.module || '-'),
-    String(r.grade || r.score || '-'),
-    String(r.percentage || r.pct || '0'),
-    String(r.status || (Number(r.percentage || r.pct || 0) >= 50 ? (lang === 'fr' ? 'Reussi' : 'Pass') : (lang === 'fr' ? 'Echoue' : 'Fail'))),
-  ]);
+    const kpis = [
+      { label: isFr ? 'Total Étudiants' : 'Total Students', val: String(classSummary.totalStudents || reports.length), color: [16, 185, 129] },
+      { label: isFr ? 'Taux Présence Moyen' : 'Avg Attendance', val: `${classSummary.avgAtt || 0}%`, color: [14, 165, 233] },
+      { label: isFr ? 'Moyenne des Notes' : 'Avg Academic Grade', val: `${classSummary.avgGrade || 0}%`, color: [168, 85, 247] },
+    ];
+
+    kpis.forEach((kpi, idx) => {
+      const kX = 14 + idx * (kpiWidth + kpiGap);
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(kX, startY, kpiWidth, kpiHeight, 2, 2, 'FD');
+
+      doc.setFillColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+      doc.rect(kX, startY, 2, kpiHeight, 'F');
+
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.text(kpi.label, kX + 5, startY + 4.5);
+
+      doc.setFontSize(9.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+      doc.text(kpi.val, kX + 5, startY + 10.5);
+    });
+
+    startY += kpiHeight + 6;
+  }
+
+  // Date range subtitle
+  if (dateRange?.from || dateRange?.to) {
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text(`${isFr ? 'Période analysée' : 'Analyzed Period'}: ${dateRange.from || '-'} → ${dateRange.to || '-'}`, 14, startY);
+    startY += 4;
+  }
+
+  let head: string[][];
+  let body: (string | number)[][];
+
+  if (hasNestedStudent) {
+    // Nested structure from ProgressReportsSection
+    head = [[
+      '#',
+      isFr ? 'Nom & Prénom' : 'Full Name',
+      'ID',
+      isFr ? 'Taux Présence' : 'Att. Rate',
+      isFr ? 'Moyenne' : 'Avg Grade',
+      isFr ? 'Moy. Pondérée' : 'Weighted Avg',
+      isFr ? 'Comportement' : 'Conduct',
+      isFr ? 'Résultat' : 'Result',
+    ]];
+
+    body = reports.map((r, idx) => {
+      const st = r.student as Student;
+      const att = Number(r.attRate || 0);
+      const avg = Number(r.avgGrade || 0);
+      const weighted = Number(r.finalWeighted || avg);
+      const pos = Number(r.posBehavior || 0);
+      const neg = Number(r.negBehavior || 0);
+      const netConduct = pos - neg;
+
+      const isPass = weighted >= 50;
+
+      return [
+        String(idx + 1),
+        st?.fullName || String(r.studentName || '-'),
+        st?.studentId || '-',
+        `${att}%`,
+        `${avg}%`,
+        `${weighted}%`,
+        `${netConduct >= 0 ? '+' : ''}${netConduct}`,
+        isPass ? (isFr ? 'Admis' : 'Pass') : (isFr ? 'Ajourné' : 'Fail'),
+      ];
+    });
+  } else {
+    // Flat reports
+    head = [[
+      isFr ? 'Étudiant' : 'Student',
+      isFr ? 'Module' : 'Module',
+      isFr ? 'Note' : 'Grade',
+      '%',
+      isFr ? 'Statut' : 'Status',
+    ]];
+
+    body = reports.map(r => [
+      String(r.studentName || r.fullName || '-'),
+      String(r.moduleName || r.module || '-'),
+      String(r.grade || r.score || '-'),
+      String(r.percentage || r.pct || '0'),
+      String(r.status || (Number(r.percentage || r.pct || 0) >= 50 ? (isFr ? 'Réussi' : 'Pass') : (isFr ? 'Échoué' : 'Fail'))),
+    ]);
+  }
 
   autoTable(doc, {
     startY,
     head,
     body,
     theme: 'grid',
-    headStyles: { fillColor: [16, 185, 129], fontSize: 8, fontStyle: 'bold' },
-    bodyStyles: { fontSize: 7 },
-    alternateRowStyles: { fillColor: [245, 247, 250] },
+    headStyles: { fillColor: [16, 185, 129], fontSize: 7.5, fontStyle: 'bold', halign: 'center' },
+    bodyStyles: { fontSize: 7, cellPadding: 1.5, valign: 'middle' },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
     margin: { left: 14, right: 14 },
   });
 
   // Teacher comment section
   if (teacherComment) {
-    const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable?.finalY;
+    const finalY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY;
     if (finalY) {
-      doc.setFontSize(10);
+      doc.setFontSize(8.5);
       doc.setFont('helvetica', 'bold');
-      doc.text(lang === 'fr' ? 'Commentaire du professeur' : 'Teacher Comment', 14, finalY + 12);
-      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42);
+      doc.text(isFr ? 'Commentaire / Observations pédagogiques :' : 'Teacher / Pedagogical Observations:', 14, finalY + 8);
+      doc.setFontSize(7.5);
       doc.setFont('helvetica', 'normal');
-      const lines = doc.splitTextToSize(teacherComment, 180);
-      doc.text(lines, 14, finalY + 18);
+      doc.setTextColor(71, 85, 105);
+      const lines = doc.splitTextToSize(teacherComment, pageWidth - 28);
+      doc.text(lines, 14, finalY + 13);
     }
   }
 
   addFooter(doc, si, lang);
   downloadPdf(doc, `progress_report_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
+

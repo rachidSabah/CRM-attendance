@@ -327,6 +327,22 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
     setTimeout(() => win.print(), 500);
   };
 
+  const handleExportPdf = (orient?: 'portrait' | 'landscape' | 'auto') => {
+    pdfUtils.exportIndividualStudentPDF(
+      student,
+      studentClass,
+      sa,
+      sg,
+      modules,
+      sb,
+      si,
+      useAppStore.getState().schoolInfo,
+      language,
+      { orientation: orient || 'auto' }
+    );
+    toast.success(language === 'fr' ? 'Rapport PDF individuel généré' : 'Individual PDF report generated');
+  };
+
   const handleReport = () => {
     const csvEsc = (v: string) => `"${String(v || '').replace(/"/g, '""')}"`;
     const csvContent = `Student Report - ${student.fullName}\n\nBasic Info\nName,${csvEsc(student.fullName)}\nID,${csvEsc(student.studentId)}\nClass,${csvEsc(studentClass?.name)}\nAcademic Year,${csvEsc(student.academicYear)}\nStatus,${csvEsc(student.status)}\nGuardian,${csvEsc(student.guardianName)}\nPhone,${csvEsc(student.guardianPhone)}\nEmail,${csvEsc(student.email)}\n\nAttendance Summary\nTotal Days,${total}\nPresent,${present}\nAbsent,${absent}\nLate,${late}\nExcused,${excused}\nRate,${rate}%\nCurrent Streak,${curStreak}\nBest Streak,${bestStreak}\n\nRecent Grades\n${sg.slice(0, 10).map(g => `${csvEsc(modules.find(m => m.id === g.moduleId)?.name)},${csvEsc(g.grade)},${g.percentage || '-'}%`).join('\n')}`;
@@ -354,9 +370,20 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
               {totalBp !== 0 && <Badge className={totalBp > 0 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}>{totalBp > 0 ? '+' : ''}{totalBp} {language === 'fr' ? 'pts' : 'pts'}</Badge>}
             </div>
           </div>
-          <div className="flex gap-2 shrink-0 w-full sm:w-auto">
-            <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleReport}><FileText className="h-4 w-4 mr-1" />{t('report', language) || 'Report'}</Button>
-            <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleGenerateCard}><IdCard className="h-4 w-4 mr-1" />{t('generate_card', language) || 'Card'}</Button>
+          <div className="flex flex-wrap gap-2 shrink-0 w-full sm:w-auto">
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white flex-1 sm:flex-none shadow-sm text-xs font-semibold"
+              size="sm"
+              onClick={() => handleExportPdf('auto')}
+            >
+              <FileText className="h-4 w-4 mr-1.5" />{language === 'fr' ? 'Rapport PDF' : 'PDF Report'}
+            </Button>
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-none text-xs" onClick={handleReport}>
+              <FileDown className="h-4 w-4 mr-1" />CSV
+            </Button>
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-none text-xs" onClick={handleGenerateCard}>
+              <IdCard className="h-4 w-4 mr-1" />{t('generate_card', language) || 'Card'}
+            </Button>
           </div>
         </div>
 
@@ -997,6 +1024,12 @@ function StudentsPage() {
                 <TableCell className="hidden xl:table-cell">{s.guardianPhone ? <><span className="text-xs">{s.guardianPhone}</span><Button variant="ghost" size="icon" className="h-6 w-6 text-emerald-600" onClick={() => window.open(`https://wa.me/${formatWhatsAppPhone(s.guardianPhone)}?text=${encodeURIComponent('Hello from school!')}`, '_blank')}><MessageCircle className="h-3.5 w-3.5" /></Button></> : '-'}</TableCell>
                 <TableCell><div className="flex gap-1">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setProfileStudent(s)}><Eye className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20" title={language === 'fr' ? 'Rapport PDF' : 'PDF Report'} onClick={() => {
+                    const st = useAppStore.getState();
+                    const sc = classes.find(c => c.id === s.classId);
+                    pdfUtils.exportIndividualStudentPDF(s, sc, st.attendance, st.grades, st.modules, st.behavior, st.incidents, schoolInfo, language);
+                    toast.success(language === 'fr' ? 'Rapport PDF généré' : 'PDF Report generated');
+                  }}><FileText className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4" /></Button>
                 </div></TableCell>
@@ -1485,6 +1518,22 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
     return { present: counts.present, absent: counts.absent, late: counts.late, excused: counts.excused, unmarked: counts.unmarked };
   }, [quickBulk, filteredStudents.length, counts]);
 
+  const handleExportGroupAttendancePdf = (mode: 'matrix' | 'summary' = 'matrix') => {
+    const targetCls = selectedClass !== 'all' ? classes.find(c => c.id === selectedClass) : undefined;
+    const st = useAppStore.getState();
+    pdfUtils.exportClassGroupReportPDF(
+      targetCls,
+      filteredStudents,
+      st.attendance,
+      st.grades,
+      st.modules,
+      schoolInfo,
+      language,
+      { mode, dateFrom: selectedDate }
+    );
+    toast.success(language === 'fr' ? 'Grille de présence PDF générée' : 'Group attendance PDF generated');
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3">
@@ -1493,12 +1542,13 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
           <Select value={selectedClass} onValueChange={setSelectedClass}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{language === 'fr' ? 'Toutes' : 'All'}</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
           <Button variant={quickMode ? 'default' : 'outline'} size="sm" onClick={() => setQuickMode(!quickMode)} className={quickMode ? 'bg-emerald-600 text-white' : ''}><Zap className="h-4 w-4 mr-1" />{quickMode ? (language === 'fr' ? 'Mode Rapide' : 'Quick Mode') : (language === 'fr' ? 'Mode Normal' : 'Normal')}</Button>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {!quickMode && <><Button variant="outline" size="sm" onClick={() => handleMarkAll('present')}><CheckCircle2 className="h-4 w-4 mr-1 text-emerald-600" />{t('present', language)}</Button>
           <Button variant="outline" size="sm" onClick={() => handleMarkAll('absent')}><XCircle className="h-4 w-4 mr-1 text-red-600" />{t('absent', language)}</Button></>}
           {quickMode && <Button variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleQuickBulk('present')}>✅ {t('present', language)} All</Button>}
           {quickMode && <Button variant="outline" size="sm" className="border-red-400 text-red-600" onClick={() => handleQuickBulk('absent')}>❌ {t('absent', language)} All</Button>}
           <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => quickMode ? handleQuickSave() : handleSave()} disabled={saving}><Save className="h-4 w-4 mr-1" />{t('save', language)}</Button>
+          <Button variant="outline" size="sm" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800" onClick={() => handleExportGroupAttendancePdf('matrix')} title={language === 'fr' ? 'Exporter la grille de présence du groupe' : 'Export group attendance matrix'}><FileText className="h-4 w-4 mr-1" />PDF</Button>
           <div className="flex items-center gap-2 ml-auto">
             <Switch checked={emailNotifEnabled} onCheckedChange={v => { setEmailNotifEnabled(v); if (typeof window !== 'undefined') localStorage.setItem('attendance_email_notif', String(v)); }} />
             <span className="text-xs text-muted-foreground hidden sm:inline">{language === 'fr' ? 'Notif. email absence' : 'Email notif on absence'}</span>
@@ -2330,6 +2380,8 @@ function ExportDataDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const data = { students, classes, modules, attendance, grades, behavior, tasks, incidents, teachers, employees };
 
   const options = [
+    { key: 'group_matrix_pdf', label: language === 'fr' ? 'Grille de Présence du Groupe (PDF)' : 'Group Attendance Matrix (PDF)', isPdf: true, fn: () => pdfUtils.exportClassGroupReportPDF(undefined, students, attendance, grades, modules, useAppStore.getState().schoolInfo, language, { mode: 'matrix' }) },
+    { key: 'group_summary_pdf', label: language === 'fr' ? 'Rapport Récapitulatif de Classe (PDF)' : 'Class Summary Report (PDF)', isPdf: true, fn: () => pdfUtils.exportClassGroupReportPDF(undefined, students, attendance, grades, modules, useAppStore.getState().schoolInfo, language, { mode: 'summary' }) },
     { key: 'students', label: t('students', language), fn: () => exportUtils.exportStudentsCSV(students, classes, language) },
     { key: 'attendance', label: t('attendance', language), fn: () => exportUtils.exportAttendanceCSV(attendance, students, classes, language) },
     { key: 'grades', label: t('grades', language), fn: () => exportUtils.exportGradesCSV(grades, students, modules, language) },
@@ -2345,13 +2397,13 @@ function ExportDataDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>{t('export', language)}</DialogTitle><DialogDescription>{language === 'fr' ? 'Choisir les données à exporter' : 'Choose data to export'}</DialogDescription></DialogHeader>
-        <div className="grid gap-2 py-4">
+        <DialogHeader><DialogTitle>{t('export', language)}</DialogTitle><DialogDescription>{language === 'fr' ? 'Choisir les données et rapports à exporter' : 'Choose data and reports to export'}</DialogDescription></DialogHeader>
+        <div className="grid gap-2 py-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
           {options.map(o => (
-            <button key={o.key} onClick={() => { o.fn(); onOpenChange(false); toast.success(language === 'fr' ? 'Exporté!' : 'Exported!'); }} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border hover:bg-muted transition-colors text-left">
-              <FileDown className="h-4 w-4 text-emerald-600" />
+            <button key={o.key} onClick={() => { o.fn(); onOpenChange(false); toast.success(language === 'fr' ? 'Exporté !' : 'Exported!'); }} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border hover:bg-muted transition-colors text-left">
+              {o.isPdf ? <FileText className="h-4 w-4 text-red-600" /> : <FileDown className="h-4 w-4 text-emerald-600" />}
               <span className="text-sm font-medium">{o.label}</span>
-              <span className="ml-auto text-xs text-muted-foreground">{language === 'fr' ? 'CSV' : 'CSV'}</span>
+              <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded ${o.isPdf ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300' : 'bg-muted text-muted-foreground'}`}>{o.isPdf ? 'PDF' : 'CSV'}</span>
             </button>
           ))}
           <Separator className="my-1" />
@@ -3458,6 +3510,16 @@ function ReportsPage() {
   const [dateTo, setDateTo] = useState('');
   const [reportType, setReportType] = useState('attendance');
 
+  // Group report state
+  const [selectedGroupClass, setSelectedGroupClass] = useState('all');
+  const [groupReportMode, setGroupReportMode] = useState<'matrix' | 'summary'>('matrix');
+  const [groupReportOrientation, setGroupReportOrientation] = useState<'auto' | 'landscape' | 'portrait'>('auto');
+
+  // Individual report state
+  const [indivClassFilter, setIndivClassFilter] = useState('all');
+  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [indivOrientation, setIndivOrientation] = useState<'auto' | 'portrait' | 'landscape'>('auto');
+
   const filteredAttendance = useMemo(() => {
     let a = [...attendance];
     if (dateFrom) a = a.filter(r => r.date >= dateFrom);
@@ -3509,34 +3571,287 @@ function ReportsPage() {
     return { positive: pos, negative: neg, totalPoints };
   }, [behavior]);
 
-  const handleExportReport = () => {
+  // Students available for individual report
+  const availableIndivStudents = useMemo(() => {
+    return students.filter(s => indivClassFilter === 'all' || s.classId === indivClassFilter);
+  }, [students, indivClassFilter]);
+
+  const selectedIndividualStudent = useMemo(() => {
+    return students.find(s => s.id === selectedStudentId) || availableIndivStudents[0] || null;
+  }, [students, selectedStudentId, availableIndivStudents]);
+
+  const handleExportCSVReport = () => {
     if (reportType === 'attendance') exportUtils.exportAttendanceCSV(filteredAttendance, students, classes, language);
     else if (reportType === 'grades') exportUtils.exportGradesCSV(grades, students, modules, language);
     else if (reportType === 'behavior') exportUtils.exportBehaviorCSV(behavior, students, language);
     else if (reportType === 'progress') { exportUtils.exportTasksCSV(tasks, language); toast.info(language === 'fr' ? 'Données de progression exportées' : 'Progress data exported'); return; }
     else if (reportType === 'tasks') exportUtils.exportTasksCSV(tasks, language);
     else if (reportType === 'incidents') exportUtils.exportIncidentsCSV(incidents, students, language);
-    toast.success(language === 'fr' ? 'Rapport exporté' : 'Report exported');
+    else if (reportType === 'group') {
+      const cls = selectedGroupClass !== 'all' ? classes.find(c => c.id === selectedGroupClass) : undefined;
+      const targetStudents = cls ? students.filter(s => s.classId === cls.id) : students;
+      exportUtils.exportAttendanceCSV(filteredAttendance, targetStudents, classes, language);
+    }
+    toast.success(language === 'fr' ? 'Rapport CSV exporté' : 'CSV Report exported');
+  };
+
+  const handleExportPDFReport = () => {
+    if (reportType === 'attendance') {
+      pdfUtils.exportAttendancePDF(filteredAttendance, students, classes, schoolInfo, dateFrom, dateTo, language);
+    } else if (reportType === 'group') {
+      const cls = selectedGroupClass !== 'all' ? classes.find(c => c.id === selectedGroupClass) : undefined;
+      const targetStudents = cls ? students.filter(s => s.classId === cls.id && s.status === 'active') : students.filter(s => s.status === 'active');
+      pdfUtils.exportClassGroupReportPDF(
+        cls,
+        targetStudents,
+        attendance,
+        grades,
+        modules,
+        schoolInfo,
+        language,
+        { mode: groupReportMode, dateFrom, dateTo, orientation: groupReportOrientation }
+      );
+    } else if (reportType === 'individual') {
+      if (selectedIndividualStudent) {
+        const sc = classes.find(c => c.id === selectedIndividualStudent.classId);
+        pdfUtils.exportIndividualStudentPDF(
+          selectedIndividualStudent,
+          sc,
+          attendance,
+          grades,
+          modules,
+          behavior,
+          incidents,
+          schoolInfo,
+          language,
+          { orientation: indivOrientation, dateFrom, dateTo }
+        );
+      } else {
+        toast.error(language === 'fr' ? 'Veuillez sélectionner un étudiant' : 'Please select a student');
+        return;
+      }
+    } else if (reportType === 'grades') {
+      pdfUtils.exportGradesPDF(grades, students, modules, schoolInfo, language);
+    } else if (reportType === 'behavior') {
+      pdfUtils.exportBehaviorPDF(behavior, students, schoolInfo, language);
+    } else if (reportType === 'progress') {
+      pdfUtils.exportProgressReportPDF([], {}, schoolInfo as unknown as Record<string, string | undefined>, { from: dateFrom, to: dateTo }, '', language);
+    }
+    toast.success(language === 'fr' ? 'Rapport PDF généré' : 'PDF Report generated');
   };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div className="flex flex-wrap gap-2">
-          <Select value={reportType} onValueChange={setReportType}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="attendance">{t('attendance', language)}</SelectItem><SelectItem value="grades">{t('grades', language)}</SelectItem><SelectItem value="behavior">{t('behavior', language)}</SelectItem><SelectItem value="progress">{t('progress_reports', language)}</SelectItem></SelectContent></Select>
-          <div className="flex items-center gap-2"><Label className="text-xs whitespace-nowrap">{t('date_range', language)}:</Label><Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36" /><span className="text-xs">→</span><Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36" /></div>
+          <Select value={reportType} onValueChange={setReportType}>
+            <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="attendance">{t('attendance', language)}</SelectItem>
+              <SelectItem value="group">{language === 'fr' ? '📊 Rapport Groupe / Classe' : '📊 Group / Class Report'}</SelectItem>
+              <SelectItem value="individual">{language === 'fr' ? '👤 Rapport Individuel Étudiant' : '👤 Individual Student Report'}</SelectItem>
+              <SelectItem value="grades">{t('grades', language)}</SelectItem>
+              <SelectItem value="behavior">{t('behavior', language)}</SelectItem>
+              <SelectItem value="progress">{t('progress_reports', language)}</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="flex items-center gap-2">
+            <Label className="text-xs whitespace-nowrap">{t('date_range', language)}:</Label>
+            <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36 text-xs" />
+            <span className="text-xs">→</span>
+            <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36 text-xs" />
+          </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleExportReport}><FileDown className="h-4 w-4 mr-1" />{t('export_csv', language)}</Button>
-          <Button variant="outline" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800" onClick={() => {
-            if (reportType === 'attendance') pdfUtils.exportAttendancePDF(filteredAttendance, students, classes, schoolInfo, dateFrom, dateTo, language);
-            else if (reportType === 'grades') pdfUtils.exportGradesPDF(grades, students, modules, schoolInfo, language);
-            else if (reportType === 'behavior') pdfUtils.exportBehaviorPDF(behavior, students, schoolInfo, language);
-            else if (reportType === 'progress') pdfUtils.exportProgressReportPDF([], {}, schoolInfo as unknown as Record<string, string | undefined>, { from: dateFrom, to: dateTo }, '', language);
-            toast.success(language === 'fr' ? 'PDF exporté' : 'PDF exported');
-          }}><FileText className="h-4 w-4 mr-1" />PDF</Button>
+          <Button variant="outline" size="sm" onClick={handleExportCSVReport}><FileDown className="h-4 w-4 mr-1" />{t('export_csv', language)}</Button>
+          <Button variant="outline" size="sm" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800 font-semibold" onClick={handleExportPDFReport}><FileText className="h-4 w-4 mr-1" />PDF</Button>
         </div>
       </div>
+
+      {/* GROUP / CLASS REPORT INTERACTIVE SECTION */}
+      {reportType === 'group' && (
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center justify-between">
+              <span>{language === 'fr' ? 'Rapport de Groupe & Grille de Classe (PDF)' : 'Group Attendance & Class Matrix (PDF)'}</span>
+              <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300">
+                {language === 'fr' ? 'Orientation adaptative' : 'Adaptive layout'}
+              </Badge>
+            </CardTitle>
+            <CardDescription className="text-xs">
+              {language === 'fr'
+                ? 'Exportez la grille de présence par dates ou le résumé de la classe. Lorsque les colonnes sont nombreuses, le format paysage et le dimensionnement intelligent sont appliqués automatiquement pour un ajustement parfait.'
+                : 'Export attendance matrix across dates or class roster summary. Wide tables automatically adapt to landscape orientation and custom width to ensure zero clipping.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('classes', language)}</Label>
+                <Select value={selectedGroupClass} onValueChange={setSelectedGroupClass}>
+                  <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{language === 'fr' ? 'Toutes les classes' : 'All Classes'}</SelectItem>
+                    {classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">{language === 'fr' ? 'Format du Rapport' : 'Report Format'}</Label>
+                <Select value={groupReportMode} onValueChange={v => setGroupReportMode(v as 'matrix' | 'summary')}>
+                  <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="matrix">{language === 'fr' ? '📅 Grille par dates (Matrix)' : '📅 Date Matrix'}</SelectItem>
+                    <SelectItem value="summary">{language === 'fr' ? '📋 Tableau récapitulatif (Summary)' : '📋 Roster Summary'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">{language === 'fr' ? 'Orientation de la Page' : 'Page Orientation'}</Label>
+                <Select value={groupReportOrientation} onValueChange={v => setGroupReportOrientation(v as 'auto' | 'landscape' | 'portrait')}>
+                  <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">{language === 'fr' ? '✨ Automatique (Recommandé)' : '✨ Auto (Recommended)'}</SelectItem>
+                    <SelectItem value="landscape">{language === 'fr' ? '🔄 Paysage (Landscape)' : '🔄 Landscape'}</SelectItem>
+                    <SelectItem value="portrait">{language === 'fr' ? '📄 Portrait (A4)' : '📄 Portrait'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-end">
+                <Button className="w-full bg-red-600 hover:bg-red-700 text-white font-medium shadow-sm text-xs" onClick={handleExportPDFReport}>
+                  <FileText className="h-4 w-4 mr-1.5" />{language === 'fr' ? 'Télécharger Rapport Groupe (PDF)' : 'Download Group Report (PDF)'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Quick metrics banner for selected group */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+              <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 text-center">
+                <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">
+                  {selectedGroupClass === 'all' ? students.length : students.filter(s => s.classId === selectedGroupClass).length}
+                </p>
+                <p className="text-[10px] text-muted-foreground">{t('students', language)}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 text-center">
+                <p className="text-xl font-bold text-blue-700 dark:text-blue-400">
+                  {selectedGroupClass === 'all' ? classes.length : 1}
+                </p>
+                <p className="text-[10px] text-muted-foreground">{t('classes', language)}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-purple-50 dark:bg-purple-950/20 text-center">
+                <p className="text-xl font-bold text-purple-700 dark:text-purple-400">
+                  {attendanceStats.rate}%
+                </p>
+                <p className="text-[10px] text-muted-foreground">{language === 'fr' ? 'Taux de présence' : 'Attendance rate'}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 text-center">
+                <p className="text-xl font-bold text-amber-700 dark:text-amber-400">
+                  {attendanceStats.absent}
+                </p>
+                <p className="text-[10px] text-muted-foreground">{t('absent', language)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* INDIVIDUAL STUDENT REPORT INTERACTIVE SECTION */}
+      {reportType === 'individual' && (
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center justify-between">
+              <span>{language === 'fr' ? 'Fiche Individuelle de l\'Étudiant (PDF)' : 'Individual Student Dossier & Report (PDF)'}</span>
+              <Badge variant="outline" className="text-xs text-red-600 border-red-300">
+                PDF 360°
+              </Badge>
+            </CardTitle>
+            <CardDescription className="text-xs">
+              {language === 'fr'
+                ? 'Générez un dossier complet prêt pour impression : photo, coordonnées, indicateurs de présence, série, notes par module, comportement et cadre de signatures officiel.'
+                : 'Generate a print-ready comprehensive student dossier: photo, identity, KPIs, streaks, module grades, conduct, and signature blocks.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">{language === 'fr' ? 'Filtrer par classe' : 'Filter by Class'}</Label>
+                <Select value={indivClassFilter} onValueChange={v => { setIndivClassFilter(v); setSelectedStudentId(''); }}>
+                  <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{language === 'fr' ? 'Toutes les classes' : 'All Classes'}</SelectItem>
+                    {classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('students', language)}</Label>
+                <Select value={selectedIndividualStudent?.id || ''} onValueChange={setSelectedStudentId}>
+                  <SelectTrigger className="text-xs"><SelectValue placeholder={language === 'fr' ? 'Sélectionner un étudiant' : 'Select a student'} /></SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    {availableIndivStudents.map(s => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.fullName} ({s.studentId})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">{language === 'fr' ? 'Orientation de la Page' : 'Page Orientation'}</Label>
+                <Select value={indivOrientation} onValueChange={v => setIndivOrientation(v as 'auto' | 'portrait' | 'landscape')}>
+                  <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">{language === 'fr' ? '✨ Automatique (Portrait A4)' : '✨ Auto (Portrait A4)'}</SelectItem>
+                    <SelectItem value="portrait">{language === 'fr' ? '📄 Portrait' : '📄 Portrait'}</SelectItem>
+                    <SelectItem value="landscape">{language === 'fr' ? '🔄 Paysage (Landscape)' : '🔄 Landscape'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-end">
+                <Button
+                  className="w-full bg-red-600 hover:bg-red-700 text-white font-medium shadow-sm text-xs"
+                  onClick={handleExportPDFReport}
+                  disabled={!selectedIndividualStudent}
+                >
+                  <FileText className="h-4 w-4 mr-1.5" />{language === 'fr' ? 'Télécharger Fiche PDF' : 'Download Student PDF'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Selected student preview */}
+            {selectedIndividualStudent && (
+              <div className="p-4 rounded-xl border bg-muted/20 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 font-bold text-xl flex items-center justify-center shrink-0 overflow-hidden">
+                  {selectedIndividualStudent.photo ? <img src={selectedIndividualStudent.photo} alt="" className="w-full h-full object-cover" /> : selectedIndividualStudent.fullName.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-bold text-base truncate">{selectedIndividualStudent.fullName}</h4>
+                    <StatusBadge status={selectedIndividualStudent.status} />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {selectedIndividualStudent.studentId} • {classes.find(c => c.id === selectedIndividualStudent.classId)?.name || '-'} • {selectedIndividualStudent.academicYear || '-'}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {t('guardian', language)}: {selectedIndividualStudent.guardianName || '-'} ({selectedIndividualStudent.guardianPhone || '-'})
+                  </p>
+                </div>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <Button variant="outline" size="sm" className="text-xs" onClick={() => useAppStore.setState({ profileViewStudent: selectedIndividualStudent } as Partial<typeof useAppStore.getState>)}>
+                    <Eye className="h-3.5 w-3.5 mr-1" />{language === 'fr' ? 'Voir Profil 360' : 'View 360'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {reportType === 'attendance' && (<>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
