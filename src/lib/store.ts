@@ -153,7 +153,14 @@ function getTenantId(): string {
 
 // ========== D1 Push Implementation ==========
 export async function pushToD1Now(selectivePayload?: Record<string, unknown>): Promise<boolean> {
-  if (_isPushing) return false;
+  if (_isPushing) {
+    let waited = 0;
+    while (_isPushing && waited < 3000) {
+      await new Promise(r => setTimeout(r, 100));
+      waited += 100;
+    }
+    if (_isPushing) return false;
+  }
   _isPushing = true;
   try {
     updateD1SyncState({ status: 'syncing' });
@@ -247,9 +254,18 @@ function pushToD1Async() {
 
 // Direct atomic attendance save: updates Zustand + writes to local cache + immediately pushes to D1
 export async function saveAttendanceDirectly(newAttendance: AttendanceRecord[]): Promise<boolean> {
-  useAppStore.setState({ attendance: newAttendance });
-  saveCache('attendance', newAttendance);
-  const ok = await pushToD1Now({ attendance: newAttendance });
+  const dedupedMap = new Map<string, AttendanceRecord>();
+  const now = new Date().toISOString();
+  for (const r of newAttendance) {
+    if (!r.studentId || !r.date) continue;
+    const key = `${r.studentId}_${r.date}`;
+    const id = r.id?.startsWith('att_') ? r.id : `att_${r.studentId}_${r.date}`;
+    dedupedMap.set(key, { ...r, id, updatedAt: r.updatedAt || now });
+  }
+  const cleanAttendance = Array.from(dedupedMap.values());
+  useAppStore.setState({ attendance: cleanAttendance });
+  saveCache('attendance', cleanAttendance);
+  const ok = await pushToD1Now({ attendance: cleanAttendance });
   return ok;
 }
 
@@ -565,25 +581,44 @@ export const useAppStore = create<AppState>((set) => ({
           const cloudData = await cloudRes.json();
           if (cloudData?.success && cloudData.data) {
             const cd = cloudData.data;
-            const cloudAttendance = (cd.attendance || []) as AttendanceRecord[];
+            const rawCloudAttendance = (cd.attendance || []) as AttendanceRecord[];
             const localCachedAttendance = getCachedData<AttendanceRecord[]>('attendance', []);
 
-            // Intelligent merge: keep cloud records, but if local cache has newly registered attendance not yet in D1, preserve them!
-            const cloudAttMap = new Map<string, AttendanceRecord>(cloudAttendance.map(a => [`${a.studentId}_${a.date}`, a]));
-            let needsRePush = false;
-            for (const localRec of localCachedAttendance) {
-              const key = `${localRec.studentId}_${localRec.date}`;
-              if (!cloudAttMap.has(key)) {
-                cloudAttendance.push(localRec);
-                needsRePush = true;
+            // Deduplicate cloud attendance
+            const mergedMap = new Map<string, AttendanceRecord>();
+            for (const cRec of rawCloudAttendance) {
+              if (cRec?.studentId && cRec?.date) {
+                const key = `${cRec.studentId}_${cRec.date}`;
+                mergedMap.set(key, cRec);
               }
             }
+
+            // Check if local cache has newer or missing records
+            let needsRePush = false;
+            for (const localRec of localCachedAttendance) {
+              if (!localRec?.studentId || !localRec?.date) continue;
+              const key = `${localRec.studentId}_${localRec.date}`;
+              const cloudRec = mergedMap.get(key);
+              if (!cloudRec) {
+                mergedMap.set(key, localRec);
+                needsRePush = true;
+              } else {
+                const localTime = localRec.updatedAt ? new Date(localRec.updatedAt).getTime() : 0;
+                const cloudTime = cloudRec.updatedAt ? new Date(cloudRec.updatedAt).getTime() : 0;
+                if (localTime > cloudTime && localRec.status !== cloudRec.status) {
+                  mergedMap.set(key, { ...cloudRec, ...localRec });
+                  needsRePush = true;
+                }
+              }
+            }
+
+            const cleanAttendance = Array.from(mergedMap.values());
 
             set({
               students: (cd.students || getCachedData('students', [])) as Student[],
               classes: (cd.classes || getCachedData('classes', [])) as Class[],
               modules: (cd.modules || getCachedData('modules', [])) as Module[],
-              attendance: cloudAttendance,
+              attendance: cleanAttendance,
               grades: (cd.grades || getCachedData('grades', [])) as Grade[],
               behavior: (cd.behavior || getCachedData('behavior', [])) as BehaviorRecord[],
               tasks: (cd.tasks || getCachedData('tasks', [])) as Task[],
@@ -605,7 +640,7 @@ export const useAppStore = create<AppState>((set) => ({
             });
 
             // Write back to local cache
-            saveCache('attendance', cloudAttendance);
+            saveCache('attendance', cleanAttendance);
             if (cd.students) saveCache('students', cd.students);
             if (cd.classes) saveCache('classes', cd.classes);
             if (cd.modules) saveCache('modules', cd.modules);
@@ -627,7 +662,7 @@ export const useAppStore = create<AppState>((set) => ({
             updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });
 
             if (needsRePush) {
-              setTimeout(() => { pushToD1Now({ attendance: cloudAttendance }); }, 300);
+              setTimeout(() => { pushToD1Now({ attendance: cleanAttendance }); }, 300);
             }
           }
         }

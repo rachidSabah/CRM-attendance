@@ -1219,14 +1219,32 @@ function AttendancePage() {
   };
   const handleSave = async () => {
     setSaving(true);
-    // Preserve records for students NOT in current filter
     const filteredStudentIds = new Set(filteredStudents.map(s => s.id));
     const otherDayRecords = attendance.filter(r => r.date === selectedDate && !filteredStudentIds.has(r.studentId));
     const updated = attendance.filter(r => r.date !== selectedDate);
     const newR: AttendanceRecord[] = [];
     const newAbsences: Array<{ student: Student; status: AttendanceRecord['status'] }> = [];
-    filteredStudents.forEach(s => { const st = localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) { updated.push({ ...ex, status: st }); } else { newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); } if ((st === 'absent' || st === 'late') && (!ex || ex.status !== st)) { newAbsences.push({ student: s, status: st }); } });
-    const finalAttendance = [...updated, ...otherDayRecords, ...newR];
+    const nowIso = new Date().toISOString();
+    filteredStudents.forEach(s => {
+      const st = localRecords[s.id] || 'present';
+      const canonicalId = `att_${s.id}_${selectedDate}`;
+      const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id);
+      if (ex) {
+        updated.push({ ...ex, id: canonicalId, status: st, updatedAt: nowIso });
+      } else {
+        newR.push({ id: canonicalId, studentId: s.id, date: selectedDate, status: st, createdAt: nowIso, updatedAt: nowIso });
+      }
+      if ((st === 'absent' || st === 'late') && (!ex || ex.status !== st)) {
+        newAbsences.push({ student: s, status: st });
+      }
+    });
+    const dedupMap = new Map<string, AttendanceRecord>();
+    for (const r of [...updated, ...otherDayRecords, ...newR]) {
+      const key = `${r.studentId}_${r.date}`;
+      const cId = r.id?.startsWith('att_') ? r.id : `att_${r.studentId}_${r.date}`;
+      dedupMap.set(key, { ...r, id: cId });
+    }
+    const finalAttendance = Array.from(dedupMap.values());
     setOverrides({});
     await saveAttendanceDirectly(finalAttendance);
     toast.success(language === 'fr' ? 'Présence enregistrée !' : 'Attendance saved!');
@@ -1328,14 +1346,32 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
   };
   const handleQuickSave = async () => {
     setSaving(true);
-    // Preserve records for students NOT in current filter
     const filteredStudentIds = new Set(filteredStudents.map(s => s.id));
     const otherDayRecords = attendance.filter(r => r.date === selectedDate && !filteredStudentIds.has(r.studentId));
     const updated = attendance.filter(r => r.date !== selectedDate);
     const newR: AttendanceRecord[] = [];
     const newAbsences: Array<{ student: Student; status: AttendanceRecord['status'] }> = [];
-    filteredStudents.forEach(s => { const st = quickBulk[s.id] || localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) { updated.push({ ...ex, status: st }); } else { newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); } if ((st === 'absent' || st === 'late') && (!ex || ex.status !== st)) { newAbsences.push({ student: s, status: st }); } });
-    const finalAttendance = [...updated, ...otherDayRecords, ...newR];
+    const nowIso = new Date().toISOString();
+    filteredStudents.forEach(s => {
+      const st = quickBulk[s.id] || localRecords[s.id] || 'present';
+      const canonicalId = `att_${s.id}_${selectedDate}`;
+      const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id);
+      if (ex) {
+        updated.push({ ...ex, id: canonicalId, status: st, updatedAt: nowIso });
+      } else {
+        newR.push({ id: canonicalId, studentId: s.id, date: selectedDate, status: st, createdAt: nowIso, updatedAt: nowIso });
+      }
+      if ((st === 'absent' || st === 'late') && (!ex || ex.status !== st)) {
+        newAbsences.push({ student: s, status: st });
+      }
+    });
+    const dedupMap = new Map<string, AttendanceRecord>();
+    for (const r of [...updated, ...otherDayRecords, ...newR]) {
+      const key = `${r.studentId}_${r.date}`;
+      const cId = r.id?.startsWith('att_') ? r.id : `att_${r.studentId}_${r.date}`;
+      dedupMap.set(key, { ...r, id: cId });
+    }
+    const finalAttendance = Array.from(dedupMap.values());
     setQuickBulk({});
     setOverrides({});
     await saveAttendanceDirectly(finalAttendance);

@@ -71,7 +71,11 @@ async function handlePush(context) {
       const pushedIds = new Set();
 
       for (const record of data) {
-        const id = String(record.id || '');
+        let id = String(record.id || '');
+        if (entityType === 'attendance_records' && record.studentId && record.date) {
+          id = `att_${record.studentId}_${record.date}`;
+          record.id = id;
+        }
         if (!id) continue;
         pushedIds.add(id);
         const dataStr = JSON.stringify(record);
@@ -83,6 +87,20 @@ async function handlePush(context) {
              ON CONFLICT(id, tenant_id) DO UPDATE SET data = excluded.data, entity_type = excluded.entity_type, updated_at = excluded.updated_at`
           ).bind(id, tenantId, entityType, dataStr)
         );
+      }
+
+      // For attendance records, clean up any legacy rows that had random IDs for the same student & date
+      if (entityType === 'attendance_records' && data.length > 0) {
+        for (const record of data) {
+          if (record.studentId && record.date) {
+            const canonicalId = `att_${record.studentId}_${record.date}`;
+            upsertStatements.push(
+              db.prepare(
+                `DELETE FROM entities WHERE tenant_id = ? AND entity_type = 'attendance_records' AND id != ? AND json_extract(data, '$.studentId') = ? AND json_extract(data, '$.date') = ?`
+              ).bind(tenantId, canonicalId, record.studentId, record.date)
+            );
+          }
+        }
       }
 
       if (upsertStatements.length > 0) {

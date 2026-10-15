@@ -78,7 +78,7 @@ async function handlePull(context) {
     // Pull entities by type (paginated to avoid D1 1000-row limit)
     const allEntities = await fetchAll(
       db,
-      `SELECT entity_type, data FROM entities WHERE tenant_id = ?`,
+      `SELECT entity_type, data, updated_at FROM entities WHERE tenant_id = ? ORDER BY updated_at ASC`,
       [tenantId]
     );
 
@@ -88,6 +88,18 @@ async function handlePull(context) {
         if (!result.data[bodyKey]) result.data[bodyKey] = [];
         try { result.data[bodyKey].push(JSON.parse(row.data)); } catch (e) { console.warn('[sync/pull] Entity data parse failed:', e.message || e); }
       }
+    }
+
+    // Deduplicate attendance records to ensure only latest state is returned per student/date
+    if (Array.isArray(result.data.attendance)) {
+      const dedupedAtt = new Map();
+      for (const rec of result.data.attendance) {
+        if (rec && rec.studentId && rec.date) {
+          const key = `${rec.studentId}_${rec.date}`;
+          dedupedAtt.set(key, rec);
+        }
+      }
+      result.data.attendance = Array.from(dedupedAtt.values());
     }
 
     // Count entities
