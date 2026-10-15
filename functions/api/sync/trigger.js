@@ -1,14 +1,42 @@
 /**
  * POST /api/sync/trigger
- * Manual sync trigger — runs push then pull
+ * Manual sync endpoint with batched D1 execution.
  */
-
 import { validateRequest } from '../../_lib/auth.js';
 import { getCorsHeaders } from '../../_lib/cors.js';
 import { fetchAll } from '../../_lib/paginate.js';
 
+const ENTITY_TYPES = {
+  students: 'students',
+  classes: 'classes',
+  modules: 'modules',
+  attendance: 'attendance_records',
+  grades: 'grades',
+  behavior: 'behavior_records',
+  tasks: 'tasks',
+  incidents: 'incidents',
+  teachers: 'teachers',
+  employees: 'employees',
+  templates: 'templates',
+  academicYears: 'academic_years',
+  schedules: 'schedules',
+  exams: 'exams',
+  examGrades: 'exam_grades',
+  curriculum: 'curriculum_items',
+  calendarEvents: 'calendar_events',
+  savedSchedules: 'saved_schedules',
+};
+
+async function executeBatch(db, statements, chunkSize = 100) {
+  for (let i = 0; i < statements.length; i += chunkSize) {
+    const chunk = statements.slice(i, i + chunkSize);
+    if (chunk.length > 0) {
+      await db.batch(chunk);
+    }
+  }
+}
+
 async function handleTrigger(context) {
-  // Auth check
   const auth = await validateRequest(context.request, context.env.DB);
   if (!auth.authenticated) {
     return new Response(
@@ -19,109 +47,88 @@ async function handleTrigger(context) {
 
   try {
     const body = await context.request.json();
-    const tenantId = body.tenant_id || 'default';
-    const mode = body.mode || 'push'; // push | pull | full
-
-    const results = { success: true, operations: [] };
+    const mode = body.mode || 'full';
+    const tenantId = body.tenant_id || auth.user?.tenantId || 'default';
+    const db = context.env.DB;
+    const results = { success: true, mode, tenant_id: tenantId, operations: [] };
 
     if (mode === 'push' || mode === 'full') {
-      // Push data from body
-      const ENTITY_TYPES = {
-        students: 'students', classes: 'classes', modules: 'modules',
-        attendance: 'attendance_records', grades: 'grades', behavior: 'behavior_records',
-        tasks: 'tasks', incidents: 'incidents', teachers: 'teachers',
-        employees: 'employees', templates: 'templates', academicYears: 'academic_years',
-        schedules: 'schedules', exams: 'exams', examGrades: 'exam_grades',
-        curriculum: 'curriculum_items', calendarEvents: 'calendar_events',
-      };
-
       let pushed = 0;
-      const db = context.env.DB;
-
       for (const [bodyKey, entityType] of Object.entries(ENTITY_TYPES)) {
         const data = body[bodyKey];
         if (!Array.isArray(data)) continue;
+
+        const upsertStatements = [];
         const pushedIds = new Set();
         for (const record of data) {
           const id = String(record.id || '');
           if (!id) continue;
           pushedIds.add(id);
-          await db.prepare(
-            `INSERT INTO entities (id, tenant_id, entity_type, data, updated_at)
-             VALUES (?, ?, ?, ?, datetime('now'))
-             ON CONFLICT(id, tenant_id) DO UPDATE SET data = excluded.data, entity_type = excluded.entity_type, updated_at = excluded.updated_at`
-          ).bind(id, tenantId, entityType, JSON.stringify(record)).run();
-          pushed++;
+          upsertStatements.push(
+            db.prepare(
+              `INSERT INTO entities (id, tenant_id, entity_type, data, updated_at)
+               VALUES (?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(id, tenant_id) DO UPDATE SET data = excluded.data, entity_type = excluded.entity_type, updated_at = excluded.updated_at`
+            ).bind(id, tenantId, entityType, JSON.stringify(record))
+          );
         }
-        // Delete records removed from frontend (same logic as push.js)
-        try {
-          const existing = await db.prepare(
-            `SELECT id FROM entities WHERE tenant_id = ? AND entity_type = ?`
-          ).bind(tenantId, entityType).all();
-          if (existing.results) {
-            for (const row of existing.results) {
-              if (!pushedIds.has(String(row.id))) {
-                await db.prepare(
-                  `DELETE FROM entities WHERE tenant_id = ? AND entity_type = ? AND id = ?`
-                ).bind(tenantId, entityType, row.id).run();
-                pushed++;
+
+        if (upsertStatements.length > 0) {
+          await executeBatch(db, upsertStatements, 100);
+          pushed += upsertStatements.length;
+        }
+
+        if (pushedIds.size > 0 && entityType !== 'attendance_records') {
+          try {
+            const existing = await db.prepare(
+              `SELECT id FROM entities WHERE tenant_id = ? AND entity_type = ?`
+            ).bind(tenantId, entityType).all();
+            if (existing && existing.results && existing.results.length > 0) {
+              const deleteStatements = [];
+              for (const row of existing.results) {
+                if (!pushedIds.has(String(row.id))) {
+                  deleteStatements.push(
+                    db.prepare(
+                      `DELETE FROM entities WHERE tenant_id = ? AND entity_type = ? AND id = ?`
+                    ).bind(tenantId, entityType, row.id)
+                  );
+                }
+              }
+              if (deleteStatements.length > 0) {
+                await executeBatch(db, deleteStatements, 100);
+                pushed += deleteStatements.length;
               }
             }
+          } catch (e) {
+            console.warn('[sync/trigger] Entity cleanup failed:', e.message || e);
           }
-        } catch (e) { console.warn('[sync/trigger] Entity cleanup failed:', e.message || e); }
+        }
       }
 
-      // Sync school info
       if (body.schoolInfo) {
         await db.prepare(
           `INSERT INTO school_settings (id, tenant_id, key, data, updated_at)
            VALUES (?, ?, 'school_info', ?, datetime('now'))
            ON CONFLICT(tenant_id, key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
         ).bind('school_info_' + tenantId, tenantId, JSON.stringify(body.schoolInfo)).run();
+        pushed++;
       }
 
-      // Sync admin users to school_settings so login endpoint can authenticate them
-      // Key format: auth_{username}_{tenantId} — matches what /api/auth/login expects
-      if (Array.isArray(body.admins)) {
-        const safeToDelete = body.admins.length > 0 && auth.user?.username;
-
-        if (safeToDelete) {
-          try {
-            const existingAuths = await db.prepare(
-              `SELECT key FROM school_settings WHERE tenant_id = ? AND key LIKE 'auth_%'`
-            ).bind(tenantId).all();
-            if (existingAuths && existingAuths.results) {
-              const currentAdminUsernames = new Set(
-                body.admins.map(a => `auth_${String(a.username || '').trim()}_${tenantId}`)
-              );
-              const protectedKey = `auth_${auth.user.username}_${auth.user.tenantId || tenantId}`;
-              for (const row of existingAuths.results) {
-                if (!currentAdminUsernames.has(row.key) && row.key !== protectedKey) {
-                  await db.prepare(
-                    `DELETE FROM school_settings WHERE tenant_id = ? AND key = ?`
-                  ).bind(tenantId, row.key).run();
-                  pushed++;
-                }
-              }
-            }
-          } catch (e) { console.warn('[sync/trigger] Admin cleanup failed:', e.message || e); }
-        }
-
+      if (Array.isArray(body.admins) && body.admins.length > 0) {
+        const adminStatements = [];
         for (const admin of body.admins) {
           const username = String(admin.username || '').trim();
           if (!username) continue;
           const authKey = `auth_${username}_${tenantId}`;
-
           let existingData = {};
           try {
             const existing = await db.prepare(
               `SELECT data FROM school_settings WHERE tenant_id = ? AND key = ?`
             ).bind(tenantId, authKey).first();
             if (existing && existing.data) {
-              try { existingData = JSON.parse(existing.data); } catch (e) { console.warn('[sync/trigger] Admin data parse failed:', e.message || e); }
+              try { existingData = JSON.parse(existing.data); } catch {}
             }
-          } catch (e) { console.warn('[sync/trigger] Admin existing lookup failed:', e.message || e); }
-
+          } catch {}
           const authData = {
             id: admin.id || existingData.id || username,
             username: username,
@@ -135,25 +142,27 @@ async function handleTrigger(context) {
             is_super_admin: admin.role === 'super_admin' ? true : Boolean(existingData.is_super_admin),
             updatedAt: new Date().toISOString(),
           };
-
-          await db.prepare(
-            `INSERT INTO school_settings (id, tenant_id, key, data, updated_at)
-             VALUES (?, ?, ?, ?, datetime('now'))
-             ON CONFLICT(tenant_id, key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
-          ).bind(authKey, tenantId, authKey, JSON.stringify(authData)).run();
-          pushed++;
+          adminStatements.push(
+            db.prepare(
+              `INSERT INTO school_settings (id, tenant_id, key, data, updated_at)
+               VALUES (?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(tenant_id, key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
+            ).bind(authKey, tenantId, authKey, JSON.stringify(authData))
+          );
+        }
+        if (adminStatements.length > 0) {
+          await executeBatch(db, adminStatements, 100);
+          pushed += adminStatements.length;
         }
       }
 
       await db.prepare(
         `INSERT INTO sync_log (tenant_id, operation, record_count, status, details) VALUES (?, 'push', ?, 'success', ?)`
       ).bind(tenantId, pushed, 'Manual trigger push').run();
-
       results.operations.push({ operation: 'push', count: pushed, status: 'success' });
     }
 
     if (mode === 'pull' || mode === 'full') {
-      // Pull data from D1
       const ENTITY_TYPE_MAP = {
         students: 'students', classes: 'classes', modules: 'modules',
         attendance_records: 'attendance', grades: 'grades', behavior_records: 'behavior',
@@ -161,17 +170,15 @@ async function handleTrigger(context) {
         employees: 'employees', templates: 'templates', academic_years: 'academicYears',
         schedules: 'schedules', exams: 'exams', exam_grades: 'examGrades',
         curriculum_items: 'curriculum', calendar_events: 'calendarEvents',
+        saved_schedules: 'savedSchedules',
       };
-
-      const db = context.env.DB;
       const data = {};
-
       const settings = await db.prepare(`SELECT key, data FROM school_settings WHERE tenant_id = ?`).bind(tenantId).all();
       if (settings.results) {
         const admins = [];
         for (const row of settings.results) {
           if (row.key === 'school_info') {
-            try { data.schoolInfo = JSON.parse(row.data); } catch (e) { console.warn('[sync/trigger] school_info parse failed:', e.message || e); }
+            try { data.schoolInfo = JSON.parse(row.data); } catch {}
           } else if (row.key.startsWith('auth_')) {
             try {
               const userData = JSON.parse(row.data);
@@ -186,26 +193,24 @@ async function handleTrigger(context) {
                 tenantId: userData.tenantId || tenantId,
                 is_super_admin: Boolean(userData.is_super_admin),
               });
-            } catch (e) { console.warn('[sync/trigger] Admin user parse failed:', e.message || e); }
+            } catch {}
           }
         }
         if (admins.length > 0) data.admins = admins;
       }
-
       const allEntities = await fetchAll(db, `SELECT entity_type, data FROM entities WHERE tenant_id = ?`, [tenantId]);
       for (const row of allEntities) {
         const bodyKey = ENTITY_TYPE_MAP[row.entity_type];
         if (bodyKey) {
           if (!data[bodyKey]) data[bodyKey] = [];
-          try { data[bodyKey].push(JSON.parse(row.data)); } catch (e) { console.warn('[sync/trigger] Entity data parse failed:', e.message || e); }
+          try { data[bodyKey].push(JSON.parse(row.data)); } catch {}
         }
       }
-
+      const totalCount = Object.values(data).reduce((a, v) => a + (Array.isArray(v) ? v.length : 1), 0);
       await db.prepare(
         `INSERT INTO sync_log (tenant_id, operation, record_count, status, details) VALUES (?, 'pull', ?, 'success', ?)`
-      ).bind(tenantId, Object.values(data).reduce((a, v) => a + (Array.isArray(v) ? v.length : 1), 0), 'Manual trigger pull').run();
-
-      results.operations.push({ operation: 'pull', count: Object.values(data).reduce((a, v) => a + (Array.isArray(v) ? v.length : 1), 0), status: 'success' });
+      ).bind(tenantId, totalCount, 'Manual trigger pull').run();
+      results.operations.push({ operation: 'pull', count: totalCount, status: 'success' });
       results.data = data;
     }
 
@@ -216,7 +221,7 @@ async function handleTrigger(context) {
   } catch (err) {
     console.error('[sync/trigger] Error:', err);
     return new Response(
-      JSON.stringify({ success: false, error: 'Internal server error' }),
+      JSON.stringify({ success: false, error: err.message || 'Internal server error' }),
       { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
     );
   }
@@ -233,4 +238,3 @@ export async function onRequest(context) {
 export async function onRequestPost(context) {
   return handleTrigger(context);
 }
-

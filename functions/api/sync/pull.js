@@ -3,7 +3,6 @@
  * Pull all entity data from D1 to frontend
  * REQUIRES AUTHENTICATION
  */
-
 import { validateRequest } from '../../_lib/auth.js';
 import { getCorsHeaders } from '../../_lib/cors.js';
 import { fetchAll } from '../../_lib/paginate.js';
@@ -26,6 +25,7 @@ const ENTITY_TYPE_MAP = {
   exam_grades: 'examGrades',
   curriculum_items: 'curriculum',
   calendar_events: 'calendarEvents',
+  saved_schedules: 'savedSchedules',
 };
 
 async function handlePull(context) {
@@ -42,13 +42,13 @@ async function handlePull(context) {
     const url = new URL(context.request.url);
     const tenantId = url.searchParams.get('tenant_id') || auth.user?.tenantId || 'default';
     const db = context.env.DB;
-
     const result = { success: true, tenant_id: tenantId, data: {}, synced_at: new Date().toISOString() };
 
     // Pull school settings (including admin user records without sensitive fields)
     const settings = await db.prepare(
       `SELECT key, data FROM school_settings WHERE tenant_id = ?`
     ).bind(tenantId).all();
+
     if (settings.results) {
       const admins = [];
       for (const row of settings.results) {
@@ -94,6 +94,7 @@ async function handlePull(context) {
     const counts = await db.prepare(
       `SELECT entity_type, COUNT(*) as count FROM entities WHERE tenant_id = ? GROUP BY entity_type`
     ).bind(tenantId).all();
+
     result.counts = {};
     if (counts.results) {
       for (const row of counts.results) {

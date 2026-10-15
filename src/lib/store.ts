@@ -71,28 +71,43 @@ interface AppState {
   loadAllData: () => Promise<void>;
 }
 
-// ========== D1-Only Architecture ==========
-// No localStorage for business data. All data lives in D1.
-// Only auth tokens, language, primary color, and UI preferences stay in localStorage.
+// ========== Local Fallback & Hydration Helpers ==========
+export function getCachedData<T>(key: string, fallback: T): T {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('crm_cache_' + key);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+  }
+  return fallback;
+}
+
+export function saveCache(key: string, data: unknown): void {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('crm_cache_' + key, JSON.stringify(data));
+    } catch {}
+  }
+}
 
 // ========== D1 Cloud Sync System ==========
 let _loadingFromApi = false;
-let _lastPull401Time = 0; // Cooldown after sync/pull 401 to prevent console spam
-const PULL_401_COOLDOWN = 5 * 60 * 1000; // 5 minutes
+let _lastPull401Time = 0;
+const PULL_401_COOLDOWN = 5 * 60 * 1000;
 
 // Push retry queue
 let _pushQueue: Array<() => Promise<void>> = [];
 let _isPushing = false;
 let _consecutiveFailures = 0;
-const MAX_CONSECUTIVE_FAILURES = 5;
+const MAX_CONSECUTIVE_FAILURES = 10;
 let _pushFailureWarned = false;
 
 // Push batching
 let _pushBatchTimer: ReturnType<typeof setTimeout> | null = null;
-const PUSH_BATCH_DELAY = 500; // ms — coalesce rapid setter calls
+const PUSH_BATCH_DELAY = 400;
 
-// D1 Cloud Sync status
 export type D1SyncStatus = 'idle' | 'syncing' | 'error' | 'success';
+
 export interface D1SyncState {
   status: D1SyncStatus;
   lastCloudSync: string | null;
@@ -136,17 +151,17 @@ function getTenantId(): string {
   return 'default';
 }
 
-// ========== Immediate D1 Push ==========
-// Renamed to pushToD1Now — the actual push implementation.
-// Setters call pushToD1Async() which debounces and queues.
-
-async function pushToD1Now(): Promise<boolean> {
+// ========== D1 Push Implementation ==========
+export async function pushToD1Now(selectivePayload?: Record<string, unknown>): Promise<boolean> {
   if (_isPushing) return false;
   _isPushing = true;
   try {
     updateD1SyncState({ status: 'syncing' });
     const state = useAppStore.getState();
-    const payload = {
+    const payload = selectivePayload ? {
+      tenant_id: getTenantId(),
+      ...selectivePayload,
+    } : {
       tenant_id: getTenantId(),
       students: state.students,
       classes: state.classes,
@@ -169,6 +184,7 @@ async function pushToD1Now(): Promise<boolean> {
       schoolInfo: state.schoolInfo,
       admins: state.admins,
     };
+
     const res = await localApi('POST', '/api/sync/push', payload);
     if (!res.ok) {
       if (res.status === 401) _lastPull401Time = 0;
@@ -178,13 +194,14 @@ async function pushToD1Now(): Promise<boolean> {
         _pushFailureWarned = true;
         try {
           const { toast: showToast } = await import('sonner');
-          showToast.warning('Sync paused — check your connection');
+          showToast.warning('Sync delayed — will retry automatically');
         } catch {
-          console.warn('[store] Push failures exceeded threshold, sync paused');
+          console.warn('[store] Push failures exceeded threshold');
         }
       }
       return false;
     }
+
     const data = await res.json();
     if (data.success) {
       updateD1SyncState({ status: 'success', lastCloudSync: new Date().toISOString(), cloudConnected: true });
@@ -192,21 +209,13 @@ async function pushToD1Now(): Promise<boolean> {
       _pushFailureWarned = false;
       return true;
     }
+
     updateD1SyncState({ status: 'error' });
     _consecutiveFailures++;
     return false;
   } catch (err) {
     updateD1SyncState({ status: 'error', cloudConnected: false });
     _consecutiveFailures++;
-    if (_consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !_pushFailureWarned) {
-      _pushFailureWarned = true;
-      try {
-        const { toast: showToast } = await import('sonner');
-        showToast.warning('Sync paused — check your connection');
-      } catch {
-        console.warn('[store] Push failures exceeded threshold, sync paused');
-      }
-    }
     return false;
   } finally {
     _isPushing = false;
@@ -224,14 +233,11 @@ async function drainPushQueue() {
 
 // Debounced, queue-aware push to D1
 function pushToD1Async() {
-  // Don't push while loading from D1 — prevents overwriting cloud data with stale data
   if (_loadingFromApi) return;
-  // If failures have exceeded threshold, queue for later retry
   if (_consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
     if (_pushQueue.length < 50) _pushQueue.push(() => pushToD1Now().then(() => drainPushQueue()));
     return;
   }
-  // Debounce: coalesce rapid setter calls into one push
   if (_pushBatchTimer) clearTimeout(_pushBatchTimer);
   _pushBatchTimer = setTimeout(() => {
     _pushBatchTimer = null;
@@ -239,7 +245,14 @@ function pushToD1Async() {
   }, PUSH_BATCH_DELAY);
 }
 
-// Manual retry — resets failure count and drains the queue
+// Direct atomic attendance save: updates Zustand + writes to local cache + immediately pushes to D1
+export async function saveAttendanceDirectly(newAttendance: AttendanceRecord[]): Promise<boolean> {
+  useAppStore.setState({ attendance: newAttendance });
+  saveCache('attendance', newAttendance);
+  const ok = await pushToD1Now({ attendance: newAttendance });
+  return ok;
+}
+
 export function retrySync() {
   _consecutiveFailures = 0;
   _pushFailureWarned = false;
@@ -315,7 +328,6 @@ export async function loadFromCloud(): Promise<{ success: boolean; data?: Record
   }
 }
 
-// Get cloud sync status
 export async function getCloudSyncStatus(): Promise<D1SyncState & { success: boolean }> {
   try {
     const tenantId = getTenantId();
@@ -374,27 +386,32 @@ export const useAppStore = create<AppState>((set) => ({
   currentUser: null,
   isAuthenticated: false,
   currentPage: 'dashboard',
-  students: [],
-  classes: [],
-  modules: [],
-  attendance: [],
-  grades: [],
-  behavior: [],
-  tasks: [],
-  incidents: [],
-  teachers: [],
-  employees: [],
-  templates: [],
-  academicYears: [],
-  schoolInfo: {},
+
+  // Immediate cache hydration on load/refresh: no empty flashes
+  students: getCachedData<Student[]>('students', []),
+  classes: getCachedData<Class[]>('classes', []),
+  modules: getCachedData<Module[]>('modules', []),
+  attendance: getCachedData<AttendanceRecord[]>('attendance', []),
+  grades: getCachedData<Grade[]>('grades', []),
+  behavior: getCachedData<BehaviorRecord[]>('behavior', []),
+  tasks: getCachedData<Task[]>('tasks', []),
+  incidents: getCachedData<Incident[]>('incidents', []),
+  teachers: getCachedData<Teacher[]>('teachers', []),
+  employees: getCachedData<Employee[]>('employees', []),
+  templates: getCachedData<Template[]>('templates', []),
+  academicYears: getCachedData<AcademicYear[]>('academicYears', []),
+  schoolInfo: getCachedData<SchoolInfo>('schoolInfo', {}),
   notifications: [],
-  admins: [],
-  schedules: [],
-  exams: [],
-  examGrades: [],
-  curriculum: [],
+  admins: getCachedData<Record<string, unknown>[]>('admins', []),
+  schedules: getCachedData<ClassScheduleEntry[]>('schedules', []),
+  exams: getCachedData<Exam[]>('exams', []),
+  examGrades: getCachedData<ExamGrade[]>('examGrades', []),
+  curriculum: getCachedData<CurriculumItem[]>('curriculum', []),
   auditLog: [],
-  savedSchedules: [], calendarEvents: [], profileViewStudent: null,
+  savedSchedules: getCachedData<SavedSchedule[]>('savedSchedules', []),
+  calendarEvents: getCachedData<CalendarEvent[]>('calendarEvents', []),
+  profileViewStudent: null,
+
   language: 'en',
   primaryColor: '#10b981',
 
@@ -449,27 +466,25 @@ export const useAppStore = create<AppState>((set) => ({
     localStorage.removeItem('attendance_auth');
   },
 
-  // ===== D1-Only Setters =====
-  // Each setter updates Zustand state in memory and immediately pushes to D1.
-  // No localStorage writes for business data — D1 is the single source of truth.
-  setStudents: (s) => { set({ students: s }); pushToD1Async(); },
-  setClasses: (c) => { set({ classes: c }); pushToD1Async(); },
-  setModules: (m) => { set({ modules: m }); pushToD1Async(); },
-  setAttendance: (a) => { set({ attendance: a }); pushToD1Async(); },
-  setGrades: (g) => { set({ grades: g }); pushToD1Async(); },
-  setBehavior: (b) => { set({ behavior: b }); pushToD1Async(); },
-  setTasks: (t) => { set({ tasks: t }); pushToD1Async(); },
-  setIncidents: (i) => { set({ incidents: i }); pushToD1Async(); },
-  setTeachers: (t) => { set({ teachers: t }); pushToD1Async(); },
-  setEmployees: (e) => { set({ employees: e }); pushToD1Async(); },
-  setTemplates: (t) => { set({ templates: t }); pushToD1Async(); },
-  setAcademicYears: (y) => { set({ academicYears: y }); pushToD1Async(); },
-  setSchoolInfo: (i) => { set({ schoolInfo: i }); pushToD1Async(); },
+  // ===== Setters with dual persistence: memory + local storage cache + D1 push =====
+  setStudents: (s) => { set({ students: s }); saveCache('students', s); pushToD1Async(); },
+  setClasses: (c) => { set({ classes: c }); saveCache('classes', c); pushToD1Async(); },
+  setModules: (m) => { set({ modules: m }); saveCache('modules', m); pushToD1Async(); },
+  setAttendance: (a) => { set({ attendance: a }); saveCache('attendance', a); pushToD1Async(); },
+  setGrades: (g) => { set({ grades: g }); saveCache('grades', g); pushToD1Async(); },
+  setBehavior: (b) => { set({ behavior: b }); saveCache('behavior', b); pushToD1Async(); },
+  setTasks: (t) => { set({ tasks: t }); saveCache('tasks', t); pushToD1Async(); },
+  setIncidents: (i) => { set({ incidents: i }); saveCache('incidents', i); pushToD1Async(); },
+  setTeachers: (t) => { set({ teachers: t }); saveCache('teachers', t); pushToD1Async(); },
+  setEmployees: (e) => { set({ employees: e }); saveCache('employees', e); pushToD1Async(); },
+  setTemplates: (t) => { set({ templates: t }); saveCache('templates', t); pushToD1Async(); },
+  setAcademicYears: (y) => { set({ academicYears: y }); saveCache('academicYears', y); pushToD1Async(); },
+  setSchoolInfo: (i) => { set({ schoolInfo: i }); saveCache('schoolInfo', i); pushToD1Async(); },
   setNotifications: (n) => { set({ notifications: n }); },
-  setSchedules: (s) => { set({ schedules: s }); pushToD1Async(); },
-  setExams: (e) => { set({ exams: e }); pushToD1Async(); },
-  setExamGrades: (eg) => { set({ examGrades: eg }); pushToD1Async(); },
-  setCurriculum: (c) => { set({ curriculum: c }); pushToD1Async(); },
+  setSchedules: (s) => { set({ schedules: s }); saveCache('schedules', s); pushToD1Async(); },
+  setExams: (e) => { set({ exams: e }); saveCache('exams', e); pushToD1Async(); },
+  setExamGrades: (eg) => { set({ examGrades: eg }); saveCache('examGrades', eg); pushToD1Async(); },
+  setCurriculum: (c) => { set({ curriculum: c }); saveCache('curriculum', c); pushToD1Async(); },
   addAuditLog: (action, entityType, entityId, entityName, details) => {
     const state = useAppStore.getState();
     const user = state.currentUser;
@@ -484,16 +499,14 @@ export const useAppStore = create<AppState>((set) => ({
       details: details || `${action} on ${entityType}${entityName ? ': ' + entityName : ''}`,
       timestamp: new Date().toISOString(),
     };
-    const newLog = [entry, ...state.auditLog].slice(0, 2000); // Keep last 2000 entries
+    const newLog = [entry, ...state.auditLog].slice(0, 2000);
     set({ auditLog: newLog });
-    // Audit logs are kept in memory only (not synced to D1 — no endpoint)
   },
   setAuditLog: (logs) => { set({ auditLog: logs }); },
-  setSavedSchedules: (s) => { set({ savedSchedules: s }); pushToD1Async(); },
-  setCalendarEvents: (e) => { set({ calendarEvents: e }); pushToD1Async(); },
-  setAdmins: (a) => { set({ admins: a }); pushToD1Async(); },
+  setSavedSchedules: (s) => { set({ savedSchedules: s }); saveCache('savedSchedules', s); pushToD1Async(); },
+  setCalendarEvents: (e) => { set({ calendarEvents: e }); saveCache('calendarEvents', e); pushToD1Async(); },
+  setAdmins: (a) => { set({ admins: a }); saveCache('admins', a); pushToD1Async(); },
 
-  // Purge all in-memory data and reload from D1 (no localStorage cleanup needed for business data)
   purgeCache: () => {
     set({
       students: [], classes: [], modules: [], attendance: [], grades: [],
@@ -502,18 +515,19 @@ export const useAppStore = create<AppState>((set) => ({
       admins: [], schedules: [], exams: [], examGrades: [], curriculum: [],
       auditLog: [], savedSchedules: [], calendarEvents: [],
     });
-    // Only keep auth and UI preferences in localStorage
     const keep = ['attendance_auth', 'attendance_primary_color', 'attendance_language', 'attendance_d1_sync_state'];
     const keys = Object.keys(localStorage);
     keys.forEach(k => { if (!keep.includes(k)) localStorage.removeItem(k); });
-    // Reload fresh data from D1
     setTimeout(() => { useAppStore.getState().loadAllData(); }, 100);
   },
 
-  setPrimaryColor: (color) => { set({ primaryColor: color }); localStorage.setItem('attendance_primary_color', color); document.documentElement.style.setProperty('--app-primary-color', color); },
+  setPrimaryColor: (color) => {
+    set({ primaryColor: color });
+    localStorage.setItem('attendance_primary_color', color);
+    document.documentElement.style.setProperty('--app-primary-color', color);
+  },
 
   loadAllData: async () => {
-    // Load UI preferences from localStorage (these stay local)
     const savedLang = (typeof window !== 'undefined' ? localStorage.getItem('attendance_language') : null) as 'en' | 'fr' | null;
     const cachedColor = typeof window !== 'undefined' ? localStorage.getItem('attendance_primary_color') || '#10b981' : '#10b981';
     document.documentElement.style.setProperty('--app-primary-color', cachedColor);
@@ -522,11 +536,8 @@ export const useAppStore = create<AppState>((set) => ({
       document.documentElement.dir = savedLang === 'ar' ? 'rtl' : 'ltr';
     }
 
-    // Mark as loading from D1 to prevent push-back
     _loadingFromApi = true;
-
     try {
-      // Pull ALL data from D1 — no local cache, D1 is the single source of truth
       const token = typeof window !== 'undefined' ? localStorage.getItem('api_token') : null;
       if (token) {
         const tenantId = getTenantId();
@@ -535,7 +546,6 @@ export const useAppStore = create<AppState>((set) => ({
           if (cloudRes.status === 401) {
             _lastPull401Time = Date.now();
             if (token && typeof window !== 'undefined') {
-              // Show session expired toast
               try {
                 const authData = localStorage.getItem('attendance_auth');
                 if (authData) {
@@ -543,10 +553,7 @@ export const useAppStore = create<AppState>((set) => ({
                   const lang = localStorage.getItem('attendance_language') || 'en';
                   showToast.error(lang === 'fr' ? 'Session expirée — veuillez vous reconnecter' : 'Session expired — please log in again');
                 }
-              } catch {
-                console.warn('[store] Could not show session expired toast');
-              }
-              console.warn('[store] Token rejected by D1 (401), forcing re-login');
+              } catch {}
               setApiToken(null);
               localStorage.removeItem('api_token');
               localStorage.removeItem('attendance_auth');
@@ -558,38 +565,75 @@ export const useAppStore = create<AppState>((set) => ({
           const cloudData = await cloudRes.json();
           if (cloudData?.success && cloudData.data) {
             const cd = cloudData.data;
-            // Load directly from D1 — no merge with local, D1 is authoritative
+            const cloudAttendance = (cd.attendance || []) as AttendanceRecord[];
+            const localCachedAttendance = getCachedData<AttendanceRecord[]>('attendance', []);
+
+            // Intelligent merge: keep cloud records, but if local cache has newly registered attendance not yet in D1, preserve them!
+            const cloudAttMap = new Map<string, AttendanceRecord>(cloudAttendance.map(a => [`${a.studentId}_${a.date}`, a]));
+            let needsRePush = false;
+            for (const localRec of localCachedAttendance) {
+              const key = `${localRec.studentId}_${localRec.date}`;
+              if (!cloudAttMap.has(key)) {
+                cloudAttendance.push(localRec);
+                needsRePush = true;
+              }
+            }
+
             set({
-              students: (cd.students || []) as Student[],
-              classes: (cd.classes || []) as Class[],
-              modules: (cd.modules || []) as Module[],
-              attendance: (cd.attendance || []) as AttendanceRecord[],
-              grades: (cd.grades || []) as Grade[],
-              behavior: (cd.behavior || []) as BehaviorRecord[],
-              tasks: (cd.tasks || []) as Task[],
-              incidents: (cd.incidents || []) as Incident[],
-              teachers: (cd.teachers || []) as Teacher[],
-              employees: (cd.employees || []) as Employee[],
-              templates: (cd.templates || []) as Template[],
-              academicYears: (cd.academicYears || []) as AcademicYear[],
-              schedules: (cd.schedules || []) as ClassScheduleEntry[],
-              exams: (cd.exams || []) as Exam[],
-              examGrades: (cd.examGrades || []) as ExamGrade[],
-              curriculum: (cd.curriculum || []) as CurriculumItem[],
-              savedSchedules: (cd.savedSchedules || []) as SavedSchedule[],
-              calendarEvents: (cd.calendarEvents || []) as CalendarEvent[],
-              admins: (cd.admins || []) as Record<string, unknown>[],
-              schoolInfo: (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(cd.schoolInfo).length > 0) ? cd.schoolInfo as SchoolInfo : {},
+              students: (cd.students || getCachedData('students', [])) as Student[],
+              classes: (cd.classes || getCachedData('classes', [])) as Class[],
+              modules: (cd.modules || getCachedData('modules', [])) as Module[],
+              attendance: cloudAttendance,
+              grades: (cd.grades || getCachedData('grades', [])) as Grade[],
+              behavior: (cd.behavior || getCachedData('behavior', [])) as BehaviorRecord[],
+              tasks: (cd.tasks || getCachedData('tasks', [])) as Task[],
+              incidents: (cd.incidents || getCachedData('incidents', [])) as Incident[],
+              teachers: (cd.teachers || getCachedData('teachers', [])) as Teacher[],
+              employees: (cd.employees || getCachedData('employees', [])) as Employee[],
+              templates: (cd.templates || getCachedData('templates', [])) as Template[],
+              academicYears: (cd.academicYears || getCachedData('academicYears', [])) as AcademicYear[],
+              schedules: (cd.schedules || getCachedData('schedules', [])) as ClassScheduleEntry[],
+              exams: (cd.exams || getCachedData('exams', [])) as Exam[],
+              examGrades: (cd.examGrades || getCachedData('examGrades', [])) as ExamGrade[],
+              curriculum: (cd.curriculum || getCachedData('curriculum', [])) as CurriculumItem[],
+              savedSchedules: (cd.savedSchedules || getCachedData('savedSchedules', [])) as SavedSchedule[],
+              calendarEvents: (cd.calendarEvents || getCachedData('calendarEvents', [])) as CalendarEvent[],
+              admins: (cd.admins || getCachedData('admins', [])) as Record<string, unknown>[],
+              schoolInfo: (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(cd.schoolInfo).length > 0) ? cd.schoolInfo as SchoolInfo : (getCachedData('schoolInfo', {}) as SchoolInfo),
               primaryColor: cachedColor,
               language: savedLang || 'en',
             });
 
+            // Write back to local cache
+            saveCache('attendance', cloudAttendance);
+            if (cd.students) saveCache('students', cd.students);
+            if (cd.classes) saveCache('classes', cd.classes);
+            if (cd.modules) saveCache('modules', cd.modules);
+            if (cd.grades) saveCache('grades', cd.grades);
+            if (cd.behavior) saveCache('behavior', cd.behavior);
+            if (cd.tasks) saveCache('tasks', cd.tasks);
+            if (cd.incidents) saveCache('incidents', cd.incidents);
+            if (cd.teachers) saveCache('teachers', cd.teachers);
+            if (cd.employees) saveCache('employees', cd.employees);
+            if (cd.templates) saveCache('templates', cd.templates);
+            if (cd.academicYears) saveCache('academicYears', cd.academicYears);
+            if (cd.schedules) saveCache('schedules', cd.schedules);
+            if (cd.exams) saveCache('exams', cd.exams);
+            if (cd.examGrades) saveCache('examGrades', cd.examGrades);
+            if (cd.curriculum) saveCache('curriculum', cd.curriculum);
+            if (cd.savedSchedules) saveCache('savedSchedules', cd.savedSchedules);
+            if (cd.calendarEvents) saveCache('calendarEvents', cd.calendarEvents);
+
             updateD1SyncState({ cloudConnected: true, cloudCounts: cloudData.counts || {} });
+
+            if (needsRePush) {
+              setTimeout(() => { pushToD1Now({ attendance: cloudAttendance }); }, 300);
+            }
           }
         }
       }
     } catch (e) {
-      // Silently handle errors during data load
+      // Errors handled gracefully without clearing cached state
     } finally {
       _loadingFromApi = false;
     }

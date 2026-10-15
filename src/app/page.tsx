@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
-import { useAppStore, syncToCloud, loadFromCloud, getCloudSyncStatus, sendAttendanceReminders, retrySync } from '@/lib/store';
+import { useAppStore, syncToCloud, loadFromCloud, getCloudSyncStatus, sendAttendanceReminders, retrySync, saveAttendanceDirectly } from '@/lib/store';
 import { setApiToken, localApi } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
@@ -1217,7 +1217,7 @@ function AttendancePage() {
     const m: Record<string, AttendanceRecord['status']> = {}; filteredStudents.forEach(s => { m[s.id] = status; }); setOverrides(m);
     if (status === 'absent' || status === 'late') { filteredStudents.filter(s => s.guardianPhone).forEach((s, i) => setTimeout(() => sendAbsenceWhatsApp(s.id, status), (i + 1) * 1000)); }
   };
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true);
     // Preserve records for students NOT in current filter
     const filteredStudentIds = new Set(filteredStudents.map(s => s.id));
@@ -1226,7 +1226,11 @@ function AttendancePage() {
     const newR: AttendanceRecord[] = [];
     const newAbsences: Array<{ student: Student; status: AttendanceRecord['status'] }> = [];
     filteredStudents.forEach(s => { const st = localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) { updated.push({ ...ex, status: st }); } else { newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); } if ((st === 'absent' || st === 'late') && (!ex || ex.status !== st)) { newAbsences.push({ student: s, status: st }); } });
-    setAttendance([...updated, ...otherDayRecords, ...newR]); toast.success(language === 'fr' ? 'Présence enregistrée !' : 'Attendance saved!'); setTimeout(() => setSaving(false), 500);
+    const finalAttendance = [...updated, ...otherDayRecords, ...newR];
+    setOverrides({});
+    await saveAttendanceDirectly(finalAttendance);
+    toast.success(language === 'fr' ? 'Présence enregistrée !' : 'Attendance saved!');
+    setSaving(false);
     // Send email notifications for new absences/late
     if (emailNotifEnabled && newAbsences.length > 0) { sendAbsenceEmails(newAbsences); }
     // Push notification for admin: attendance summary
@@ -1322,7 +1326,7 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
     const m: Record<string, AttendanceRecord['status']> = {}; filteredStudents.forEach(s => { m[s.id] = status; }); setQuickBulk({ ...m });
     if (Object.keys(m).length > 0) toast.success(language === 'fr' ? `${Object.keys(m).length} marqué(s) comme ${status}` : `${Object.keys(m).length} marked as ${status}`);
   };
-  const handleQuickSave = () => {
+  const handleQuickSave = async () => {
     setSaving(true);
     // Preserve records for students NOT in current filter
     const filteredStudentIds = new Set(filteredStudents.map(s => s.id));
@@ -1331,7 +1335,12 @@ body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
     const newR: AttendanceRecord[] = [];
     const newAbsences: Array<{ student: Student; status: AttendanceRecord['status'] }> = [];
     filteredStudents.forEach(s => { const st = quickBulk[s.id] || localRecords[s.id] || 'present'; const ex = attendance.find(r => r.date === selectedDate && r.studentId === s.id); if (ex) { updated.push({ ...ex, status: st }); } else { newR.push({ id: genId(), studentId: s.id, date: selectedDate, status: st, createdAt: new Date().toISOString() }); } if ((st === 'absent' || st === 'late') && (!ex || ex.status !== st)) { newAbsences.push({ student: s, status: st }); } });
-    setAttendance([...updated, ...otherDayRecords, ...newR]); toast.success(language === 'fr' ? 'Présence enregistrée !' : 'Attendance saved!'); setQuickBulk({}); setTimeout(() => setSaving(false), 500);
+    const finalAttendance = [...updated, ...otherDayRecords, ...newR];
+    setQuickBulk({});
+    setOverrides({});
+    await saveAttendanceDirectly(finalAttendance);
+    toast.success(language === 'fr' ? 'Présence enregistrée !' : 'Attendance saved!');
+    setSaving(false);
     // Send email notifications for new absences/late
     if (emailNotifEnabled && newAbsences.length > 0) { sendAbsenceEmails(newAbsences); }
   };
