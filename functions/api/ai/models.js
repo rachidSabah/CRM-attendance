@@ -1,6 +1,6 @@
 /**
  * GET /api/ai/models
- * Model discovery with server-side caching
+ * Model discovery with dynamic live prefetching from Google Generative Language API
  * Requires Admin authentication
  */
 import { validateRequest } from '../../_lib/auth.js';
@@ -8,7 +8,7 @@ import { getCorsHeaders } from '../../_lib/cors.js';
 
 let cachedModels = null;
 let cacheTime = 0;
-const CACHE_TTL = 3600 * 1000; // 1 hour
+const CACHE_TTL = 300 * 1000; // 5 minutes TTL for live responsiveness
 
 const FALLBACK_MODELS = [
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Recommandé)', description: 'Ultra-rapide, optimisé pour l’analyse d’assiduité et la rédaction' },
@@ -17,9 +17,23 @@ const FALLBACK_MODELS = [
   { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Modèle stable et léger' },
 ];
 
+const PRIORITY_ORDER = [
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+  'gemini-flash-latest',
+  'gemini-pro-latest',
+  'gemini-2.5-flash-lite',
+  'gemini-3-flash-preview',
+  'gemini-3.1-pro-preview',
+];
+
 export async function onRequestGet(context) {
   const cors = getCorsHeaders(context.request);
   const db = context.env.DB;
+  const url = new URL(context.request.url);
+  const forceFresh = url.searchParams.get('fresh') === 'true' || url.searchParams.get('refresh') === 'true';
 
   const auth = await validateRequest(context.request, db);
   if (!auth.authenticated) {
@@ -30,8 +44,8 @@ export async function onRequestGet(context) {
   }
 
   try {
-    // 1. Resolve API Key from env or D1 school_settings
-    let apiKey = context.env.GEMINI_API_KEY;
+    // 1. Resolve API Key: header -> query param -> D1 school_settings -> env
+    let apiKey = context.request.headers.get('x-gemini-key') || url.searchParams.get('apiKey') || context.env.GEMINI_API_KEY;
     let defaultModel = 'gemini-2.5-flash';
 
     if (!apiKey && db) {
@@ -61,21 +75,23 @@ export async function onRequestGet(context) {
       });
     }
 
-    // 2. Check cache
+    // 2. Check cache unless fresh retrieval requested
     const now = Date.now();
-    if (cachedModels && (now - cacheTime < CACHE_TTL)) {
+    if (!forceFresh && cachedModels && (now - cacheTime < CACHE_TTL)) {
       return new Response(JSON.stringify({
         success: true,
         hasApiKey: true,
         models: cachedModels,
         defaultModel,
         cached: true,
+        isLive: true,
+        count: cachedModels.length,
       }), {
         headers: { 'Content-Type': 'application/json', ...cors },
       });
     }
 
-    // 3. Query Google Generative Language API
+    // 3. Live Query to Google Generative Language API
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
     if (!res.ok) {
       const errText = await res.text();
@@ -83,7 +99,7 @@ export async function onRequestGet(context) {
       return new Response(JSON.stringify({
         success: true,
         hasApiKey: true,
-        models: FALLBACK_MODELS,
+        models: cachedModels || FALLBACK_MODELS,
         defaultModel,
         fallback: true,
       }), {
@@ -108,6 +124,16 @@ export async function onRequestGet(context) {
         };
       });
 
+    // Sort models with flagship priority models first
+    geminiModels.sort((a, b) => {
+      const idxA = PRIORITY_ORDER.indexOf(a.id);
+      const idxB = PRIORITY_ORDER.indexOf(b.id);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
     const finalModels = geminiModels.length > 0 ? geminiModels : FALLBACK_MODELS;
     cachedModels = finalModels;
     cacheTime = now;
@@ -117,8 +143,15 @@ export async function onRequestGet(context) {
       hasApiKey: true,
       models: finalModels,
       defaultModel,
+      isLive: true,
+      count: finalModels.length,
+      refreshedAt: new Date(now).toISOString(),
     }), {
-      headers: { 'Content-Type': 'application/json', ...cors },
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'private, max-age=300',
+        ...cors
+      },
     });
   } catch (error) {
     console.error('[ai/models] Error:', error);

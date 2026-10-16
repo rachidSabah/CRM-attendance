@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '@/lib/store';
+import { getApiToken } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,11 +38,15 @@ export function AiAutopilot() {
   const [customPrompt, setCustomPrompt] = useState<string>('');
   const [latency, setLatency] = useState<number | null>(null);
 
-  // Fetch available models
-  const loadModels = async () => {
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Fetch available models with dynamic live prefetching
+  const loadModels = async (forceFresh = false) => {
+    setRefreshing(true);
     try {
-      const token = localStorage.getItem('auth_token') || '';
-      const res = await fetch('/api/ai/models', {
+      const token = getApiToken() || '';
+      const url = forceFresh ? '/api/ai/models?fresh=true' : '/api/ai/models';
+      const res = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (res.ok) {
@@ -49,13 +54,18 @@ export function AiAutopilot() {
         if (data.models && data.models.length > 0) {
           setModels(data.models);
         }
-        if (data.defaultModel) {
+        if (data.defaultModel && (!selectedModel || selectedModel === 'gemini-2.5-flash')) {
           setSelectedModel(data.defaultModel);
         }
         setHasApiKey(Boolean(data.hasApiKey));
+        if (forceFresh) {
+          toast.success(`Modèles Gemini actualisés en direct (${data.models?.length || 0} disponibles)`);
+        }
       }
     } catch (e) {
       console.warn('Could not load AI models:', e);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -116,7 +126,7 @@ export function AiAutopilot() {
     setResultText('');
     setLatency(null);
 
-    const token = localStorage.getItem('auth_token') || '';
+    const token = getApiToken() || '';
 
     let contextData: any = {};
     let promptOverride = '';
@@ -224,17 +234,19 @@ export function AiAutopilot() {
         {/* Model selector & Status */}
         <div className="flex items-center gap-3">
           <div className="space-y-1">
-            <div className="text-[11px] text-muted-foreground flex items-center gap-1">
-              <Cpu className="h-3 w-3" /> Modèle Gemini
+            <div className="text-[11px] text-muted-foreground flex items-center justify-between gap-1">
+              <span className="flex items-center gap-1"><Cpu className="h-3 w-3" /> Modèle Gemini</span>
+              {models.length > 0 && <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">{models.length} modèles live</span>}
             </div>
             <Select value={selectedModel} onValueChange={setSelectedModel}>
-              <SelectTrigger className="h-8 text-xs w-48 bg-card">
+              <SelectTrigger className="h-8 text-xs w-56 bg-card">
                 <SelectValue placeholder="Sélectionner un modèle" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="max-h-72">
                 {models.map(m => (
                   <SelectItem key={m.id} value={m.id} className="text-xs">
-                    {m.name}
+                    <span className="font-medium">{m.name}</span>
+                    {m.description && <span className="text-[10px] text-muted-foreground block truncate max-w-xs">{m.description}</span>}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -244,10 +256,12 @@ export function AiAutopilot() {
           <Button
             variant="outline"
             size="sm"
-            onClick={loadModels}
+            onClick={() => loadModels(true)}
+            disabled={refreshing}
             className="h-8 gap-1 mt-4"
+            title="Actualiser les modèles Gemini en direct"
           >
-            <RefreshCw className="h-3.5 w-3.5" />
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
         </div>
       </div>

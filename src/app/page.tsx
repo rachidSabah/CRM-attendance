@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { useAppStore, syncToCloud, loadFromCloud, getCloudSyncStatus, sendAttendanceReminders, retrySync, saveAttendanceDirectly } from '@/lib/store';
-import { setApiToken, localApi } from '@/lib/api';
+import { setApiToken, getApiToken, localApi } from '@/lib/api';
 import { calculateWeeklyLowAttendanceClasses, getDateRangeBounds, type DateRangePreset } from '@/lib/attendanceLogic';
 import { t } from '@/lib/i18n';
 import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
@@ -6064,10 +6064,44 @@ function AiSettingsSection() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; latencyMs?: number } | null>(null);
+  const [models, setModels] = useState<Array<{ id: string; name: string; description?: string }>>([]);
+  const [refreshingModels, setRefreshingModels] = useState(false);
+  const [isLiveApi, setIsLiveApi] = useState(false);
+
+  const fetchLiveModels = async (forceFresh = false) => {
+    setRefreshingModels(true);
+    try {
+      const token = getApiToken() || '';
+      const url = forceFresh ? '/api/ai/models?fresh=true' : '/api/ai/models';
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          ...(inputKey.trim() ? { 'x-gemini-key': inputKey.trim() } : {})
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.models) && data.models.length > 0) {
+          setModels(data.models);
+          setIsLiveApi(Boolean(data.isLive));
+        }
+        if (data.defaultModel && !defaultModel) {
+          setDefaultModel(data.defaultModel);
+        }
+        if (forceFresh) {
+          toast.success(language === 'fr' ? `Modèles actualisés (${data.models?.length || 0} disponibles)` : `Models refreshed (${data.models?.length || 0} available)`);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch live AI models:', e);
+    } finally {
+      setRefreshingModels(false);
+    }
+  };
 
   const fetchConfig = async () => {
     try {
-      const token = localStorage.getItem('auth_token') || '';
+      const token = getApiToken() || '';
       const res = await fetch('/api/ai/config', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -6087,12 +6121,13 @@ function AiSettingsSection() {
 
   useEffect(() => {
     fetchConfig();
+    fetchLiveModels();
   }, []);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const token = localStorage.getItem('auth_token') || '';
+      const token = getApiToken() || '';
       const res = await fetch('/api/ai/config', {
         method: 'POST',
         headers: {
@@ -6111,6 +6146,7 @@ function AiSettingsSection() {
       toast.success(language === 'fr' ? 'Configuration IA enregistrée avec succès' : 'AI configuration saved');
       setInputKey('');
       await fetchConfig();
+      await fetchLiveModels(true);
     } catch (err: any) {
       toast.error(err.message || 'Échec de la sauvegarde');
     } finally {
@@ -6122,7 +6158,7 @@ function AiSettingsSection() {
     setTesting(true);
     setTestResult(null);
     try {
-      const token = localStorage.getItem('auth_token') || '';
+      const token = getApiToken() || '';
       const res = await fetch('/api/ai/test', {
         method: 'POST',
         headers: {
@@ -6147,6 +6183,7 @@ function AiSettingsSection() {
           latencyMs: data.latencyMs
         });
         toast.success(language === 'fr' ? 'Test de connexion Gemini réussi !' : 'Gemini connection test successful!');
+        await fetchLiveModels(true);
       }
     } catch (err: any) {
       setTestResult({
@@ -6220,18 +6257,49 @@ function AiSettingsSection() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">
-                {language === 'fr' ? 'Modèle par défaut' : 'Default Model'}
-              </Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold">
+                  {language === 'fr' ? 'Modèle Gemini par défaut' : 'Default Gemini Model'}
+                </Label>
+                <div className="flex items-center gap-2">
+                  {models.length > 0 && (
+                    <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                      {models.length} {language === 'fr' ? 'modèles en direct' : 'live models'}
+                    </span>
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => fetchLiveModels(true)}
+                    disabled={refreshingModels}
+                    className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                    title={language === 'fr' ? 'Actualiser les modèles en direct via l’API' : 'Refresh live models via API'}
+                  >
+                    <RefreshCw className={`h-3 w-3 ${refreshingModels ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
+              </div>
               <Select value={defaultModel} onValueChange={setDefaultModel}>
                 <SelectTrigger className="h-9 text-xs">
-                  <SelectValue />
+                  <SelectValue placeholder="Sélectionner un modèle..." />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash (Recommandé - Rapide & Économique)</SelectItem>
-                  <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro (Raisonnement Avancé)</SelectItem>
-                  <SelectItem value="gemini-2.0-flash">Gemini 2.0 Flash</SelectItem>
-                  <SelectItem value="gemini-1.5-flash">Gemini 1.5 Flash</SelectItem>
+                <SelectContent className="max-h-72">
+                  {models.length > 0 ? (
+                    models.map(m => (
+                      <SelectItem key={m.id} value={m.id} className="text-xs">
+                        <span className="font-medium">{m.name}</span>
+                        {m.description && <span className="text-[10px] text-muted-foreground block truncate max-w-sm">{m.description}</span>}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <>
+                      <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash (Recommandé)</SelectItem>
+                      <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
+                      <SelectItem value="gemini-2.0-flash">Gemini 2.0 Flash</SelectItem>
+                      <SelectItem value="gemini-1.5-flash">Gemini 1.5 Flash</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -8270,6 +8338,11 @@ export default function App() {
               },
               isAuthenticated: true,
             });
+
+            // Lively prefetch AI models in background
+            fetch('/api/ai/models?fresh=true', {
+              headers: { 'Authorization': `Bearer ${data.token}` }
+            }).catch(() => {});
           }
         }
         await loadAllData();
