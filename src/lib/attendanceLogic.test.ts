@@ -4,9 +4,12 @@ import {
   recordAttendance,
   mergeAttendanceRecords,
   calculateAttendanceStats,
+  calculateWeeklyLowAttendanceClasses,
+  getDateRangeBounds,
   type AttendanceRecordLike,
   type StudentLike,
-} from './attendanceLogic';
+  type ClassLike,
+} from './attendanceLogic.ts';
 
 test('recordAttendance adds new records and preserves other dates', () => {
   const existing: AttendanceRecordLike[] = [
@@ -95,4 +98,61 @@ test('calculateAttendanceStats accurately totals statuses', () => {
   const allStats = calculateAttendanceStats(students, records, '2026-10-15', 'all');
   assert.equal(allStats.unmarked, 1);
   assert.equal(allStats.total, 3);
+});
+
+test('calculateWeeklyLowAttendanceClasses computes percentage correctly for current week', () => {
+  const refDate = new Date('2026-10-15T10:00:00Z');
+
+  const classes: ClassLike[] = [
+    { id: 'cls_a', name: 'Class Alpha' },
+    { id: 'cls_b', name: 'Class Beta' },
+  ];
+
+  const students: StudentLike[] = [
+    { id: 'st_1', classId: 'cls_a', status: 'active' },
+    { id: 'st_2', classId: 'cls_a', status: 'active' },
+    { id: 'st_3', classId: 'cls_b', status: 'active' },
+    { id: 'st_4', classId: 'cls_b', status: 'active' },
+  ];
+
+  const attendance: AttendanceRecordLike[] = [
+    { id: '1', studentId: 'st_1', date: '2026-10-13', status: 'present' },
+    { id: '2', studentId: 'st_2', date: '2026-10-13', status: 'absent' },
+    { id: '3', studentId: 'st_3', date: '2026-10-14', status: 'present' },
+    { id: '4', studentId: 'st_4', date: '2026-10-14', status: 'present' },
+    { id: '5', studentId: 'st_1', date: '2026-10-05', status: 'present' },
+  ];
+
+  const res = calculateWeeklyLowAttendanceClasses(classes, students, attendance, refDate, 75);
+
+  assert.equal(res.totalEvaluatedClasses, 2);
+  assert.equal(res.lowRateClassCount, 1);
+  assert.equal(res.percentage, 50);
+  assert.equal(res.lowClasses.length, 1);
+  assert.equal(res.lowClasses[0].name, 'Class Alpha');
+  assert.equal(res.lowClasses[0].rate, 50);
+});
+
+test('getDateRangeBounds calculates ranges accurately', () => {
+  const ref = new Date('2026-10-15T12:00:00Z'); // Thursday
+
+  const todayBounds = getDateRangeBounds('today', ref);
+  assert.equal(todayBounds.startDate, '2026-10-15');
+  assert.equal(todayBounds.endDate, '2026-10-15');
+
+  const weekBounds = getDateRangeBounds('this_week', ref);
+  assert.equal(weekBounds.startDate, '2026-10-12'); // Monday
+  assert.equal(weekBounds.endDate, '2026-10-18'); // Sunday
+
+  const sevenDayBounds = getDateRangeBounds('last_7_days', ref);
+  assert.equal(sevenDayBounds.startDate, '2026-10-09');
+  assert.equal(sevenDayBounds.endDate, '2026-10-15');
+
+  const monthBounds = getDateRangeBounds('this_month', ref);
+  assert.equal(monthBounds.startDate, '2026-10-01');
+  assert.equal(monthBounds.endDate, '2026-10-31');
+
+  const customBounds = getDateRangeBounds('custom', ref, '2026-10-05', '2026-10-10');
+  assert.equal(customBounds.startDate, '2026-10-05');
+  assert.equal(customBounds.endDate, '2026-10-10');
 });

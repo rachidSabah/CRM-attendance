@@ -1,81 +1,163 @@
 /**
  * POST /api/auth/login
- * Login endpoint with D1-first strategy:
- *   1. If user exists in D1 → D1 is the authority (password changed here takes effect immediately)
- *   2. If user NOT in D1 → try external API, then sync profile to D1 for future use
+ * Robust login endpoint with D1-first strategy and CORS support:
+ *   1. Check D1 for matching user credentials (case-insensitive username, flexible tenant fallback)
+ *   2. If user exists in D1 and password matches → generate session token and return user profile
+ *   3. If user NOT in D1 → attempt fallback bootstrap against external API
  */
+
+import { getCorsHeaders } from '../_lib/cors.js';
 
 const EXTERNAL_API = 'https://infohas-attendance-api.rachidelsabah.workers.dev/api';
 
+function jsonResponse(data, status = 200, corsHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      ...corsHeaders,
+    },
+  });
+}
+
+export async function onRequestOptions(context) {
+  const corsHeaders = getCorsHeaders(context.request);
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders,
+  });
+}
+
 async function handleLogin(context) {
+  const corsHeaders = getCorsHeaders(context.request);
   try {
-    const body = await context.request.json();
-    const { username, password, slug } = body;
+    const body = await context.request.json().catch(() => ({}));
+    const username = typeof body.username === 'string' ? body.username.trim() : '';
+    const password = typeof body.password === 'string' ? body.password.trim() : '';
+    const slug = typeof body.slug === 'string' ? body.slug.trim() : '';
 
     if (!username || !password) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Username and password are required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      return jsonResponse(
+        { success: false, error: 'Username and password are required' },
+        400,
+        corsHeaders
       );
     }
 
     const tid = slug || 'default';
     const db = context.env.DB;
-    const authKey = `auth_${username}_${tid}`;
+    const lowerUser = username.toLowerCase();
 
-    // Step 1: Check if user exists in D1
-    let d1User = null;
+    // Step 1: Check D1 database
+    let matchedUser = null;
+    let matchedKey = null;
+    let matchedTenant = tid;
+
     if (db) {
       try {
-        const row = await db.prepare(
-          'SELECT data FROM school_settings WHERE tenant_id = ? AND key = ?'
-        ).bind(tid, authKey).first();
-        if (row && row.data) {
-          try { d1User = JSON.parse(row.data); } catch (e) { console.warn('[auth/login] D1 user parse failed:', e.message || e); }
+        // Candidate keys in order of preference
+        const candidateKeys = [
+          `auth_${username}_${tid}`,
+          `auth_${lowerUser}_${tid}`,
+          `auth_${lowerUser}_default`,
+          `auth_${username}_default`,
+        ];
+
+        for (const cKey of candidateKeys) {
+          const row = await db.prepare(
+            'SELECT tenant_id, key, data FROM school_settings WHERE key = ?'
+          ).bind(cKey).first();
+          if (row && row.data) {
+            try {
+              const parsed = JSON.parse(row.data);
+              if (parsed && (parsed.password === password || parsed.password === body.password)) {
+                matchedUser = parsed;
+                matchedKey = row.key;
+                matchedTenant = row.tenant_id || tid;
+                break;
+              } else if (!matchedUser && parsed) {
+                // Keep candidate in case no exact password match found yet
+                matchedUser = parsed;
+                matchedKey = row.key;
+                matchedTenant = row.tenant_id || tid;
+              }
+            } catch (e) {
+              console.warn('[auth/login] Parse failed for key:', cKey, e);
+            }
+          }
         }
-      } catch (e) { console.warn('[auth/login] D1 lookup failed:', e.message || e); }
+
+        // If not found by candidate keys, check all auth keys for matching username & password
+        if (!matchedUser || (matchedUser.password !== password && matchedUser.password !== body.password)) {
+          const allAuthRows = await db.prepare(
+            'SELECT tenant_id, key, data FROM school_settings WHERE key LIKE "auth_%"'
+          ).all();
+          if (allAuthRows && allAuthRows.results) {
+            for (const r of allAuthRows.results) {
+              try {
+                const parsed = JSON.parse(r.data);
+                if (
+                  parsed &&
+                  String(parsed.username || '').toLowerCase() === lowerUser &&
+                  (parsed.password === password || parsed.password === body.password)
+                ) {
+                  matchedUser = parsed;
+                  matchedKey = r.key;
+                  matchedTenant = r.tenant_id || 'default';
+                  break;
+                }
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[auth/login] D1 lookup failed:', e.message || e);
+      }
     }
 
-    // Step 2: If user exists in D1 → D1 is the SOLE authority for password
-    // Once a user is synced to D1, password changes made here must be permanent.
-    // We NEVER fall through to the external API to overwrite a D1 user's password.
-    if (d1User) {
-      if (d1User.password === password) {
+    // Step 2: If user found in D1
+    if (matchedUser) {
+      if (matchedUser.password === password || matchedUser.password === body.password) {
         // D1 login successful — generate session token
         const bytes = crypto.getRandomValues(new Uint8Array(24));
         const sessionToken = 'd1_' + Array.from(bytes, b => b.toString(36).padStart(2, '0')).join('');
-        d1User.token = sessionToken;
-        d1User.updatedAt = new Date().toISOString();
+        matchedUser.token = sessionToken;
+        matchedUser.updatedAt = new Date().toISOString();
 
-        try {
-          await db.prepare(
-            'INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime(\'now\')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime(\'now\')'
-          ).bind(authKey, tid, authKey, JSON.stringify(d1User)).run();
-        } catch (e) { console.warn('[auth/login] Token save failed:', e.message || e); }
+        if (db && matchedKey) {
+          try {
+            await db.prepare(
+              'INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime(\'now\')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime(\'now\')'
+            ).bind(matchedKey, matchedTenant, matchedKey, JSON.stringify(matchedUser)).run();
+          } catch (e) {
+            console.warn('[auth/login] Token save failed:', e.message || e);
+          }
+        }
 
-        return new Response(
-          JSON.stringify({
+        return jsonResponse(
+          {
             success: true,
             token: sessionToken,
             user: {
-              id: d1User.id || username,
-              username: d1User.username || username,
-              fullName: d1User.fullName || d1User.full_name || username,
-              email: d1User.email || '',
-              role: d1User.role || 'user',
-              tenant_id: d1User.tenantId || tid,
-              is_super_admin: Boolean(d1User.is_super_admin),
+              id: matchedUser.id || username,
+              username: matchedUser.username || username,
+              fullName: matchedUser.fullName || matchedUser.full_name || username,
+              email: matchedUser.email || '',
+              role: matchedUser.role || 'user',
+              tenant_id: matchedUser.tenantId || matchedTenant || 'default',
+              is_super_admin: Boolean(matchedUser.is_super_admin),
             },
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          },
+          200,
+          corsHeaders
         );
       }
-      // D1 password doesn't match and user EXISTS in D1 — reject immediately.
-      // Do NOT fall through to external API, which would overwrite the user's
-      // personalized D1 password with the external API's (possibly stale) one.
-      return new Response(
-        JSON.stringify({ success: false, error: 'Invalid credentials' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
+
+      // Password didn't match and user exists in D1
+      return jsonResponse(
+        { success: false, error: 'Invalid credentials' },
+        401,
+        corsHeaders
       );
     }
 
@@ -107,16 +189,16 @@ async function handleLogin(context) {
                 is_super_admin: Boolean(extUser.is_super_admin),
                 updatedAt: new Date().toISOString(),
               };
+              const saveKey = `auth_${username}_${tid}`;
               await db.prepare(
                 'INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime(\'now\')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime(\'now\')'
-              ).bind(authKey, tid, authKey, JSON.stringify(userData)).run();
+              ).bind(saveKey, tid, saveKey, JSON.stringify(userData)).run();
             }
-          } catch (e) { console.warn('[auth/login] D1 sync from external failed:', e.message || e); }
+          } catch (e) {
+            console.warn('[auth/login] D1 sync from external failed:', e.message || e);
+          }
 
-          return new Response(
-            JSON.stringify(extData),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
-          );
+          return jsonResponse(extData, 200, corsHeaders);
         }
       }
     } catch (e) {
@@ -124,15 +206,17 @@ async function handleLogin(context) {
     }
 
     // Step 4: No match anywhere
-    return new Response(
-      JSON.stringify({ success: false, error: 'Invalid credentials' }),
-      { status: 401, headers: { 'Content-Type': 'application/json' } }
+    return jsonResponse(
+      { success: false, error: 'Invalid credentials' },
+      401,
+      corsHeaders
     );
   } catch (err) {
     console.error('[auth/login] Error:', err);
-    return new Response(
-      JSON.stringify({ success: false, error: 'Internal server error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    return jsonResponse(
+      { success: false, error: 'Internal server error' },
+      500,
+      corsHeaders
     );
   }
 }
@@ -144,4 +228,3 @@ export async function onRequest(context) {
 export async function onRequestPost(context) {
   return handleLogin(context);
 }
-

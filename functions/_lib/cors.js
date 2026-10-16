@@ -5,17 +5,26 @@
 
 const ALLOWED_ORIGINS = [
   'https://crm-attendance.pages.dev',
+  'https://admin.cabincrew.academy',
   'http://localhost:3000',
   'http://localhost:3001',
 ];
 
+function isOriginAllowed(origin) {
+  if (!origin) return false;
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  if (origin.endsWith('.pages.dev') || origin.endsWith('.run.app') || origin.endsWith('cabincrew.academy')) return true;
+  if (/^http:\/\/localhost(:\d+)?$/.test(origin)) return true;
+  return false;
+}
+
 export function getCorsHeaders(request) {
   const origin = request.headers.get('Origin') || '';
-  const allowed = ALLOWED_ORIGINS.includes(origin);
+  const allowed = isOriginAllowed(origin);
   return {
-    'Access-Control-Allow-Origin': allowed ? origin : '',
+    'Access-Control-Allow-Origin': allowed ? origin : '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
     'Access-Control-Max-Age': '86400',
   };
 }

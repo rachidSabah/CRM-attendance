@@ -441,13 +441,28 @@ export const useAppStore = create<AppState>((set) => ({
 
   login: async (username, password, slug) => {
     try {
-      const loginData: Record<string, string> = { username, password };
-      if (slug) loginData.slug = slug;
-      const res = await fetch('/api/auth/login', {
+      const cleanUser = (username || '').trim();
+      const cleanPass = (password || '').trim();
+      const cleanSlug = (slug || '').trim();
+      const loginData: Record<string, string> = { username: cleanUser, password: cleanPass };
+      if (cleanSlug) loginData.slug = cleanSlug;
+      let res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginData),
       });
+      if (!res.ok && typeof window !== 'undefined' && window.location.hostname !== 'crm-attendance.pages.dev' && window.location.hostname !== 'admin.cabincrew.academy') {
+        try {
+          const directRes = await fetch('https://crm-attendance.pages.dev/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(loginData),
+          });
+          if (directRes.ok) {
+            res = directRes;
+          }
+        } catch (_) {}
+      }
       if (!res.ok) return false;
       const result = await res.json();
       if (result && result.success) {

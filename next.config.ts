@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 
+const isProduction = process.env.NODE_ENV === "production";
+
 const nextConfig: NextConfig = {
-  output: "export",
-  /* config options here */
+  ...(isProduction ? { output: "export" } : {}),
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -10,6 +11,16 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  async rewrites() {
+    if (isProduction) return [];
+    return [
+      {
+        source: "/api/:path*",
+        destination: "https://crm-attendance.pages.dev/api/:path*",
+      },
+    ];
+  },
 };
 
 export default nextConfig;
+

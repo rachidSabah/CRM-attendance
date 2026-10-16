@@ -13,6 +13,197 @@ export interface StudentLike {
   classId?: string;
 }
 
+export interface ClassLike {
+  id: string;
+  name: string;
+}
+
+export interface WeeklyLowAttendanceStats {
+  percentage: number;
+  lowRateClassCount: number;
+  totalEvaluatedClasses: number;
+  weekRangeLabel: string;
+  mondayStr: string;
+  sundayStr: string;
+  lowClasses: Array<{
+    id: string;
+    name: string;
+    rate: number;
+    total: number;
+    present: number;
+  }>;
+}
+
+export type DateRangePreset = 'today' | 'this_week' | 'last_7_days' | 'this_month' | 'last_30_days' | 'custom';
+
+export interface DateRangeBounds {
+  startDate: string;
+  endDate: string;
+  label: string;
+}
+
+/**
+ * Computes start and end date strings (YYYY-MM-DD) for dashboard date presets
+ */
+export function getDateRangeBounds(
+  preset: DateRangePreset,
+  referenceDate: Date = new Date(),
+  customStart?: string,
+  customEnd?: string
+): DateRangeBounds {
+  const formatYMD = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const ref = new Date(referenceDate);
+  const todayStr = formatYMD(ref);
+
+  if (preset === 'today') {
+    return { startDate: todayStr, endDate: todayStr, label: todayStr };
+  }
+
+  if (preset === 'this_week') {
+    const day = ref.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(ref);
+    monday.setDate(ref.getDate() + diffToMonday);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const s = formatYMD(monday);
+    const e = formatYMD(sunday);
+    return { startDate: s, endDate: e, label: `${s} ~ ${e}` };
+  }
+
+  if (preset === 'last_7_days') {
+    const start = new Date(ref);
+    start.setDate(ref.getDate() - 6);
+    const s = formatYMD(start);
+    return { startDate: s, endDate: todayStr, label: `${s} ~ ${todayStr}` };
+  }
+
+  if (preset === 'this_month') {
+    const start = new Date(ref.getFullYear(), ref.getMonth(), 1);
+    const end = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+    const s = formatYMD(start);
+    const e = formatYMD(end);
+    return { startDate: s, endDate: e, label: `${s} ~ ${e}` };
+  }
+
+  if (preset === 'last_30_days') {
+    const start = new Date(ref);
+    start.setDate(ref.getDate() - 29);
+    const s = formatYMD(start);
+    return { startDate: s, endDate: todayStr, label: `${s} ~ ${todayStr}` };
+  }
+
+  if (preset === 'custom' && customStart && customEnd) {
+    const s = customStart <= customEnd ? customStart : customEnd;
+    const e = customStart <= customEnd ? customEnd : customStart;
+    return { startDate: s, endDate: e, label: `${s} ~ ${e}` };
+  }
+
+  const start = new Date(ref);
+  start.setDate(ref.getDate() - 29);
+  const s = formatYMD(start);
+  return { startDate: s, endDate: todayStr, label: `${s} ~ ${todayStr}` };
+}
+
+/**
+ * Calculates the percentage of classes with low attendance rates (<75%) for the current week.
+ */
+export function calculateWeeklyLowAttendanceClasses(
+  classes: ClassLike[],
+  students: StudentLike[],
+  attendance: AttendanceRecordLike[],
+  referenceDate: Date = new Date(),
+  threshold: number = 75
+): WeeklyLowAttendanceStats {
+  const d = new Date(referenceDate);
+  const day = d.getDay();
+  // Monday as start of week: in JS 0 is Sunday, 1 is Monday... 6 is Saturday
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diffToMonday);
+  monday.setHours(0, 0, 0, 0);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+
+  const formatYMD = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const dayStr = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dayStr}`;
+  };
+
+  const mondayStr = formatYMD(monday);
+  const sundayStr = formatYMD(sunday);
+
+  const lowClasses: Array<{
+    id: string;
+    name: string;
+    rate: number;
+    total: number;
+    present: number;
+  }> = [];
+
+  const classStudentMap = new Map<string, string[]>();
+  for (const s of students) {
+    if (s.status === 'inactive' || !s.classId) continue;
+    const list = classStudentMap.get(s.classId) || [];
+    list.push(s.id);
+    classStudentMap.set(s.classId, list);
+  }
+
+  const weekAttendance = attendance.filter(
+    r => r.date >= mondayStr && r.date <= sundayStr
+  );
+
+  let evaluatedClassCount = 0;
+
+  for (const cls of classes) {
+    const studentIds = classStudentMap.get(cls.id);
+    if (!studentIds || studentIds.length === 0) continue;
+
+    const studentIdSet = new Set(studentIds);
+    const classRecords = weekAttendance.filter(r => studentIdSet.has(r.studentId));
+
+    if (classRecords.length === 0) continue;
+
+    evaluatedClassCount++;
+    const presentCount = classRecords.filter(r => r.status === 'present').length;
+    const rate = Math.round((presentCount / classRecords.length) * 100);
+
+    if (rate < threshold) {
+      lowClasses.push({
+        id: cls.id,
+        name: cls.name,
+        rate,
+        total: classRecords.length,
+        present: presentCount,
+      });
+    }
+  }
+
+  const percentage = evaluatedClassCount > 0
+    ? Math.round((lowClasses.length / evaluatedClassCount) * 100)
+    : 0;
+
+  return {
+    percentage,
+    lowRateClassCount: lowClasses.length,
+    totalEvaluatedClasses: evaluatedClassCount,
+    weekRangeLabel: `${mondayStr} ~ ${sundayStr}`,
+    mondayStr,
+    sundayStr,
+    lowClasses,
+  };
+}
+
 /**
  * Pure function to record/update attendance for a given date and student-status map.
  * Preserves other-day records and non-filtered students.

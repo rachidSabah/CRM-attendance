@@ -4,7 +4,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { useAppStore, syncToCloud, loadFromCloud, getCloudSyncStatus, sendAttendanceReminders, retrySync, saveAttendanceDirectly } from '@/lib/store';
-import { setApiToken, getApiToken, localApi } from '@/lib/api';
+import { setApiToken, localApi } from '@/lib/api';
+import { calculateWeeklyLowAttendanceClasses, getDateRangeBounds, type DateRangePreset } from '@/lib/attendanceLogic';
 import { t } from '@/lib/i18n';
 import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
@@ -48,7 +49,7 @@ import {
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardCheck, Calendar,
   FileText, SmilePlus, ListTodo, AlertTriangle, MessageSquare, BarChart3,
   Settings, Shield, LogOut, Search, Download, Bell, Sun, Moon, Menu,
-  X, Plus, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, RefreshCw,
+  X, Plus, Pencil, Trash2, Eye, EyeOff, ChevronLeft, ChevronRight, RefreshCw,
   UserPlus, CheckCircle2, XCircle, Clock, ShieldCheck, Upload,
   Save, Key, Languages, Building2, Phone, Mail, MapPin, Star,
   TrendingUp, TrendingDown, Minus, CircleDot, Send, FileDown,
@@ -56,7 +57,7 @@ import {
   Flame, Award, Zap, Globe, Database, Activity, ToggleLeft, CreditCard, IdCard,
   Palette, HardDrive, ChevronDown, Info, RotateCcw, Archive, Cloud, FolderOpen,
   FileCheck, ListChecks, Target, Smartphone, WifiOff, History, FileUp,
-  AlertOctagon, Paperclip, BellRing, QrCode, ShieldAlert, FileSpreadsheet, Sparkles
+  AlertOctagon, Paperclip, BellRing, Sparkles, QrCode, ShieldAlert, FileSpreadsheet
 } from 'lucide-react';
 
 import { QrScannerDialog } from '@/components/QrScannerDialog';
@@ -365,7 +366,7 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl sm:max-w-4xl lg:max-w-5xl w-[96vw] max-h-[92vh] flex flex-col p-0 overflow-hidden">
+      <DialogContent className="w-[96vw] max-w-4xl lg:max-w-5xl max-h-[92vh] flex flex-col p-0 overflow-hidden rounded-2xl border shadow-2xl">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-4 sm:p-5 border-b bg-muted/30">
           <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-xl sm:text-2xl shrink-0 overflow-hidden bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 font-bold">
             {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" /> : student.fullName.charAt(0)}
@@ -389,7 +390,7 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
               ) : null}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2 shrink-0 w-full sm:w-auto">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5 shrink-0 w-full sm:w-auto">
             <Button
               className="bg-red-600 hover:bg-red-700 text-white flex-1 sm:flex-none shadow-sm text-xs font-semibold"
               size="sm"
@@ -463,7 +464,7 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
           </Tabs>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-3 max-h-[calc(92vh-220px)] custom-scrollbar">
+        <div className="flex-1 min-h-0 overflow-y-auto px-3.5 sm:px-6 py-3.5 custom-scrollbar">
           {tab === 'attendance' && <>
             <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2 mb-4">
               {[{ label: t('present', language), val: present, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30' }, { label: t('absent', language), val: absent, color: 'bg-red-100 text-red-700 dark:bg-red-900/30' }, { label: t('late', language), val: late, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30' }, { label: t('excused', language), val: excused, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30' }, { label: 'Rate', val: `${rate}%`, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30' }].map((s, i) => (
@@ -542,17 +543,28 @@ function LoginScreen() {
   const { login, language, schoolInfo } = useAppStore();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [slug, setSlug] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username || !password) { setError('Please fill in all fields'); return; }
-    setLoading(true); setError('');
-    const success = await login(username, password, slug || undefined);
-    if (success) toast.success(language === 'fr' ? 'Connexion réussie!' : 'Login successful!');
-    else setError(language === 'fr' ? 'Identifiants incorrects' : 'Invalid credentials');
+    const cleanUser = username.trim();
+    const cleanPass = password.trim();
+    const cleanSlug = slug.trim();
+    if (!cleanUser || !cleanPass) {
+      setError(language === 'fr' ? 'Veuillez remplir tous les champs requis' : 'Please enter your username and password');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    const success = await login(cleanUser, cleanPass, cleanSlug || undefined);
+    if (success) {
+      toast.success(language === 'fr' ? 'Connexion réussie!' : 'Login successful!');
+    } else {
+      setError(language === 'fr' ? 'Identifiants incorrects' : 'Invalid username or password');
+    }
     setLoading(false);
   };
 
@@ -572,10 +584,55 @@ function LoginScreen() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm p-3 rounded-lg text-center">{error}</div>}
-            <div className="space-y-2"><Label htmlFor="username">{t('username', language)}</Label><Input id="username" value={username} onChange={e => setUsername(e.target.value)} placeholder={t('username', language)} /></div>
-            <div className="space-y-2"><Label htmlFor="password">{t('password', language)}</Label><Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={t('password', language)} /></div>
-            <div className="space-y-2"><Label htmlFor="slug">{t('school_slug', language)}</Label><Input id="slug" value={slug} onChange={e => setSlug(e.target.value)} placeholder="school-name" /></div>
-            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>{loading && <RefreshCw className="h-4 w-4 animate-spin mr-2" />}{t('signing_in', language)}</Button>
+            <div className="space-y-2">
+              <Label htmlFor="username">{t('username', language)}</Label>
+              <Input
+                id="username"
+                autoComplete="username"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="admin"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">{t('password', language)}</Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  autoComplete="current-password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="slug">{t('school_slug', language)}</Label>
+                <span className="text-[11px] text-muted-foreground">({language === 'fr' ? 'optionnel' : 'optional'})</span>
+              </div>
+              <Input
+                id="slug"
+                value={slug}
+                onChange={e => setSlug(e.target.value)}
+                placeholder="default"
+              />
+            </div>
+            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
+              {loading && <RefreshCw className="h-4 w-4 animate-spin mr-2" />}
+              {t('signing_in', language)}
+            </Button>
           </form>
         </CardContent>
       </Card>
@@ -684,52 +741,82 @@ function Header({ onMenuClick, onExportClick }: { onMenuClick: () => void; onExp
 function DashboardPage() {
   const { students, classes, attendance, language, setCurrentPage, tasks, grades } = useAppStore();
   const [loading, setLoading] = useState(true);
-  useEffect(() => { const t = setTimeout(() => setLoading(false), 500); return () => clearTimeout(t); }, []);
+  useEffect(() => { const t = setTimeout(() => setLoading(false), 400); return () => clearTimeout(t); }, []);
 
   const today = localToday();
   const activeStudents = useMemo(() => students.filter(s => s.status === 'active'), [students]);
   const activeStudentIds = useMemo(() => new Set(activeStudents.map(s => s.id)), [activeStudents]);
 
-  const todayRecords = useMemo(() => {
-    return attendance.filter(r => r.date === today && activeStudentIds.has(r.studentId));
-  }, [attendance, today, activeStudentIds]);
+  // Date range filter state
+  const [datePreset, setDatePreset] = useState<DateRangePreset>('this_week');
+  const [customStartDate, setCustomStartDate] = useState(today);
+  const [customEndDate, setCustomEndDate] = useState(today);
+  const [selectedClassId, setSelectedClassId] = useState<string>('all');
+  const [showLowClassModal, setShowLowClassModal] = useState(false);
 
-  const presentCount = todayRecords.filter(r => r.status === 'present').length;
-  const absentCount = todayRecords.filter(r => r.status === 'absent').length;
-  const lateCount = todayRecords.filter(r => r.status === 'late').length;
-  const todayRate = todayRecords.length > 0 ? Math.round((presentCount / todayRecords.length) * 100) : 0;
+  // Computed Date Range Bounds
+  const dateRange = useMemo(() => {
+    return getDateRangeBounds(datePreset, new Date(), customStartDate, customEndDate);
+  }, [datePreset, customStartDate, customEndDate]);
 
-  const last7Days = useMemo(() => {
-    const days: Array<{ date: string; present: number; absent: number; late: number }> = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(); d.setDate(d.getDate() - i);
-      const ds = toLocalDate(d);
-      const dr = attendance.filter(r => r.date === ds && activeStudentIds.has(r.studentId));
+  // Summary Card: Percentage of classes with low attendance rates (<75%) for CURRENT WEEK
+  const weeklyLowAttendance = useMemo(() => {
+    return calculateWeeklyLowAttendanceClasses(classes, students, attendance);
+  }, [classes, students, attendance]);
+
+  // Filtered attendance for selected date range & selected class
+  const filteredAttendance = useMemo(() => {
+    return attendance.filter(r => {
+      if (r.date < dateRange.startDate || r.date > dateRange.endDate) return false;
+      if (!activeStudentIds.has(r.studentId)) return false;
+      if (selectedClassId !== 'all') {
+        const st = students.find(s => s.id === r.studentId);
+        if (!st || st.classId !== selectedClassId) return false;
+      }
+      return true;
+    });
+  }, [attendance, dateRange, activeStudentIds, selectedClassId, students]);
+
+  // Attendance metrics for selected period
+  const periodPresent = filteredAttendance.filter(r => r.status === 'present').length;
+  const periodAbsent = filteredAttendance.filter(r => r.status === 'absent').length;
+  const periodLate = filteredAttendance.filter(r => r.status === 'late').length;
+  const periodExcused = filteredAttendance.filter(r => r.status === 'excused').length;
+  const periodTotal = filteredAttendance.length;
+  const periodRate = periodTotal > 0 ? Math.round((periodPresent / periodTotal) * 100) : 0;
+
+  // Dynamic attendance trend for the selected date range
+  const rangeTrendData = useMemo(() => {
+    const days: Array<{ date: string; rate: number; rawDate: string; present: number; absent: number; late: number }> = [];
+    const start = new Date(dateRange.startDate + 'T00:00:00');
+    const end = new Date(dateRange.endDate + 'T00:00:00');
+    const diffTime = Math.max(0, end.getTime() - start.getTime());
+    const diffDays = Math.min(Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1, 31);
+
+    for (let i = 0; i < diffDays; i++) {
+      const cur = new Date(start);
+      cur.setDate(start.getDate() + i);
+      const ds = toLocalDate(cur);
+      if (ds > dateRange.endDate) break;
+      const dr = filteredAttendance.filter(r => r.date === ds);
+      const pr = dr.filter(r => r.status === 'present').length;
+      const ab = dr.filter(r => r.status === 'absent').length;
+      const lt = dr.filter(r => r.status === 'late').length;
+      const rate = dr.length > 0 ? Math.round((pr / dr.length) * 100) : 0;
       days.push({
-        date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'short' }),
-        present: dr.filter(r => r.status === 'present').length,
-        absent: dr.filter(r => r.status === 'absent').length,
-        late: dr.filter(r => r.status === 'late').length
+        rawDate: ds,
+        date: cur.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', {
+          month: 'short',
+          day: 'numeric',
+        }),
+        rate,
+        present: pr,
+        absent: ab,
+        late: lt,
       });
     }
     return days;
-  }, [attendance, language, activeStudentIds]);
-
-  // 30-day attendance trend line chart
-  const last30Days = useMemo(() => {
-    const days: Array<{ date: string; rate: number }> = [];
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date(); d.setDate(d.getDate() - i);
-      const ds = toLocalDate(d);
-      const dr = attendance.filter(r => r.date === ds && activeStudentIds.has(r.studentId));
-      const rate = dr.length > 0 ? Math.round((dr.filter(r => r.status === 'present').length / dr.length) * 100) : 0;
-      days.push({
-        date: d.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-US', { month: 'short', day: 'numeric' }),
-        rate
-      });
-    }
-    return days;
-  }, [attendance, language, activeStudentIds]);
+  }, [dateRange, filteredAttendance, language]);
 
   // Task summary
   const taskSummary = useMemo(() => ({
@@ -739,7 +826,6 @@ function DashboardPage() {
     overdue: tasks.filter(t => t.status === 'overdue').length,
   }), [tasks]);
 
-  // Recent tasks (last 5)
   const recentTasks = useMemo(() => [...tasks].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 5), [tasks]);
 
   // Class enrollment pie chart
@@ -750,7 +836,7 @@ function DashboardPage() {
     })).filter(d => d.value > 0);
   }, [classes, students]);
 
-  // Grade distribution (properly mapping percentage and score/20)
+  // Grade distribution
   const gradeDistribution = useMemo(() => {
     const ranges = [
       { range: '0-10', min: 0, max: 10 },
@@ -775,15 +861,17 @@ function DashboardPage() {
     }));
   }, [grades]);
 
-  const pieData = [
-    { name: t('present', language), value: presentCount, color: '#10b981' },
-    { name: t('absent', language), value: absentCount, color: '#ef4444' },
-    { name: t('late', language), value: lateCount, color: '#f59e0b' }
-  ].filter(d => d.value > 0);
+  const pieData = useMemo(() => {
+    return [
+      { name: t('present', language), value: periodPresent, color: '#10b981' },
+      { name: t('absent', language), value: periodAbsent, color: '#ef4444' },
+      { name: t('late', language), value: periodLate, color: '#f59e0b' },
+    ].filter(d => d.value > 0);
+  }, [periodPresent, periodAbsent, periodLate, language]);
 
-  // Recent attendance records filtered to existing students and sorted by newest date first
+  // Recent attendance records filtered to current period & existing students
   const recentRecords = useMemo(() => {
-    return attendance
+    return filteredAttendance
       .filter(r => students.some(st => st.id === r.studentId))
       .sort((a, b) => {
         const d = (b.date || '').localeCompare(a.date || '');
@@ -791,106 +879,441 @@ function DashboardPage() {
         return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
       })
       .slice(0, 10);
-  }, [attendance, students]);
+  }, [filteredAttendance, students]);
 
+  // 5 Top KPI stats cards
   const stats = [
-    { label: t('total_students', language), value: activeStudents.length, subtitle: `${students.length} ${language === 'fr' ? 'total' : 'total'}`, icon: <Users className="h-6 w-6" />, color: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30' },
-    { label: t('total_classes', language), value: classes.length, subtitle: `${classEnrollment.length} ${language === 'fr' ? 'actives' : 'active'}`, icon: <GraduationCap className="h-6 w-6" />, color: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30' },
-    { label: t('today_attendance', language), value: `${todayRecords.length}/${activeStudents.length}`, subtitle: `${presentCount} ${t('present', language)}, ${absentCount} ${t('absent', language)}`, icon: <ClipboardCheck className="h-6 w-6" />, color: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30' },
-    { label: language === 'fr' ? 'Taux de présence' : 'Attendance Rate', value: `${todayRate}%`, subtitle: today, icon: <CheckCircle2 className="h-6 w-6" />, color: 'text-purple-600 bg-purple-100 dark:bg-purple-900/30' },
+    {
+      label: t('total_students', language),
+      value: activeStudents.length,
+      subtitle: `${students.length} ${language === 'fr' ? 'au total' : 'total'}`,
+      icon: <Users className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30',
+    },
+    {
+      label: t('total_classes', language),
+      value: classes.length,
+      subtitle: `${classEnrollment.length} ${language === 'fr' ? 'actives' : 'active'}`,
+      icon: <GraduationCap className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30',
+    },
+    {
+      label: language === 'fr' ? 'Présences (Période)' : 'Attendance (Period)',
+      value: periodTotal,
+      subtitle: `${periodPresent} ${t('present', language)}, ${periodAbsent} ${t('absent', language)}`,
+      icon: <ClipboardCheck className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30',
+    },
+    {
+      label: language === 'fr' ? 'Taux de présence' : 'Attendance Rate',
+      value: `${periodRate}%`,
+      subtitle: `${dateRange.startDate} → ${dateRange.endDate}`,
+      icon: <CheckCircle2 className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: periodRate >= 75 ? 'text-purple-600 bg-purple-100 dark:bg-purple-900/30' : 'text-rose-600 bg-rose-100 dark:bg-rose-900/30',
+    },
+    {
+      label: language === 'fr' ? 'Classes <75% (Semaine)' : 'Classes <75% (Week)',
+      value: `${weeklyLowAttendance.percentage}%`,
+      subtitle: `${weeklyLowAttendance.lowRateClassCount}/${weeklyLowAttendance.totalEvaluatedClasses} ${language === 'fr' ? 'classes concernées' : 'classes affected'}`,
+      icon: weeklyLowAttendance.percentage > 0 ? <AlertTriangle className="h-5 w-5 sm:h-6 sm:w-6" /> : <ShieldCheck className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: weeklyLowAttendance.percentage > 0 ? 'text-rose-600 bg-rose-100 dark:bg-rose-900/30' : 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30',
+      action: () => setShowLowClassModal(true),
+    },
   ];
 
-  if (loading) return <div className="space-y-6"><div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}</div><Skeleton className="h-64 rounded-xl" /></div>;
+  if (loading) return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
+        {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
+      </div>
+      <Skeleton className="h-64 rounded-xl" />
+    </div>
+  );
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Date Range & Filter Control Bar */}
+      <Card className="border-0 shadow-sm bg-card/80 backdrop-blur-sm">
+        <CardContent className="p-3.5 sm:p-4">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 sm:gap-4">
+            {/* Presets */}
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full lg:w-auto">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground mr-1 shrink-0">
+                <Calendar className="h-3.5 w-3.5 text-emerald-600" />
+                <span>{language === 'fr' ? 'Période :' : 'Period:'}</span>
+              </div>
+              {[
+                { id: 'today', label: language === 'fr' ? "Aujourd'hui" : 'Today' },
+                { id: 'this_week', label: language === 'fr' ? 'Cette semaine' : 'This Week' },
+                { id: 'last_7_days', label: language === 'fr' ? '7 jours' : '7 Days' },
+                { id: 'this_month', label: language === 'fr' ? 'Ce mois' : 'This Month' },
+                { id: 'last_30_days', label: language === 'fr' ? '30 jours' : '30 Days' },
+                { id: 'custom', label: language === 'fr' ? 'Personnalisé' : 'Custom' },
+              ].map(p => (
+                <Button
+                  key={p.id}
+                  variant={datePreset === p.id ? 'default' : 'outline'}
+                  size="sm"
+                  className={`h-7 sm:h-8 text-xs px-2.5 sm:px-3 ${datePreset === p.id ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm' : 'border-border/60 hover:bg-muted'}`}
+                  onClick={() => setDatePreset(p.id as DateRangePreset)}
+                >
+                  {p.label}
+                </Button>
+              ))}
+            </div>
+
+            {/* Custom Dates & Class Filter */}
+            <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
+              {datePreset === 'custom' && (
+                <div className="flex items-center gap-1.5 text-xs">
+                  <Input
+                    type="date"
+                    value={customStartDate}
+                    onChange={e => setCustomStartDate(e.target.value)}
+                    className="h-8 text-xs w-32 px-2"
+                  />
+                  <span className="text-muted-foreground font-medium">→</span>
+                  <Input
+                    type="date"
+                    value={customEndDate}
+                    onChange={e => setCustomEndDate(e.target.value)}
+                    className="h-8 text-xs w-32 px-2"
+                  />
+                </div>
+              )}
+
+              {/* Class Filter */}
+              <div className="flex items-center gap-1.5">
+                <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+                  <SelectTrigger className="h-8 text-xs w-36 sm:w-44">
+                    <SelectValue placeholder={language === 'fr' ? 'Toutes les classes' : 'All Classes'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{language === 'fr' ? 'Toutes les classes' : 'All Classes'}</SelectItem>
+                    {classes.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Reset Filters button */}
+              {(datePreset !== 'this_week' || selectedClassId !== 'all') && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs text-muted-foreground hover:text-foreground px-2"
+                  onClick={() => {
+                    setDatePreset('this_week');
+                    setSelectedClassId('all');
+                  }}
+                  title={language === 'fr' ? 'Réinitialiser les filtres' : 'Reset filters'}
+                >
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                  {language === 'fr' ? 'Réinitialiser' : 'Reset'}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Active Range Indicator Badge */}
+          <div className="mt-2.5 pt-2 border-t border-border/40 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <span className="font-medium text-foreground">{language === 'fr' ? 'Plage active :' : 'Active Range:'}</span>
+              <Badge variant="outline" className="text-[10px] bg-muted/30">
+                {dateRange.startDate} — {dateRange.endDate}
+              </Badge>
+              {selectedClassId !== 'all' && (
+                <Badge variant="secondary" className="text-[10px]">
+                  {classes.find(c => c.id === selectedClassId)?.name}
+                </Badge>
+              )}
+            </div>
+            <div>
+              <span>{periodTotal} {language === 'fr' ? 'enregistrements analysés' : 'records analyzed'}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Low Attendance Alert Banner for Current Week */}
+      {weeklyLowAttendance.lowClasses.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-xs text-rose-800 dark:text-rose-200">
+          <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5 sm:mt-0" />
+            <div className="min-w-0">
+              <p className="font-semibold text-rose-900 dark:text-rose-100">
+                {language === 'fr' ? 'Alerte Assiduité Semaine en Cours (<75%)' : 'Current Week Low Attendance Alert (<75%)'}
+              </p>
+              <p className="text-[11px] text-rose-700 dark:text-rose-300 mt-0.5 truncate">
+                {weeklyLowAttendance.lowClasses.map(c => `${c.name} (${c.rate}%)`).join(', ')} {language === 'fr' ? 'ont un taux inférieur au seuil de 75%.' : 'have an attendance rate below the 75% threshold.'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs border-rose-300 text-rose-800 bg-white/80 hover:bg-white dark:bg-rose-900/40 dark:text-rose-200 dark:border-rose-800"
+              onClick={() => setShowLowClassModal(true)}
+            >
+              {language === 'fr' ? 'Détails des classes' : 'Class Details'}
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-rose-600 hover:bg-rose-700 text-white"
+              onClick={() => setCurrentPage('attendance')}
+            >
+              {language === 'fr' ? 'Pointer présence' : 'Mark Attendance'} &rarr;
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Top 5 KPI Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
         {stats.map((s, i) => (
-          <Card key={i} className="border-0 shadow-sm">
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className={`p-3 rounded-xl shrink-0 ${s.color}`}>{s.icon}</div>
+          <Card
+            key={i}
+            className={`border-0 shadow-sm transition-all hover:shadow-md ${s.action ? 'cursor-pointer hover:ring-2 hover:ring-rose-400/40' : ''}`}
+            onClick={s.action}
+          >
+            <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 sm:gap-4">
+              <div className={`p-2.5 sm:p-3 rounded-xl shrink-0 ${s.color}`}>
+                {s.icon}
+              </div>
               <div className="min-w-0 flex-1">
-                <p className="text-2xl font-bold truncate">{s.value}</p>
-                <p className="text-xs text-muted-foreground truncate">{s.label}</p>
-                {s.subtitle && <p className="text-[10px] text-muted-foreground/80 truncate mt-0.5">{s.subtitle}</p>}
+                <p className="text-xl sm:text-2xl font-bold truncate">{s.value}</p>
+                <p className="text-xs text-muted-foreground truncate" title={s.label}>{s.label}</p>
+                {s.subtitle && (
+                  <p className="text-[10px] text-muted-foreground/80 truncate mt-0.5">{s.subtitle}</p>
+                )}
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
-      <Card className="border-0 shadow-sm"><CardHeader className="pb-3"><CardTitle className="text-base">{t('quick_actions', language)}</CardTitle></CardHeader><CardContent>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[{ label: t('add_student', language), icon: <UserPlus className="h-5 w-5" />, page: 'students' as PageName }, { label: t('mark_attendance', language), icon: <ClipboardCheck className="h-5 w-5" />, page: 'attendance' as PageName }, { label: t('today_report', language), icon: <FileText className="h-5 w-5" />, page: 'reports' as PageName }, { label: t('view_calendar', language), icon: <Calendar className="h-5 w-5" />, page: 'calendar' as PageName }].map((a, i) => <Button key={i} variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setCurrentPage(a.page)}>{a.icon}<span className="text-xs">{a.label}</span></Button>)}
-        </div>
-      </CardContent></Card>
 
-      {/* Task Summary + Recent Tasks */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        <Card className="border-0 shadow-sm"><CardHeader className="pb-3"><CardTitle className="text-base">{t('tasks', language)} — {language === 'fr' ? 'Résumé' : 'Summary'}</CardTitle></CardHeader><CardContent>
-          <div className="grid grid-cols-4 gap-3">
+      {/* Quick Actions */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">{t('quick_actions', language)}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
-              { label: t('pending', language), val: taskSummary.pending, color: 'text-gray-600 bg-gray-100 dark:bg-gray-900/30' },
-              { label: t('in_progress', language), val: taskSummary.in_progress, color: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30' },
-              { label: t('completed', language), val: taskSummary.completed, color: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30' },
-              { label: t('overdue', language), val: taskSummary.overdue, color: 'text-red-600 bg-red-100 dark:bg-red-900/30' },
-            ].map((s, i) => (
-              <div key={i} className={`rounded-lg p-3 text-center ${s.color}`}><p className="text-xl font-bold">{s.val}</p><p className="text-[10px] opacity-70">{s.label}</p></div>
+              { label: t('add_student', language), icon: <UserPlus className="h-5 w-5" />, page: 'students' as PageName },
+              { label: t('mark_attendance', language), icon: <ClipboardCheck className="h-5 w-5" />, page: 'attendance' as PageName },
+              { label: t('today_report', language), icon: <FileText className="h-5 w-5" />, page: 'reports' as PageName },
+              { label: t('view_calendar', language), icon: <Calendar className="h-5 w-5" />, page: 'calendar' as PageName },
+            ].map((a, i) => (
+              <Button
+                key={i}
+                variant="outline"
+                className="h-auto py-3.5 sm:py-4 flex flex-col gap-2 hover:bg-muted/60 transition-all hover:shadow-sm"
+                onClick={() => setCurrentPage(a.page)}
+              >
+                {a.icon}
+                <span className="text-xs font-medium">{a.label}</span>
+              </Button>
             ))}
           </div>
-          {recentTasks.length > 0 && (
-            <div className="mt-4 space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground">{language === 'fr' ? 'Tâches récentes' : 'Recent Tasks'}</p>
-              {recentTasks.map(tk => (
-                <div key={tk.id} className="flex items-center gap-2 text-sm p-1.5 rounded hover:bg-muted/50">
-                  <StatusBadge status={tk.priority} />
-                  <span className="flex-1 truncate">{tk.title}</span>
-                  <StatusBadge status={tk.status} />
+        </CardContent>
+      </Card>
+
+      {/* Task Summary + Class Enrollment */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">{t('tasks', language)} — {language === 'fr' ? 'Résumé' : 'Summary'}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-4 gap-3">
+              {[
+                { label: t('pending', language), val: taskSummary.pending, color: 'text-gray-600 bg-gray-100 dark:bg-gray-900/30' },
+                { label: t('in_progress', language), val: taskSummary.in_progress, color: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30' },
+                { label: t('completed', language), val: taskSummary.completed, color: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30' },
+                { label: t('overdue', language), val: taskSummary.overdue, color: 'text-red-600 bg-red-100 dark:bg-red-900/30' },
+              ].map((s, i) => (
+                <div key={i} className={`rounded-lg p-3 text-center ${s.color}`}>
+                  <p className="text-xl font-bold">{s.val}</p>
+                  <p className="text-[10px] opacity-70">{s.label}</p>
                 </div>
               ))}
             </div>
-          )}
-        </CardContent></Card>
+            {recentTasks.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground">{language === 'fr' ? 'Tâches récentes' : 'Recent Tasks'}</p>
+                {recentTasks.map(tk => (
+                  <div key={tk.id} className="flex items-center gap-2 text-sm p-1.5 rounded hover:bg-muted/50">
+                    <StatusBadge status={tk.priority} />
+                    <span className="flex-1 truncate">{tk.title}</span>
+                    <StatusBadge status={tk.status} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Class Enrollment Pie Chart */}
-        <Card className="border-0 shadow-sm"><CardHeader className="pb-3"><CardTitle className="text-base">{language === 'fr' ? 'Inscription par Classe' : 'Class Enrollment'}</CardTitle></CardHeader><CardContent>
-          <div className="h-64">
-            {classEnrollment.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart><Pie data={classEnrollment} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>{classEnrollment.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}</Pie><ReTooltip /></PieChart>
-              </ResponsiveContainer>
-            ) : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>}
-          </div>
-        </CardContent></Card>
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">{language === 'fr' ? 'Inscription par Classe' : 'Class Enrollment'}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              {classEnrollment.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={classEnrollment} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                      {classEnrollment.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                    </Pie>
+                    <ReTooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* 30-day Attendance Trend Line Chart */}
-      <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-base">{language === 'fr' ? 'Tendance de présence (30 jours)' : 'Attendance Trend (30 days)'}</CardTitle></CardHeader><CardContent>
-        <div className="h-64"><ResponsiveContainer width="100%" height="100%"><LineChart data={last30Days}><CartesianGrid strokeDasharray="3 3" className="opacity-30" /><XAxis dataKey="date" tick={{ fontSize: 10 }} interval={4} /><YAxis tick={{ fontSize: 12 }} domain={[0, 100]} unit="%" /><ReTooltip /><Line type="monotone" dataKey="rate" stroke="#10b981" strokeWidth={2} dot={false} name={language === 'fr' ? 'Taux de présence' : 'Attendance Rate'} /></LineChart></ResponsiveContainer></div>
-      </CardContent></Card>
+      {/* Dynamic Attendance Trend for Selected Date Range */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">
+              {language === 'fr' ? 'Tendance de présence' : 'Attendance Trend'}
+            </CardTitle>
+            <CardDescription className="text-xs mt-0.5">
+              {language === 'fr' ? `Période du ${dateRange.startDate} au ${dateRange.endDate}` : `From ${dateRange.startDate} to ${dateRange.endDate}`}
+            </CardDescription>
+          </div>
+          <Badge variant="outline" className="text-xs font-semibold self-start sm:self-auto bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-300">
+            {language === 'fr' ? 'Moyenne période :' : 'Period Avg:'} {periodRate}%
+          </Badge>
+        </CardHeader>
+        <CardContent>
+          <div className="h-64 sm:h-72">
+            {rangeTrendData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={rangeTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} unit="%" />
+                  <ReTooltip
+                    formatter={(val: number) => [`${val}%`, language === 'fr' ? 'Taux de présence' : 'Attendance Rate']}
+                    labelFormatter={(_, payload) => {
+                      const item = payload?.[0]?.payload;
+                      return item ? `${item.rawDate} (${item.present} présents, ${item.absent} absents)` : '';
+                    }}
+                  />
+                  <Line type="monotone" dataKey="rate" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} name={language === 'fr' ? 'Taux de présence' : 'Attendance Rate'} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
+      {/* Daily Attendance Breakdown Bar Chart & Grade Distribution */}
       <div className="grid lg:grid-cols-2 gap-6">
-        <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-base">{language === 'fr' ? 'Présence (7 jours)' : 'Attendance (7 days)'}</CardTitle></CardHeader><CardContent><div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={last7Days}><CartesianGrid strokeDasharray="3 3" className="opacity-30" /><XAxis dataKey="date" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} /><ReTooltip /><Legend /><Bar dataKey="present" fill="#10b981" name={t('present', language)} radius={[4, 4, 0, 0]} /><Bar dataKey="absent" fill="#ef4444" name={t('absent', language)} radius={[4, 4, 0, 0]} /><Bar dataKey="late" fill="#f59e0b" name={t('late', language)} radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></CardContent></Card>
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              {language === 'fr' ? 'Présences quotidiennes (Période)' : 'Daily Attendance Breakdown (Period)'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64 sm:h-72">
+              {rangeTrendData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={rangeTrendData}>
+                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <ReTooltip />
+                    <Legend />
+                    <Bar dataKey="present" fill="#10b981" name={t('present', language)} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="absent" fill="#ef4444" name={t('absent', language)} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="late" fill="#f59e0b" name={t('late', language)} radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Grade Distribution Bar Chart */}
-        <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-base">{language === 'fr' ? 'Distribution des Notes' : 'Grade Distribution'}</CardTitle></CardHeader><CardContent>
-          <div className="h-64">{grades.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%"><BarChart data={gradeDistribution}><CartesianGrid strokeDasharray="3 3" className="opacity-30" /><XAxis dataKey="range" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} /><ReTooltip /><Bar dataKey="count" fill="#8b5cf6" name={language === 'fr' ? 'Étudiants' : 'Students'} radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>
-          ) : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>}</div>
-        </CardContent></Card>
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{language === 'fr' ? 'Distribution des Notes' : 'Grade Distribution'}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64 sm:h-72">
+              {grades.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={gradeDistribution}>
+                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                    <XAxis dataKey="range" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <ReTooltip />
+                    <Bar dataKey="count" fill="#8b5cf6" name={language === 'fr' ? 'Étudiants' : 'Students'} radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
+      {/* Distribution Pie Chart & Recent Activity */}
       <div className="grid lg:grid-cols-2 gap-6">
-        <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-base">{language === "fr" ? "Distribution d'Aujourd'hui" : "Today's Distribution"}</CardTitle></CardHeader><CardContent><div className="h-64">{pieData.length > 0 ? <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>{pieData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}</Pie><ReTooltip /></PieChart></ResponsiveContainer> : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>}</div></CardContent></Card>
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              {language === 'fr' ? 'Répartition des présences (Période)' : 'Attendance Distribution (Period)'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64 sm:h-72">
+              {pieData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                      {pieData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                    </Pie>
+                    <ReTooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('no_data', language)}</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Recent Activity Table */}
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-3 flex flex-row items-center justify-between">
             <CardTitle className="text-base">{t('recent_activity', language)}</CardTitle>
-            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => setCurrentPage('attendance')}>
+            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setCurrentPage('attendance')}>
               {t('attendance', language)} &rarr;
             </Button>
           </CardHeader>
           <CardContent>
-            {recentRecords.length === 0 ? <EmptyState message={t('no_data', language)} /> : (
-              <div className="max-h-64 overflow-y-auto custom-scrollbar">
+            {recentRecords.length === 0 ? (
+              <EmptyState message={t('no_data', language)} />
+            ) : (
+              <div className="max-h-64 sm:max-h-72 overflow-y-auto custom-scrollbar">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -933,6 +1356,54 @@ function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Modal for Low Attendance Classes Details */}
+      <Dialog open={showLowClassModal} onOpenChange={setShowLowClassModal}>
+        <DialogContent className="w-[94vw] max-w-lg rounded-2xl p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <AlertTriangle className="h-5 w-5 text-rose-600" />
+              {language === 'fr' ? 'Classes à faible assiduité (<75%)' : 'Classes with Low Attendance (<75%)'}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {language === 'fr' ? `Semaine en cours : ${weeklyLowAttendance.weekRangeLabel}` : `Current week: ${weeklyLowAttendance.weekRangeLabel}`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-3 space-y-2.5 max-h-80 overflow-y-auto custom-scrollbar">
+            {weeklyLowAttendance.lowClasses.length === 0 ? (
+              <div className="text-center py-6 text-sm text-muted-foreground flex flex-col items-center gap-2">
+                <ShieldCheck className="h-10 w-10 text-emerald-500" />
+                <p>{language === 'fr' ? 'Toutes les classes ont un taux de présence supérieur ou égal à 75% cette semaine !' : 'All classes have an attendance rate of 75% or higher this week!'}</p>
+              </div>
+            ) : (
+              weeklyLowAttendance.lowClasses.map(cls => (
+                <div key={cls.id} className="p-3 rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-50/50 dark:bg-rose-950/20 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm truncate">{cls.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {cls.present} {language === 'fr' ? 'présents sur' : 'present out of'} {cls.total} {language === 'fr' ? 'enregistrements' : 'records'}
+                    </p>
+                  </div>
+                  <Badge variant="destructive" className="text-xs font-bold shrink-0">
+                    {cls.rate}%
+                  </Badge>
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter className="pt-2">
+            <Button
+              className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+              onClick={() => {
+                setShowLowClassModal(false);
+                setCurrentPage('attendance');
+              }}
+            >
+              {language === 'fr' ? 'Accéder à la prise de présence' : 'Go to Attendance'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -5596,7 +6067,7 @@ function AiSettingsSection() {
 
   const fetchConfig = async () => {
     try {
-      const token = getApiToken() || '';
+      const token = localStorage.getItem('auth_token') || '';
       const res = await fetch('/api/ai/config', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -5621,7 +6092,7 @@ function AiSettingsSection() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const token = getApiToken() || '';
+      const token = localStorage.getItem('auth_token') || '';
       const res = await fetch('/api/ai/config', {
         method: 'POST',
         headers: {
@@ -5651,7 +6122,7 @@ function AiSettingsSection() {
     setTesting(true);
     setTestResult(null);
     try {
-      const token = getApiToken() || '';
+      const token = localStorage.getItem('auth_token') || '';
       const res = await fetch('/api/ai/test', {
         method: 'POST',
         headers: {
