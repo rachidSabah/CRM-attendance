@@ -18,14 +18,23 @@ export async function onRequestPost(context) {
 
     const directKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
 
-    // If no direct API key is supplied in the request body, validate admin session
+    // If no direct API key is supplied, attempt auth validation with D1 key fallback
     if (!directKey) {
       const auth = await validateRequest(context.request, db);
-      if (!auth.authenticated) {
-        return new Response(JSON.stringify({ success: false, error: auth.error || 'Authentification requise pour tester la clé système' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json', ...cors },
-        });
+      if (!auth.authenticated && !context.env.GEMINI_API_KEY) {
+        let hasDbKey = false;
+        if (db) {
+          try {
+            const row = await db.prepare("SELECT data FROM school_settings WHERE key = 'ai_config' LIMIT 1").first();
+            if (row && row.data && JSON.parse(row.data).apiKey) hasDbKey = true;
+          } catch {}
+        }
+        if (!hasDbKey) {
+          return new Response(JSON.stringify({ success: false, error: auth.error || 'Authentification requise pour tester la clé système' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json', ...cors },
+          });
+        }
       }
     }
 
