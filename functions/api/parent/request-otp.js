@@ -127,10 +127,10 @@ function phoneFieldMatches(field, targetSuffix) {
       }
 
       if (waGatewayUrl) {
-        const msg = `[INFOHAS] Votre code de sécurité pour accéder au portail d'assiduité de votre enfant est : ${otpCode} (valable 10 minutes).`;
+        const msg = `*[INFOHAS — PORTAIL PARENT]*\nVotre code de sécurité à 6 chiffres pour accéder à l'espace d'assiduité de votre enfant est : *${otpCode}* (valable 10 minutes).`;
         await fetch(`${waGatewayUrl}/send-message`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
           body: JSON.stringify({ phone, message: msg }),
         });
         whatsappDispatched = true;

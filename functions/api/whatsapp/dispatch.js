@@ -5,7 +5,7 @@
  *
  * Supports both:
  * 1. Mode "baileys": Headless automated dispatch via local/remote Baileys gateway service.
- * 2. Mode "wame": Generates structured web/desktop wa.me deep links.
+ * 2. Mode "wame": Generates structured web/desktop wa.me deep links with standards-compliant URL encoding.
  * 3. Mode "auto": Attempts Baileys gateway first, automatically falls back to wa.me if offline.
  */
 import { validateRequest } from '../../_lib/auth.js';
@@ -13,22 +13,67 @@ import { getCorsHeaders } from '../../_lib/cors.js';
 
 function normalizePhone(phone) {
   if (!phone) return '';
-  let cleaned = String(phone).replace(/\D/g, '');
-  if (cleaned.startsWith('0') && (cleaned.length === 10 || cleaned.length === 9)) {
-    cleaned = '212' + cleaned.substring(1);
-  } else if (cleaned.length === 9 && !cleaned.startsWith('212')) {
-    cleaned = '212' + cleaned;
+  let digits = String(phone).replace(/\D/g, '');
+  if (!digits) return '';
+
+  if (digits.startsWith('00')) {
+    digits = digits.slice(2);
   }
-  return cleaned;
+
+  // Moroccan number normalization
+  if (digits.length === 10 && digits.startsWith('0')) {
+    return '212' + digits.slice(1);
+  }
+  if (digits.length === 9 && (digits.startsWith('5') || digits.startsWith('6') || digits.startsWith('7'))) {
+    return '212' + digits;
+  }
+  if (digits.length === 13 && digits.startsWith('2120')) {
+    return '212' + digits.slice(4);
+  }
+  if (digits.length === 12 && digits.startsWith('212')) {
+    return digits;
+  }
+
+  return digits;
+}
+
+function sanitizeWhatsAppText(rawText) {
+  if (!rawText) return '';
+  let text = String(rawText);
+  text = text.replace(/\uFFFD/g, '');
+  text = text.replace(/\\([*_~`\[\]\\])/g, '$1');
+  text = text.replace(/^#\s+(.+)$/gm, (_, heading) => '*' + heading.trim().toUpperCase() + '*');
+  text = text.replace(/^#{2,4}\s+(.+)$/gm, (_, heading) => '*' + heading.trim() + '*');
+  text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '*$1* : $2');
+  text = text.replace(/^[\*\-]\s+(.+)$/gm, '• $1');
+  text = text.replace(/~~([^~]+)~~/g, '~$1~');
+  text = text.replace(/\*\*([^*]+)\*\*/g, '*$1*');
+  text = text.replace(/\*([^*\n]+?)\*/g, (_, inner) => '*' + inner.trim() + '*');
+  text = text.replace(/_([^_\n]+?)_/g, (_, inner) => '_' + inner.trim() + '_');
+  text = text.replace(/\r\n/g, '\n');
+  return text.trim();
+}
+
+function buildWhatsAppUrl(phone, text) {
+  const cleanPhone = normalizePhone(phone);
+  const sanitized = sanitizeWhatsAppText(text);
+  const url = new URL(`https://wa.me/${cleanPhone}`);
+  url.search = `?text=${encodeURIComponent(sanitized)}`;
+  return url.toString();
 }
 
 export async function onRequestPost(context) {
+  const corsHeaders = {
+    ...getCorsHeaders(context.request),
+    'Content-Type': 'application/json; charset=utf-8',
+  };
+
   // Auth validation
   const auth = await validateRequest(context.request, context.env.DB);
   if (!auth.authenticated) {
     return new Response(
       JSON.stringify({ success: false, error: auth.error }),
-      { status: 401, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+      { status: 401, headers: corsHeaders }
     );
   }
 
@@ -39,7 +84,7 @@ export async function onRequestPost(context) {
     } catch {
       return new Response(
         JSON.stringify({ success: false, error: 'Invalid JSON payload' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -47,17 +92,18 @@ export async function onRequestPost(context) {
     if (!to || !text) {
       return new Response(
         JSON.stringify({ success: false, error: 'Parameters "to" and "text" are required.' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+        { status: 400, headers: corsHeaders }
       );
     }
 
     const normalizedTo = normalizePhone(to);
-    const waMeUrl = `https://wa.me/${normalizedTo}?text=${encodeURIComponent(text)}`;
+    const sanitizedText = sanitizeWhatsAppText(text);
+    const waMeUrl = buildWhatsAppUrl(normalizedTo, sanitizedText);
 
     if (mode === 'wame') {
       return new Response(
-        JSON.stringify({ success: true, mode: 'wame', url: waMeUrl }),
-        { status: 200, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+        JSON.stringify({ success: true, mode: 'wame', url: waMeUrl, to: normalizedTo, text: sanitizedText }),
+        { status: 200, headers: corsHeaders }
       );
     }
 
@@ -69,8 +115,8 @@ export async function onRequestPost(context) {
 
       const resp = await fetch(`${targetGateway.replace(/\/+$/, '')}/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: normalizedTo, text }),
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ to: normalizedTo, text: sanitizedText }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -78,8 +124,8 @@ export async function onRequestPost(context) {
       if (resp.ok) {
         const data = await resp.json().catch(() => ({}));
         return new Response(
-          JSON.stringify({ success: true, mode: 'baileys', data }),
-          { status: 200, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+          JSON.stringify({ success: true, mode: 'baileys', data, to: normalizedTo }),
+          { status: 200, headers: corsHeaders }
         );
       } else {
         throw new Error(`Gateway returned HTTP ${resp.status}`);
@@ -91,15 +137,16 @@ export async function onRequestPost(context) {
           success: true,
           mode: 'wame_fallback',
           url: waMeUrl,
+          to: normalizedTo,
           notice: `Passerelle Baileys non joignable (${err.message || 'offline'}). Redirection WhatsApp Desktop/Web activée.`,
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+        { status: 200, headers: corsHeaders }
       );
     }
   } catch (error) {
     return new Response(
       JSON.stringify({ success: false, error: error.message || 'Internal error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...getCorsHeaders(context.request) } }
+      { status: 500, headers: corsHeaders }
     );
   }
 }

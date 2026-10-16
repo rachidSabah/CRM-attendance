@@ -63,11 +63,15 @@ async function runTests() {
   // TEST 4: Parent Magic Link Dialog & WhatsApp Sharing
   console.log('\n--- TEST 4: Parent Magic Link Dialog & WhatsApp French Instructions ---');
   const magicDialogPath = path.join(__dirname, '..', 'src', 'components', 'ParentMagicLinkDialog.tsx');
+  const whatsappTsPath = path.join(__dirname, '..', 'src', 'lib', 'whatsapp.ts');
   assert(fs.existsSync(magicDialogPath), 'ParentMagicLinkDialog.tsx exists');
+  assert(fs.existsSync(whatsappTsPath), 'src/lib/whatsapp.ts exists');
   const magicDialogContent = fs.readFileSync(magicDialogPath, 'utf8');
-  assert(magicDialogContent.includes('INSTITUT SUPÉRIEUR INFOHAS — ESPACE PARENTAL SÉCURISÉ'), 'WhatsApp template has explicit French title');
-  assert(magicDialogContent.includes('Votre Code PIN de Sécurité'), 'WhatsApp template explicitly states PIN is mobile number');
-  assert(magicDialogContent.includes('wa.me'), 'WhatsApp link generated via wa.me protocol');
+  const whatsappTsContent = fs.readFileSync(whatsappTsPath, 'utf8');
+  const combined = magicDialogContent + '\n' + whatsappTsContent;
+  assert(combined.includes('INSTITUT SUPÉRIEUR INFOHAS — ESPACE PARENTAL SÉCURISÉ'), 'WhatsApp template has explicit French title');
+  assert(combined.includes('Votre Code PIN de Sécurité'), 'WhatsApp template explicitly states PIN is mobile number');
+  assert(combined.includes('wa.me'), 'WhatsApp link generated via wa.me protocol');
   assert(magicDialogContent.includes('?page=parent-portal&std='), 'Magic link URL has direct student pointer');
 
   // TEST 5: Backend PIN Verification Endpoint

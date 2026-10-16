@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Sparkles, Check, Copy, RefreshCw, Wand2, ArrowRight } from 'lucide-react';
 import { getApiToken } from '@/lib/api';
 import { toast } from 'sonner';
+import { sanitizeWhatsAppText } from '@/lib/whatsapp';
 
 export interface AiTextAssistProps {
   value: string;
@@ -39,7 +40,7 @@ export function AiTextAssist({
     { label: '🪄 Améliorer le style', prompt: 'Reformule ce texte de manière professionnelle, fluide et élégante pour un établissement d’enseignement supérieur.' },
     { label: '🏫 Format officiel INFOHAS', prompt: 'Adapte ce texte au style administratif formel, strict et conforme au règlement intérieur de l’Institut INFOHAS.' },
     { label: '✍️ Corriger orthographe', prompt: 'Corrige toutes les fautes d’orthographe, de grammaire et de ponctuation tout en préservant le sens exact.' },
-    { label: '💬 Message WhatsApp courtois', prompt: 'Rédige sous forme de message WhatsApp poli, clair et direct à destination d’un parent ou étudiant.' },
+    { label: '💬 Message WhatsApp courtois', prompt: 'Rédige sous forme de message WhatsApp poli, clair et direct à destination d’un parent ou étudiant. Respecte la syntaxe WhatsApp : *texte* pour le gras (un seul astérisque, sans antislash), _texte_ pour l\'italique et des puces rondes • pour les listes.' },
     { label: '📋 Résumer', prompt: 'Résume ce texte en 1 ou 2 phrases concises et percutantes.' },
     { label: '🇲🇦 Traduire en Arabe', prompt: 'Traduis fidèlement ce texte en Arabe littéraire soigné.' },
   ];
@@ -90,7 +91,11 @@ Réponds DIRECTEMENT avec le texte final prêt à être inséré, sans commentai
         throw new Error(data.error || 'Erreur lors de la génération IA');
       }
 
-      setGeneratedText(data.result);
+      let output = data.result || '';
+      if (finalInstruction.toLowerCase().includes('whatsapp') || contextPrompt.toLowerCase().includes('whatsapp')) {
+        output = sanitizeWhatsAppText(output);
+      }
+      setGeneratedText(output);
       toast.success('Texte généré par l\'Autopilot !');
     } catch (err: any) {
       toast.error(err.message || 'Échec de génération');

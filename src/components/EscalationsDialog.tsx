@@ -9,6 +9,7 @@ import { ShieldAlert, AlertTriangle, FileDown, MessageCircle, Mail, Lock, CheckC
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import * as pdfUtils from '@/lib/pdf';
+import { normalizeWhatsAppPhone, sanitizeWhatsAppText, buildWhatsAppUrl } from '@/lib/whatsapp';
 
 interface EscalationsDialogProps {
   open: boolean;
@@ -92,16 +93,27 @@ export function EscalationsDialog({ open, onOpenChange }: EscalationsDialogProps
       toast.error(isFr ? 'Numéro de tuteur non renseigné' : 'Guardian phone not set');
       return;
     }
-    const cleanPhone = item.student.guardianPhone.replace(/\D/g, '');
-    const formatted = cleanPhone.startsWith('0') && cleanPhone.length === 10 ? '212' + cleanPhone.substring(1) : cleanPhone;
+    const cleanPhone = normalizeWhatsAppPhone(item.student.guardianPhone);
+    if (!cleanPhone) {
+      toast.error(isFr ? 'Numéro de téléphone invalide' : 'Invalid phone number');
+      return;
+    }
 
     const levelText = item.level === 'discipline_council'
       ? (isFr ? 'CONSEIL DE DISCIPLINE' : 'DISCIPLINARY COUNCIL')
       : (item.level === 'warning_2' ? (isFr ? 'MISE EN DEMEURE (2ème Avertissement)' : 'FINAL WARNING') : (isFr ? '1er Avertissement' : '1st Warning'));
 
-    const text = isFr
-      ? `INFOHAS — ALERTE DISCIPLINAIRE [${levelText}]\nBonjour M./Mme ${item.student.guardianName || 'le tuteur'},\nNous vous informons que l'étudiant(e) ${item.student.fullName} (Classe: ${item.cls?.name || item.student.className}) a accumulé ${item.count} absences non justifiées. Veuillez prendre contact immédiatement avec la direction pédagogique.`
-      : `INFOHAS — DISCIPLINARY ALERT [${levelText}]\nDear ${item.student.guardianName || 'Guardian'},\nStudent ${item.student.fullName} has accumulated ${item.count} unexcused absences. Please contact school administration immediately.`;
+    const rawText = isFr
+      ? `*INFOHAS — ALERTE DISCIPLINAIRE [${levelText}]*
+Bonjour M./Mme ${item.student.guardianName || 'le tuteur'},
+Nous vous informons que l'étudiant(e) *${item.student.fullName}* (Classe : *${item.cls?.name || item.student.className || 'N/A'}*) a accumulé *${item.count}* absences non justifiées.
+Veuillez prendre contact immédiatement avec la direction pédagogique de l'établissement.`
+      : `*INFOHAS — DISCIPLINARY ALERT [${levelText}]*
+Dear ${item.student.guardianName || 'Guardian'},
+Student *${item.student.fullName}* has accumulated *${item.count}* unexcused absences.
+Please contact school administration immediately.`;
+
+    const text = sanitizeWhatsAppText(rawText);
 
     // Try Baileys / Cloudflare dispatch first if configured
     if (schoolInfo?.whatsappDispatchMode === 'baileys' || schoolInfo?.whatsappDispatchMode === 'hybrid') {
@@ -113,7 +125,7 @@ export function EscalationsDialog({ open, onOpenChange }: EscalationsDialogProps
             Authorization: `Bearer ${localStorage.getItem('api_token') || ''}`,
           },
           body: JSON.stringify({
-            to: formatted,
+            to: cleanPhone,
             text,
             mode: schoolInfo.whatsappDispatchMode === 'baileys' ? 'baileys' : 'auto',
             gatewayUrl: schoolInfo.baileysGatewayUrl,
@@ -132,8 +144,9 @@ export function EscalationsDialog({ open, onOpenChange }: EscalationsDialogProps
       }
     }
 
-    // Fallback: wa.me desktop
-    window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(text)}`, '_blank');
+    // Fallback: wa.me desktop/web
+    const waUrl = buildWhatsAppUrl(cleanPhone, text);
+    window.open(waUrl, '_blank');
     toast.success(isFr ? 'WhatsApp ouvert' : 'WhatsApp opened');
   };
 

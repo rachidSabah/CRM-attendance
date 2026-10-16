@@ -72,6 +72,7 @@ import { ParentPortal } from '@/components/ParentPortal';
 import { ParentMagicLinkDialog } from '@/components/ParentMagicLinkDialog';
 import { AiTextAssist } from '@/components/AiTextAssist';
 import { DocumentCustomizationPanel } from '@/components/DocumentCustomizationPanel';
+import { normalizeWhatsAppPhone, formatPhoneDisplay, buildWhatsAppUrl, sanitizeWhatsAppText } from '@/lib/whatsapp';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 
@@ -154,15 +155,7 @@ function toLocalDate(d: Date): string {
 }
 
 function formatWhatsAppPhone(phone: string | undefined): string {
-  if (!phone) return '';
-  let c = phone.replace(/\D/g, '');
-  // Moroccan format: 0600000000 (10 digits starting with 0)
-  if (c.length === 10 && c.startsWith('0')) c = '212' + c.substring(1);
-  // UK format: 07XXX XXXXX (10 digits starting with 0)
-  else if (c.length === 11 && c.startsWith('44')) { /* already formatted */ }
-  // US format: 10 digits
-  else if (c.length === 10) c = '1' + c;
-  return c;
+  return normalizeWhatsAppPhone(phone);
 }
 
 // ==================== GLOBAL SEARCH DIALOG ====================
@@ -1644,7 +1637,7 @@ function StudentsPage() {
                 <TableCell className="hidden md:table-cell">{s.className || classes.find(c => c.id === s.classId)?.name || '-'}</TableCell>
                 <TableCell className="hidden lg:table-cell"><StatusBadge status={s.status} /></TableCell>
                 <TableCell className="hidden lg:table-cell">{s.guardianName || '-'}</TableCell>
-                <TableCell className="hidden xl:table-cell">{s.guardianPhone ? <><span className="text-xs">{s.guardianPhone}</span><Button variant="ghost" size="icon" className="h-6 w-6 text-emerald-600" onClick={() => window.open(`https://wa.me/${formatWhatsAppPhone(s.guardianPhone)}?text=${encodeURIComponent('Hello from school!')}`, '_blank')}><MessageCircle className="h-3.5 w-3.5" /></Button></> : '-'}</TableCell>
+                <TableCell className="hidden xl:table-cell">{s.guardianPhone ? <><span className="text-xs">{s.guardianPhone}</span><Button variant="ghost" size="icon" className="h-6 w-6 text-emerald-600" onClick={() => window.open(buildWhatsAppUrl(s.guardianPhone, language === 'fr' ? `Bonjour de la part de l'Institut INFOHAS concernant ${s.fullName}.` : `Hello from INFOHAS regarding ${s.fullName}.`), '_blank')}><MessageCircle className="h-3.5 w-3.5" /></Button></> : '-'}</TableCell>
                 <TableCell><div className="flex gap-1">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setProfileStudent(s)}><Eye className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/20" title={language === 'fr' ? 'Lien Magique Parent & WhatsApp' : 'Parent Magic Link & WhatsApp'} onClick={() => setMagicStudent(s)}><Link2 className="h-4 w-4" /></Button>
@@ -2112,9 +2105,15 @@ function AttendancePage() {
     let tmpl = templates.find(t => t.category === cat && t.isDefault);
     if (!tmpl) tmpl = templates.find(t => t.category === cat);
     if (!tmpl) tmpl = st === 'late' ? { id: '', name: 'Late', category: 'late', content: 'Hello {guardian_name}, {student_name} arrived late today ({date}).', createdAt: '' } : { id: '', name: 'Absence', category: 'absence', content: 'Dear {guardian_name}, {student_name} was marked absent today ({date}). Please contact us.', createdAt: '' };
-    const msg = tmpl.content.replace(/{student_name}/g, s.fullName).replace(/{guardian_name}/g, s.guardianName || 'Guardian').replace(/{date}/g, new Date().toLocaleDateString()).replace(/{school_name}/g, schoolInfo?.name || 'School').replace(/{class}/g, classes.find(c => c.id === s.classId)?.name || 'class');
-    const normPhone = formatWhatsAppPhone(s.guardianPhone);
-    const waUrl = `https://wa.me/${normPhone}?text=${encodeURIComponent(msg)}`;
+    const rawMsg = tmpl.content
+      .replace(/{student_name}/g, s.fullName)
+      .replace(/{guardian_name}/g, s.guardianName || (language === 'fr' ? 'Parent / Tuteur' : 'Guardian'))
+      .replace(/{date}/g, new Date().toLocaleDateString('fr-FR'))
+      .replace(/{school_name}/g, schoolInfo?.name || 'Institut Supérieur INFOHAS')
+      .replace(/{class}/g, classes.find(c => c.id === s.classId)?.name || 'Classe');
+    const msg = sanitizeWhatsAppText(rawMsg);
+    const normPhone = normalizeWhatsAppPhone(s.guardianPhone);
+    const waUrl = buildWhatsAppUrl(normPhone, msg);
 
     const mode = schoolInfo?.whatsappMode || 'wame';
     if (mode === 'wame') {
@@ -4077,22 +4076,25 @@ function MessagingPage() {
   // Build message from template + student data
   const buildMessage = (template: Template, student: Student): string => {
     const studentClass = classes.find(c => c.id === student.classId);
-    return template.content
+    const raw = template.content
       .replace(/{student_name}/g, student.fullName)
-      .replace(/{guardian_name}/g, student.guardianName || 'Guardian')
-      .replace(/{class}/g, studentClass?.name || 'class')
-      .replace(/{date}/g, new Date().toLocaleDateString())
-      .replace(/{time}/g, new Date().toLocaleTimeString())
-      .replace(/{school_name}/g, schoolInfo?.name || 'School');
+      .replace(/{guardian_name}/g, student.guardianName || (language === 'fr' ? 'Parent / Tuteur' : 'Guardian'))
+      .replace(/{class}/g, studentClass?.name || 'Classe')
+      .replace(/{date}/g, new Date().toLocaleDateString('fr-FR'))
+      .replace(/{time}/g, new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))
+      .replace(/{school_name}/g, schoolInfo?.name || 'Institut Supérieur INFOHAS');
+    return sanitizeWhatsAppText(raw);
   };
 
   // Open WhatsApp Web with pre-filled message
   const openWhatsApp = (phone: string | undefined, message: string) => {
     if (!phone) { toast.error(language === 'fr' ? 'Aucun numéro de téléphone' : 'No phone number found'); return; }
-    const formatted = formatWhatsAppPhone(phone);
-    const url = `https://wa.me/${formatted}?text=${encodeURIComponent(message)}`;
+    const formatted = normalizeWhatsAppPhone(phone);
+    if (!formatted) { toast.error(language === 'fr' ? 'Numéro de téléphone invalide' : 'Invalid phone number'); return; }
+    const cleanMsg = sanitizeWhatsAppText(message);
+    const url = buildWhatsAppUrl(formatted, cleanMsg);
     window.open(url, '_blank');
-    toast.success(language === 'fr' ? 'WhatsApp ouvert!' : 'WhatsApp opened!');
+    toast.success(language === 'fr' ? 'WhatsApp ouvert !' : 'WhatsApp opened!');
   };
 
   // Quick Send: opens WhatsApp for selected student + template
