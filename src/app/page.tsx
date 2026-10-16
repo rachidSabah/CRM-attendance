@@ -6776,8 +6776,17 @@ function CloudSyncSettings() {
       if (Array.isArray(result.data.attendance)) { setAttendance(result.data.attendance as AttendanceRecord[]); }
       if (Array.isArray(result.data.grades)) { setGrades(result.data.grades as Grade[]); }
       if (Array.isArray(result.data.tasks)) { setTasks(result.data.tasks as Task[]); }
+      if (Array.isArray(result.data.modules)) { setModules(result.data.modules as Module[]); }
+      if (Array.isArray(result.data.academicYears)) { setAcademicYears(result.data.academicYears as AcademicYear[]); }
+      if (Array.isArray(result.data.teachers)) { setTeachers(result.data.teachers as Teacher[]); }
+      if (Array.isArray(result.data.employees)) { setEmployees(result.data.employees as Employee[]); }
+      if (Array.isArray(result.data.schedules)) { setSchedules(result.data.schedules as ClassScheduleEntry[]); }
+      if (Array.isArray(result.data.exams)) { setExams(result.data.exams as Exam[]); }
+      if (Array.isArray(result.data.examGrades)) { setExamGrades(result.data.examGrades as ExamGrade[]); }
+      if (Array.isArray(result.data.curriculum)) { setCurriculum(result.data.curriculum as CurriculumItem[]); }
       if (result.data.schoolInfo && typeof result.data.schoolInfo === 'object' && !Array.isArray(result.data.schoolInfo)) { setSchoolInfo(result.data.schoolInfo as SchoolInfo); }
-      setLastSyncResult(`${language === 'fr' ? 'Données récupérées du cloud' : 'Data pulled from cloud'}`);
+      const totalRecs = (Array.isArray(result.data.students) ? result.data.students.length : 0) + (Array.isArray(result.data.classes) ? result.data.classes.length : 0);
+      setLastSyncResult(`${language === 'fr' ? 'Données récupérées avec succès' : 'Data successfully pulled'} (${totalRecs} ${language === 'fr' ? 'enregistrements' : 'records'})`);
       toast.success(language === 'fr' ? 'Données chargées depuis le cloud' : 'Data loaded from cloud');
     } else {
       setLastSyncResult(`${language === 'fr' ? 'Erreur' : 'Error'}: ${result.error}`);
@@ -6788,8 +6797,13 @@ function CloudSyncSettings() {
     setCloudStatus(updated);
   };
 
-  const statusColor = cloudStatus?.status === 'success' ? 'text-emerald-600' : cloudStatus?.status === 'error' ? 'text-red-600' : cloudStatus?.status === 'syncing' ? 'text-blue-600' : 'text-muted-foreground';
-  const statusText = cloudStatus?.status === 'success' ? (language === 'fr' ? 'Connecté' : 'Connected') : cloudStatus?.status === 'error' ? (language === 'fr' ? 'Erreur' : 'Error') : cloudStatus?.status === 'syncing' ? (language === 'fr' ? 'Synchronisation...' : 'Syncing...') : (language === 'fr' ? 'Inactif' : 'Idle');
+  const isConnected = Boolean(cloudStatus?.cloudConnected);
+  const statusColor = cloudStatus?.status === 'syncing'
+    ? 'text-blue-600'
+    : (isConnected ? 'text-emerald-600' : (cloudStatus?.status === 'error' ? 'text-red-600' : 'text-muted-foreground'));
+  const statusText = cloudStatus?.status === 'syncing'
+    ? (language === 'fr' ? 'Synchronisation...' : 'Syncing...')
+    : (isConnected ? (language === 'fr' ? 'Connecté' : 'Connected') : (cloudStatus?.status === 'error' ? (language === 'fr' ? 'Erreur' : 'Error') : (language === 'fr' ? 'Inactif' : 'Idle')));
 
   return (
     <div className="space-y-4">
@@ -6797,10 +6811,10 @@ function CloudSyncSettings() {
         {/* Status */}
         <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
           <div className="flex items-center gap-2">
-            <div className={`w-2.5 h-2.5 rounded-full ${cloudStatus?.cloudConnected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
+            <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
             <span className={`text-sm font-medium ${statusColor}`}>{statusText}</span>
           </div>
-          <span className="text-xs text-muted-foreground">{cloudStatus?.cloudConnected ? (language === 'fr' ? 'Base de données connectée' : 'Database connected') : (language === 'fr' ? 'Non connecté' : 'Not connected')}</span>
+          <span className="text-xs text-muted-foreground">{isConnected ? (language === 'fr' ? 'Base de données connectée' : 'Database connected') : (language === 'fr' ? 'Non connecté' : 'Not connected')}</span>
         </div>
 
         {/* Timestamps */}
@@ -8505,7 +8519,7 @@ export default function App() {
     if (!isAuthenticated) return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch('/api/auth/me');
+        const res = await localApi('GET', '/api/auth/me');
         if (res.status === 401) {
           toast.error(language === 'fr' ? 'Session expirée' : 'Session expired');
           logout();

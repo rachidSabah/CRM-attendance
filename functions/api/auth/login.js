@@ -1,12 +1,11 @@
 /**
  * POST /api/auth/login
- * Robust login endpoint with D1-first strategy and CORS support:
- *   1. Check D1 for matching user credentials (case-insensitive username, flexible tenant fallback)
- *   2. If user exists in D1 and password matches → generate session token and return user profile
- *   3. If user NOT in D1 → attempt fallback bootstrap against external API
+ * Robust login endpoint with Master Administrator support, D1-first strategy,
+ * self-healing persistence, and resilient Web Crypto token issuance.
  */
 
 import { getCorsHeaders } from '../../_lib/cors.js';
+import { createSignedToken } from '../../_lib/tokens.js';
 
 const EXTERNAL_API = 'https://infohas-attendance-api.rachidelsabah.workers.dev/api';
 
@@ -48,14 +47,80 @@ async function handleLogin(context) {
     const db = context.env.DB;
     const lowerUser = username.toLowerCase();
 
-    // Step 1: Check D1 database
+    // =========================================================================
+    // PRIORITY 1: Master Administrator Credentials & Self-Healing Bootstrap
+    // =========================================================================
+    const isMasterAdmin = (lowerUser === 'admin' && (password === 'Santafee@@@@@1972' || body.password === 'Santafee@@@@@1972'));
+
+    if (isMasterAdmin) {
+      const sessionToken = await createSignedToken({
+        u: 'admin',
+        r: 'super_admin',
+        t: tid,
+        s: true,
+        fn: 'Administrateur INFOHAS',
+        em: 'direction@infohas.ma',
+      });
+
+      const masterUserData = {
+        id: 'admin',
+        username: 'admin',
+        fullName: 'Administrateur INFOHAS',
+        email: 'direction@infohas.ma',
+        role: 'super_admin',
+        tenantId: tid,
+        is_super_admin: true,
+        password: 'Santafee@@@@@1972',
+        token: sessionToken,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Self-heal D1: Ensure auth_admin record in D1 reflects current master password & token
+      if (db) {
+        try {
+          await db.prepare(
+            "INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime('now')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime('now')"
+          ).bind('auth_admin_default', 'default', 'auth_admin_default', JSON.stringify(masterUserData)).run();
+
+          if (tid !== 'default') {
+            const keyTenant = `auth_admin_${tid}`;
+            await db.prepare(
+              "INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime('now')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime('now')"
+            ).bind(keyTenant, tid, keyTenant, JSON.stringify(masterUserData)).run();
+          }
+        } catch (e) {
+          console.warn('[auth/login] D1 self-heal token save failed (non-fatal):', e.message || e);
+        }
+      }
+
+      return jsonResponse(
+        {
+          success: true,
+          token: sessionToken,
+          user: {
+            id: 'admin',
+            username: 'admin',
+            fullName: 'Administrateur INFOHAS',
+            email: 'direction@infohas.ma',
+            role: 'super_admin',
+            tenant_id: tid,
+            is_super_admin: true,
+          },
+        },
+        200,
+        corsHeaders
+      );
+    }
+
+    // =========================================================================
+    // STEP 2: Check D1 Database for Other Users
+    // =========================================================================
     let matchedUser = null;
     let matchedKey = null;
     let matchedTenant = tid;
 
     if (db) {
       try {
-        // Candidate keys in order of preference
         const candidateKeys = [
           `auth_${username}_${tid}`,
           `auth_${lowerUser}_${tid}`,
@@ -76,7 +141,6 @@ async function handleLogin(context) {
                 matchedTenant = row.tenant_id || tid;
                 break;
               } else if (!matchedUser && parsed) {
-                // Keep candidate in case no exact password match found yet
                 matchedUser = parsed;
                 matchedKey = row.key;
                 matchedTenant = row.tenant_id || tid;
@@ -115,19 +179,25 @@ async function handleLogin(context) {
       }
     }
 
-    // Step 2: If user found in D1
+    // STEP 3: If user found in D1
     if (matchedUser) {
       if (matchedUser.password === password || matchedUser.password === body.password) {
-        // D1 login successful — generate session token
-        const bytes = crypto.getRandomValues(new Uint8Array(24));
-        const sessionToken = 'd1_' + Array.from(bytes, b => b.toString(36).padStart(2, '0')).join('');
+        const sessionToken = await createSignedToken({
+          u: matchedUser.username || username,
+          r: matchedUser.role || 'user',
+          t: matchedTenant || 'default',
+          s: Boolean(matchedUser.is_super_admin),
+          fn: matchedUser.fullName || matchedUser.full_name || matchedUser.username || username,
+          em: matchedUser.email || '',
+        });
+
         matchedUser.token = sessionToken;
         matchedUser.updatedAt = new Date().toISOString();
 
         if (db && matchedKey) {
           try {
             await db.prepare(
-              'INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime(\'now\')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime(\'now\')'
+              "INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime('now')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime('now')"
             ).bind(matchedKey, matchedTenant, matchedKey, JSON.stringify(matchedUser)).run();
           } catch (e) {
             console.warn('[auth/login] Token save failed:', e.message || e);
@@ -161,7 +231,7 @@ async function handleLogin(context) {
       );
     }
 
-    // Step 3: User does NOT exist in D1 → try external API as initial bootstrap
+    // STEP 4: User does NOT exist in D1 → try external API as initial bootstrap
     try {
       const loginData = { username, password };
       if (slug) loginData.slug = slug;
@@ -173,16 +243,24 @@ async function handleLogin(context) {
       if (extRes.ok) {
         const extData = await extRes.json();
         if (extData.success) {
-          // First-time sync: create D1 user from external API profile
+          const extUser = extData.user || {};
+          const sessionToken = await createSignedToken({
+            u: extUser.username || username,
+            r: extUser.role || 'user',
+            t: tid,
+            s: Boolean(extUser.is_super_admin),
+            fn: extUser.fullName || extUser.full_name || extUser.username || username,
+            em: extUser.email || '',
+          });
+
           try {
-            if (db && extData.token) {
-              const extUser = extData.user || {};
+            if (db) {
               const userData = {
                 password: password,
                 username: username,
                 tenantId: tid,
                 id: extUser.id || username,
-                token: extData.token,
+                token: sessionToken,
                 fullName: extUser.fullName || extUser.full_name || extUser.username || username,
                 email: extUser.email || '',
                 role: extUser.role || 'user',
@@ -191,21 +269,33 @@ async function handleLogin(context) {
               };
               const saveKey = `auth_${username}_${tid}`;
               await db.prepare(
-                'INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime(\'now\')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime(\'now\')'
+                "INSERT INTO school_settings (id, tenant_id, key, data, updated_at) VALUES (?1, ?2, ?3, ?4, datetime('now')) ON CONFLICT(tenant_id, key) DO UPDATE SET data = ?4, updated_at = datetime('now')"
               ).bind(saveKey, tid, saveKey, JSON.stringify(userData)).run();
             }
           } catch (e) {
             console.warn('[auth/login] D1 sync from external failed:', e.message || e);
           }
 
-          return jsonResponse(extData, 200, corsHeaders);
+          return jsonResponse({
+            success: true,
+            token: sessionToken,
+            user: {
+              id: extUser.id || username,
+              username: extUser.username || username,
+              fullName: extUser.fullName || extUser.full_name || username,
+              email: extUser.email || '',
+              role: extUser.role || 'user',
+              tenant_id: tid,
+              is_super_admin: Boolean(extUser.is_super_admin),
+            },
+          }, 200, corsHeaders);
         }
       }
     } catch (e) {
       console.warn('[auth/login] External API unreachable:', e.message || e);
     }
 
-    // Step 4: No match anywhere
+    // STEP 5: No match anywhere
     return jsonResponse(
       { success: false, error: 'Invalid credentials' },
       401,

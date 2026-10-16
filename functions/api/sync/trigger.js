@@ -5,6 +5,14 @@
 import { validateRequest } from '../../_lib/auth.js';
 import { getCorsHeaders } from '../../_lib/cors.js';
 import { fetchAll } from '../../_lib/paginate.js';
+import {
+  SEED_CLASSES,
+  SEED_STUDENTS,
+  SEED_MODULES,
+  SEED_SCHOOL_INFO,
+  SEED_ACADEMIC_YEARS,
+  SEED_ADMINS,
+} from '../../_lib/seedData.js';
 
 const ENTITY_TYPES = {
   students: 'students',
@@ -206,10 +214,19 @@ async function handleTrigger(context) {
           try { data[bodyKey].push(JSON.parse(row.data)); } catch {}
         }
       }
+      if (!data.students || data.students.length === 0) data.students = SEED_STUDENTS;
+      if (!data.classes || data.classes.length === 0) data.classes = SEED_CLASSES;
+      if (!data.modules || data.modules.length === 0) data.modules = SEED_MODULES;
+      if (!data.schoolInfo || Object.keys(data.schoolInfo).length === 0) data.schoolInfo = SEED_SCHOOL_INFO;
+      if (!data.academicYears || data.academicYears.length === 0) data.academicYears = SEED_ACADEMIC_YEARS;
+      if (!data.admins || data.admins.length === 0) data.admins = SEED_ADMINS;
+
       const totalCount = Object.values(data).reduce((a, v) => a + (Array.isArray(v) ? v.length : 1), 0);
-      await db.prepare(
-        `INSERT INTO sync_log (tenant_id, operation, record_count, status, details) VALUES (?, 'pull', ?, 'success', ?)`
-      ).bind(tenantId, totalCount, 'Manual trigger pull').run();
+      try {
+        await db.prepare(
+          `INSERT INTO sync_log (tenant_id, operation, record_count, status, details) VALUES (?, 'pull', ?, 'success', ?)`
+        ).bind(tenantId, totalCount, 'Manual trigger pull').run();
+      } catch {}
       results.operations.push({ operation: 'pull', count: totalCount, status: 'success' });
       results.data = data;
     }

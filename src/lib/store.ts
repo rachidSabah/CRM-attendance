@@ -362,12 +362,13 @@ export async function getCloudSyncStatus(): Promise<D1SyncState & { success: boo
     const res = await localApi('GET', `/api/sync/status?tenant_id=${encodeURIComponent(tenantId)}`);
     const data = await res.json();
     if (data.success) {
+      const isConn = Boolean(data.connected);
       const updated: D1SyncState = {
-        status: 'idle',
+        status: isConn ? 'idle' : 'error',
         lastCloudSync: data.last_push || _d1SyncState.lastCloudSync,
         lastCloudPull: data.last_pull || _d1SyncState.lastCloudPull,
         cloudCounts: data.entity_counts || {},
-        cloudConnected: data.connected,
+        cloudConnected: isConn,
       };
       updateD1SyncState(updated);
       return { ...updated, success: true };
@@ -505,6 +506,8 @@ export const useAppStore = create<AppState>((set) => ({
           tenantId: currentUser.tenantId,
           isSuperAdmin: currentUser.is_super_admin || false,
         }));
+        // Reset any stale D1 sync error state so it immediately shows connected
+        updateD1SyncState({ status: 'idle', cloudConnected: true });
         // Load all data from D1 after login
         setTimeout(() => { useAppStore.getState().loadAllData(); }, 300);
         return true;

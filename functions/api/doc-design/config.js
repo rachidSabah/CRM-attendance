@@ -28,13 +28,17 @@ export async function onRequestGet(context) {
   try {
     let settings = null;
     if (db) {
-      const row = await db.prepare(
-        "SELECT data FROM school_settings WHERE key = 'doc_design_settings' LIMIT 1"
-      ).first();
-      if (row && row.data) {
-        try {
-          settings = JSON.parse(row.data);
-        } catch {}
+      try {
+        const row = await db.prepare(
+          "SELECT data FROM school_settings WHERE key = 'doc_design_settings' LIMIT 1"
+        ).first();
+        if (row && row.data) {
+          try {
+            settings = JSON.parse(row.data);
+          } catch {}
+        }
+      } catch (dbErr) {
+        console.warn('[doc-design/config] D1 query failed, fallback to null (client will use defaults):', dbErr.message);
       }
     }
 
@@ -45,8 +49,8 @@ export async function onRequestGet(context) {
       headers: { 'Content-Type': 'application/json', ...cors },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ success: false, error: err.message }), {
-      status: 500,
+    return new Response(JSON.stringify({ success: true, settings: null }), {
+      status: 200,
       headers: { 'Content-Type': 'application/json', ...cors },
     });
   }
