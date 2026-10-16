@@ -14,8 +14,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import {
   Sparkles, Zap, ShieldAlert, FileText, Send, Copy, RefreshCw, CheckCircle2,
-  AlertTriangle, Users, MessageSquare, Clock, Cpu, ArrowRight, ExternalLink
+  AlertTriangle, Users, MessageSquare, Clock, Cpu, ArrowRight, ExternalLink,
+  FileDown, Download
 } from 'lucide-react';
+import { exportAiReportPdf, exportAiReportDocx } from '@/lib/aiExport';
 
 interface AiModel {
   id: string;
@@ -215,6 +217,76 @@ export function AiAutopilot() {
     toast.success('Texte copié dans le presse-papiers.');
   };
 
+  const getReportTitle = (section?: string) => {
+    const target = section || activeTab;
+    switch (target) {
+      case 'anomaly': return "Rapport d'Anomalies & Risques d'Assiduité — INFOHAS";
+      case 'summary': return "Synthèse Pédagogique Hebdomadaire d'Assiduité — INFOHAS";
+      case 'parent_notice': {
+        const st = students.find(s => s.id === selectedStudentId);
+        return `Notification Parentale — ${st?.fullName || 'Étudiant'} — INFOHAS`;
+      }
+      case 'custom': return "Rapport d'Analyse Autopilot Personnalisé — INFOHAS";
+      default: return "Rapport Gemini AI Autopilot — INFOHAS";
+    }
+  };
+
+  const getExportableContent = (section?: string) => {
+    const target = section || activeTab;
+    if (resultText && resultText.trim() && (!section || section === activeTab)) {
+      return resultText;
+    }
+
+    if (target === 'anomaly') {
+      const rows = attendanceStats.atRiskStudents.slice(0, 20).map((s, idx) =>
+        `${idx + 1}. ${s.name} (${s.className}) — ${s.absences} absences (${s.unexcused} non justifiées) — Risque: ${s.riskLevel.toUpperCase()}`
+      ).join('\n');
+      return `# RELEVÉ DES ANOMALIES & ÉTUDIANTS À RISQUE DE DÉCROCHAGE\n\nInstitut Supérieur INFOHAS • Direction Pédagogique\nDate : ${new Date().toLocaleDateString('fr-FR')}\nEffectif Total : ${attendanceStats.totalStudents} étudiants\nÉtudiants identifiés à risque : ${attendanceStats.atRiskCount}\n\n## Liste des dossiers prioritaires :\n${rows || 'Aucun étudiant en situation critique.'}\n\n## Recommandations de l'Autopilot :\n- Convoquer en urgence les tuteurs des élèves dépassant 8 absences.\n- Émettre un 2e avertissement formel pour les élèves entre 5 et 7 absences.\n- Notifier par WhatsApp les absences non justifiées du jour.`;
+    }
+
+    if (target === 'summary') {
+      return `# SYNTHÈSE HEBDOMADAIRE D'ASSIDUITÉ DES PROMOTIONS\n\nInstitut Supérieur INFOHAS • Direction Pédagogique\nDate : ${new Date().toLocaleDateString('fr-FR')}\nEffectif Global : ${attendanceStats.totalStudents} étudiants sur ${attendanceStats.totalClasses} classes.\nTotal Séances Enregistrées : ${attendanceStats.totalRecords}\n\n## Répartition des seuils d'alerte :\n- Niveau Convocation Conseil de Discipline (8+ abs) : ${attendanceStats.atRiskStudents.filter(s => s.absences >= 8).length} stagiaires\n- Niveau Second Avertissement (5-7 abs) : ${attendanceStats.atRiskStudents.filter(s => s.absences >= 5 && s.absences < 8).length} stagiaires\n- Niveau Premier Avertissement (3-4 abs) : ${attendanceStats.atRiskStudents.filter(s => s.absences >= 3 && s.absences < 5).length} stagiaires\n\n## Constats & Directives :\n- Assiduité satisfaisante sur la majorité des filières techniques.\n- Renforcer le pointage biométrique et le suivi des feuilles d'émargement quotidiennes.`;
+    }
+
+    if (target === 'parent_notice') {
+      const st = students.find(s => s.id === selectedStudentId);
+      const absCount = attendance.filter(a => a.studentId === st?.id && a.status === 'absent').length;
+      return `# NOTIFICATION D'ASSIDUITÉ — DIRECTION INFOHAS\n\nDestinataire : ${st?.guardianName || 'Parent / Tuteur légal'}\nÉtudiant(e) : ${st?.fullName || 'N/A'}\nMatricule : ${st?.studentId || 'N/A'}\nClasse : ${st?.className || 'N/A'}\nCumul d'absences : ${absCount} séances non justifiées\n\nMadame, Monsieur,\nNous portons à votre attention que l'assiduité de votre enfant requiert votre vigilance immédiate.\nConformément au règlement intérieur de l'Institut INFOHAS, un entretien ou le dépôt d'un justificatif officiel est obligatoire sous 48 heures.\n\nDirection Pédagogique — INFOHAS`;
+    }
+
+    return `# RAPPORT LIBRE GEMINI AI AUTOPILOT\n\nDemande : ${customPrompt || 'Analyse administrative libre'}\nDate d'émission : ${new Date().toLocaleDateString('fr-FR')}\nÉtablissement : Institut Supérieur INFOHAS`;
+  };
+
+  const handleDownloadPdf = (section?: string) => {
+    try {
+      const title = getReportTitle(section);
+      const content = getExportableContent(section);
+      exportAiReportPdf(title, content, {
+        model: selectedModel,
+        category: section || activeTab,
+        date: new Date().toLocaleDateString('fr-FR'),
+      });
+      toast.success('Rapport PDF téléchargé avec succès.');
+    } catch (e: any) {
+      toast.error('Erreur lors du téléchargement PDF: ' + e.message);
+    }
+  };
+
+  const handleDownloadDocx = async (section?: string) => {
+    try {
+      const title = getReportTitle(section);
+      const content = getExportableContent(section);
+      await exportAiReportDocx(title, content, {
+        model: selectedModel,
+        category: section || activeTab,
+        date: new Date().toLocaleDateString('fr-FR'),
+      });
+      toast.success('Rapport DOCX téléchargé avec succès.');
+    } catch (e: any) {
+      toast.error('Erreur lors du téléchargement DOCX: ' + e.message);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Autopilot Top Banner */}
@@ -337,6 +409,29 @@ export function AiAutopilot() {
                     <Sparkles className="h-4 w-4" />
                     {loading ? 'Analyse en cours...' : 'Lancer l’Audit des Anomalies'}
                   </Button>
+
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownloadPdf('anomaly')}
+                      className="flex-1 text-[11px] h-7 gap-1 text-red-600 dark:text-red-400"
+                      title="Télécharger l'audit des anomalies en PDF"
+                    >
+                      <FileText className="h-3 w-3" />
+                      Export Anomalies PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownloadDocx('anomaly')}
+                      className="flex-1 text-[11px] h-7 gap-1 text-blue-600 dark:text-blue-400"
+                      title="Télécharger l'audit des anomalies en DOCX"
+                    >
+                      <FileDown className="h-3 w-3" />
+                      Export DOCX
+                    </Button>
+                  </div>
                 </TabsContent>
 
                 {/* Tab 2: Summary */}
@@ -368,6 +463,29 @@ export function AiAutopilot() {
                     <FileText className="h-4 w-4" />
                     {loading ? 'Rédaction du rapport...' : 'Générer la Synthèse Hebdomadaire'}
                   </Button>
+
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownloadPdf('summary')}
+                      className="flex-1 text-[11px] h-7 gap-1 text-red-600 dark:text-red-400"
+                      title="Télécharger la synthèse en PDF"
+                    >
+                      <FileText className="h-3 w-3" />
+                      Export Synthèse PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownloadDocx('summary')}
+                      className="flex-1 text-[11px] h-7 gap-1 text-blue-600 dark:text-blue-400"
+                      title="Télécharger la synthèse en DOCX"
+                    >
+                      <FileDown className="h-3 w-3" />
+                      Export DOCX
+                    </Button>
+                  </div>
                 </TabsContent>
 
                 {/* Tab 3: Parent Notice */}
@@ -419,6 +537,31 @@ export function AiAutopilot() {
                     <MessageSquare className="h-4 w-4" />
                     {loading ? 'Rédaction personnalisée...' : 'Rédiger la Notification Parentale'}
                   </Button>
+
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownloadPdf('parent_notice')}
+                      disabled={!selectedStudentId}
+                      className="flex-1 text-[11px] h-7 gap-1 text-red-600 dark:text-red-400"
+                      title="Télécharger la notification parentale en PDF"
+                    >
+                      <FileText className="h-3 w-3" />
+                      Notice PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownloadDocx('parent_notice')}
+                      disabled={!selectedStudentId}
+                      className="flex-1 text-[11px] h-7 gap-1 text-blue-600 dark:text-blue-400"
+                      title="Télécharger la notification parentale en DOCX"
+                    >
+                      <FileDown className="h-3 w-3" />
+                      Notice DOCX
+                    </Button>
+                  </div>
                 </TabsContent>
 
                 {/* Tab 4: Custom */}
@@ -441,6 +584,29 @@ export function AiAutopilot() {
                     <Send className="h-4 w-4" />
                     {loading ? 'Traitement en cours...' : 'Exécuter la Demande'}
                   </Button>
+
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownloadPdf('custom')}
+                      className="flex-1 text-[11px] h-7 gap-1 text-red-600 dark:text-red-400"
+                      title="Télécharger le rapport libre en PDF"
+                    >
+                      <FileText className="h-3 w-3" />
+                      Export Libre PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownloadDocx('custom')}
+                      className="flex-1 text-[11px] h-7 gap-1 text-blue-600 dark:text-blue-400"
+                      title="Télécharger le rapport libre en DOCX"
+                    >
+                      <FileDown className="h-3 w-3" />
+                      Export DOCX
+                    </Button>
+                  </div>
                 </TabsContent>
               </Tabs>
             </CardContent>
@@ -450,7 +616,7 @@ export function AiAutopilot() {
         {/* Right Column: AI Output & Validation (7 cols) */}
         <div className="lg:col-span-7 space-y-4">
           <Card className="border-border min-h-[500px] flex flex-col justify-between">
-            <CardHeader className="pb-3 border-b border-border flex flex-row items-center justify-between">
+            <CardHeader className="pb-3 border-b border-border flex flex-row items-center justify-between gap-2">
               <div>
                 <CardTitle className="text-base flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-blue-600" />
@@ -461,12 +627,34 @@ export function AiAutopilot() {
                 </CardDescription>
               </div>
 
-              {latency && (
-                <Badge variant="outline" className="text-[10px] gap-1 font-mono">
-                  <Clock className="h-3 w-3" />
-                  {latency} ms
-                </Badge>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {latency && (
+                  <Badge variant="outline" className="text-[10px] gap-1 font-mono">
+                    <Clock className="h-3 w-3" />
+                    {latency} ms
+                  </Badge>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDownloadPdf()}
+                  className="h-8 gap-1.5 text-xs text-red-600 dark:text-red-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  title="Télécharger au format PDF"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline font-medium">PDF</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDownloadDocx()}
+                  className="h-8 gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                  title="Télécharger au format Word DOCX"
+                >
+                  <FileDown className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline font-medium">DOCX</span>
+                </Button>
+              </div>
             </CardHeader>
 
             <CardContent className="flex-1 p-6">
@@ -497,12 +685,30 @@ export function AiAutopilot() {
             </CardContent>
 
             {resultText && (
-              <CardFooter className="border-t border-border pt-4 flex items-center justify-between">
+              <CardFooter className="border-t border-border pt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <span className="text-[11px] text-muted-foreground">
                   INFOHAS Autopilot • Réponse générée par {selectedModel}
                 </span>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDownloadPdf()}
+                    className="gap-1.5 text-xs h-8 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Télécharger PDF
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDownloadDocx()}
+                    className="gap-1.5 text-xs h-8 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                  >
+                    <FileDown className="h-3.5 w-3.5" />
+                    Télécharger DOCX
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"

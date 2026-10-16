@@ -13,6 +13,7 @@ import { FileCheck, CheckCircle2, XCircle, Clock, Plus, Search, Eye } from 'luci
 import { toast } from 'sonner';
 import type { ExcuseJustification } from '@/lib/types';
 import { useAppStore } from '@/lib/store';
+import { AiTextAssist } from '@/components/AiTextAssist';
 
 interface JustificationsDialogProps {
   open: boolean;
@@ -296,7 +297,15 @@ export function JustificationsDialog({ open, onOpenChange }: JustificationsDialo
             </div>
 
             <div className="space-y-1">
-              <Label>{isFr ? 'Détails ou Références (Dr, N° de certificat)' : 'Details or Certificate Ref.'}</Label>
+              <div className="flex items-center justify-between">
+                <Label>{isFr ? 'Détails ou Références (Dr, N° de certificat)' : 'Details or Certificate Ref.'}</Label>
+                <AiTextAssist
+                  value={formNotes}
+                  onApply={setFormNotes}
+                  contextPrompt="Détails administratifs du justificatif d'absence ou référence médicale"
+                  size="sm"
+                />
+              </div>
               <Textarea
                 rows={2}
                 placeholder={isFr ? 'Ex: Certificat Dr. Bennani du 14/10 pour repos de 48h...' : 'Doctor name, reference number...'}

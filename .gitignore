@@ -72,3 +72,4 @@ download/
 prisma/.cf_token
 .next
 node_modules
+.wrangler/

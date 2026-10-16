@@ -11,8 +11,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from 'sonner';
 import {
   Smartphone, ShieldCheck, CheckCircle2, AlertTriangle, ArrowRight,
-  LogOut, Calendar, Clock, FileUp, Sparkles, User, RefreshCw, ChevronRight, X
+  LogOut, Calendar, Clock, FileUp, Sparkles, User, RefreshCw, ChevronRight, X,
+  Shield, Link2, Lock
 } from 'lucide-react';
+import { useAppStore } from '@/lib/store';
+import { AiTextAssist } from '@/components/AiTextAssist';
 
 interface ParentStudent {
   id: string;
@@ -51,12 +54,17 @@ interface AttendanceSummary {
 }
 
 export function ParentPortal() {
-  const [step, setStep] = useState<'phone' | 'otp' | 'dashboard'>('phone');
+  const [step, setStep] = useState<'phone' | 'otp' | 'magic_pin' | 'dashboard'>('phone');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [token, setToken] = useState<string>('');
   const [testOtp, setTestOtp] = useState<string | null>(null);
+
+  // Magic Link State
+  const [magicStudentId, setMagicStudentId] = useState<string>('');
+  const [magicPin, setMagicPin] = useState<string>('');
+  const [magicStudentName, setMagicStudentName] = useState<string>('');
 
   // Dashboard state
   const [students, setStudents] = useState<ParentStudent[]>([]);
@@ -72,8 +80,22 @@ export function ParentPortal() {
   const [justFileBase64, setJustFileBase64] = useState<string>('');
   const [submittingJust, setSubmittingJust] = useState(false);
 
-  // Check saved session on mount
+  // Check saved session or magic link on mount
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const stdParam = params.get('std') || params.get('studentId');
+      if (stdParam) {
+        setMagicStudentId(stdParam);
+        setStep('magic_pin');
+        const found = useAppStore.getState().students.find(s => s.id === stdParam);
+        if (found) {
+          setMagicStudentName(found.fullName);
+        }
+        return;
+      }
+    }
+
     const savedToken = localStorage.getItem('parent_session_token');
     if (savedToken) {
       setToken(savedToken);
@@ -141,6 +163,93 @@ export function ParentPortal() {
       await fetchParentData(data.token);
     } catch (err: any) {
       toast.error(err.message || 'Échec de validation');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyMagicPin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!magicPin.trim()) {
+      toast.error('Veuillez saisir votre numéro de mobile comme code PIN.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1. Try server verification first
+      const res = await fetch('/api/parent/verify-magic-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId: magicStudentId,
+          pin: magicPin.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setToken(data.token);
+        localStorage.setItem('parent_session_token', data.token);
+        toast.success(`Authentification réussie ! Bienvenue sur l'Espace Parents.`);
+        await fetchParentData(data.token);
+        return;
+      }
+
+      // 2. Client-side fallback if server returns error or offline
+      const storeState = useAppStore.getState();
+      const st = storeState.students.find(s => s.id === magicStudentId);
+      if (st) {
+        const cleanPin = magicPin.replace(/\D/g, '');
+        const cleanGuardian = (st.guardianPhone || '').replace(/\D/g, '');
+        const cleanStudent = (st.phone || '').replace(/\D/g, '');
+        const last9Pin = cleanPin.slice(-9);
+        const matches = (cleanGuardian && cleanGuardian.endsWith(last9Pin)) || (cleanStudent && cleanStudent.endsWith(last9Pin));
+
+        if (matches) {
+          const localToken = `pt_local_${Date.now()}`;
+          setToken(localToken);
+          setStudents([{
+            id: st.id,
+            fullName: st.fullName,
+            studentId: st.studentId,
+            className: st.className || st.group || 'Promotion INFOHAS',
+            status: st.status,
+          }]);
+          const studentAtt = storeState.attendance.filter(a => a.studentId === st.id);
+          setAttendance(studentAtt.map(a => ({
+            id: a.id,
+            studentId: a.studentId,
+            date: a.date,
+            status: (a.status as any) || 'present',
+            notes: a.notes,
+            justificationId: a.justificationId,
+          })));
+          const presentCount = studentAtt.filter(a => a.status === 'present').length;
+          const absentExcusedCount = studentAtt.filter(a => a.status === 'excused' || a.justificationId).length;
+          const absentUnexcusedCount = studentAtt.filter(a => a.status === 'absent' && !a.justificationId).length;
+          const lateCount = studentAtt.filter(a => a.status === 'late').length;
+          const totalSessions = studentAtt.length || 1;
+          const rate = Math.round(((presentCount + lateCount) / totalSessions) * 100);
+
+          setSummary({
+            totalSessions,
+            presentCount,
+            absentExcusedCount,
+            absentUnexcusedCount,
+            lateCount,
+            rate,
+          });
+          setSelectedStudentId(st.id);
+          setStep('dashboard');
+          toast.success(`Accès autorisé pour le dossier de ${st.fullName}`);
+          return;
+        }
+      }
+
+      throw new Error(data.error || 'Code PIN incorrect. Veuillez entrer votre numéro de portable enregistré.');
+    } catch (err: any) {
+      toast.error(err.message || 'Échec de validation du code PIN');
     } finally {
       setLoading(false);
     }
@@ -274,6 +383,63 @@ export function ParentPortal() {
           </Button>
         )}
       </div>
+
+      {/* Step 0: Magic Link PIN Unlock */}
+      {step === 'magic_pin' && (
+        <Card className="max-w-md mx-auto border-border shadow-md">
+          <CardHeader className="text-center pb-2">
+            <div className="mx-auto w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center mb-2">
+              <Shield className="h-6 w-6" />
+            </div>
+            <CardTitle className="text-lg">Déverrouillage Espace Parents</CardTitle>
+            <CardDescription className="text-xs">
+              {magicStudentName ? (
+                <>Dossier de l'élève : <strong className="text-foreground">{magicStudentName}</strong></>
+              ) : (
+                "Accès direct par Magic Link INFOHAS"
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-2">
+            <div className="p-3 bg-muted/50 rounded-lg border border-border text-xs text-muted-foreground leading-relaxed">
+              🔒 <strong>Sécurisation par Code PIN :</strong> Veuillez saisir le numéro de téléphone portable du parent/tuteur enregistré auprès de l'établissement (ex: 0661234567).
+            </div>
+
+            <form onSubmit={handleVerifyMagicPin} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Numéro de Mobile (Code PIN de sécurité)</Label>
+                <Input
+                  type="tel"
+                  placeholder="Ex: 0661234567 ou +212..."
+                  value={magicPin}
+                  onChange={e => setMagicPin(e.target.value)}
+                  className="h-11 font-mono text-center text-lg font-bold tracking-wider"
+                  autoFocus
+                />
+              </div>
+
+              <Button
+                type="submit"
+                disabled={loading || !magicPin.trim()}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-2 h-10 shadow-sm"
+              >
+                {loading ? 'Vérification du code PIN...' : 'Déverrouiller le portail parent'}
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </form>
+
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => setStep('phone')}
+                className="text-xs text-muted-foreground hover:underline"
+              >
+                Connexion alternative par code WhatsApp
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Step 1: Phone Input */}
       {step === 'phone' && (
@@ -561,7 +727,16 @@ export function ParentPortal() {
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">Motif de l'absence</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Motif de l'absence</Label>
+                <AiTextAssist
+                  value={justReason}
+                  onApply={setJustReason}
+                  contextPrompt="Motif d'absence et justificatif médical d'un élève pour la direction de l'Institut INFOHAS"
+                  size="sm"
+                  label="Rédiger avec IA"
+                />
+              </div>
               <Textarea
                 placeholder="Ex: Maladie avec certificat médical du Dr..., Urgence familiale..."
                 value={justReason}

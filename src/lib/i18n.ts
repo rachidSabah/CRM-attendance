@@ -235,6 +235,42 @@ const translations: Record<string, Record<string, string>> = {
     no_results_found: 'No results found',
     report: 'Report',
     upload: 'Upload',
+    // Autopilot & Exports
+    ai_autopilot: 'Gemini AI Autopilot',
+    download_pdf: 'Download PDF',
+    download_docx: 'Download DOCX',
+    export_report: 'Export Report',
+    export_all: 'Export All',
+    ai_inline_assist: 'AI Autopilot Assistant',
+    improve_tone: 'Improve Tone',
+    formal_admin: 'Formal Administrative',
+    fix_grammar: 'Fix Grammar & Spelling',
+    translate_text: 'Translate',
+    summarize_text: 'Summarize',
+    apply_text: 'Apply Text',
+    recommandations: 'Report & Proposed Recommendations',
+    anomalies: 'Anomalies & Dropout Risks',
+    synthese: 'Weekly Synthesis',
+    parent_notice: 'Parent Notices',
+    custom_report: 'Custom Report',
+    // Parent Portal & Magic Link
+    magic_link: 'Parent Magic Link',
+    generate_magic_link: 'Generate Parent Magic Link',
+    pin_security_code: 'PIN Security Code',
+    pin_is_phone: 'Your PIN is your registered mobile phone number',
+    send_via_whatsapp: 'Send via WhatsApp',
+    upload_justification: 'Upload Justification',
+    unlock_portal: 'Unlock Access',
+    enter_phone_pin: 'Enter Mobile Phone as PIN',
+    magic_link_copied: 'Magic link copied to clipboard!',
+    attendance_rate: 'Attendance Rate',
+    // Statuses & Abbreviations
+    pending_justification: 'Pending Justification',
+    abbr_present: 'P',
+    abbr_absent: 'A',
+    abbr_late: 'L',
+    abbr_excused: 'E',
+    abbr_pending: 'PJ',
   },
   fr: {
     dashboard: 'Tableau de bord', students: 'Étudiants', classes: 'Classes',
@@ -472,6 +508,42 @@ const translations: Record<string, Record<string, string>> = {
     no_results_found: 'Aucun résultat trouvé',
     report: 'Rapport',
     upload: 'Télécharger',
+    // Autopilot & Exports
+    ai_autopilot: 'Gemini AI Autopilot',
+    download_pdf: 'Télécharger PDF',
+    download_docx: 'Télécharger DOCX',
+    export_report: 'Exporter le Rapport',
+    export_all: 'Tout Exporter',
+    ai_inline_assist: 'Assistant IA Autopilot',
+    improve_tone: 'Améliorer le ton',
+    formal_admin: 'Administratif Formel',
+    fix_grammar: 'Corriger orthographe & grammaire',
+    translate_text: 'Traduire',
+    summarize_text: 'Résumer',
+    apply_text: 'Appliquer au champ',
+    recommandations: 'Rapport & Recommandations Proposées',
+    anomalies: 'Anomalies & Risques de Décrochage',
+    synthese: 'Synthèse Hebdomadaire',
+    parent_notice: 'Messages & Notifications Parents',
+    custom_report: 'Rapport Libre & Analyse',
+    // Parent Portal & Magic Link
+    magic_link: 'Lien Magique Parent',
+    generate_magic_link: 'Générer Lien Magique Parent',
+    pin_security_code: 'Code PIN de Sécurité',
+    pin_is_phone: 'Votre code PIN est votre numéro de mobile enregistré',
+    send_via_whatsapp: 'Envoyer par WhatsApp',
+    upload_justification: 'Déposer un justificatif',
+    unlock_portal: 'Déverrouiller l’accès',
+    enter_phone_pin: 'Saisir le mobile comme PIN',
+    magic_link_copied: 'Lien magique copié dans le presse-papiers !',
+    attendance_rate: 'Taux de Présence',
+    // Statuses & Abbreviations
+    pending_justification: 'En attente de justification',
+    abbr_present: 'P',
+    abbr_absent: 'A',
+    abbr_late: 'R',
+    abbr_excused: 'J',
+    abbr_pending: 'AJ',
   },
   ar: {
     dashboard: 'لوحة التحكم', students: 'الطلاب', classes: 'الأقسام',
@@ -698,11 +770,67 @@ const translations: Record<string, Record<string, string>> = {
     no_results_found: 'لا توجد نتائج',
     report: 'تقرير',
     upload: 'رفع',
+    // Autopilot & Exports
+    ai_autopilot: 'Gemini AI Autopilot',
+    download_pdf: 'تحميل PDF',
+    download_docx: 'تحميل DOCX',
+    export_report: 'تصدير التقرير',
+    export_all: 'تصدير الكل',
+    ai_inline_assist: 'المساعد الذكي للكتابة',
+    improve_tone: 'تحسين الأسلوب',
+    formal_admin: 'صيغة إدارية رسمية',
+    fix_grammar: 'تصحيح الأخطاء اللغوية',
+    translate_text: 'ترجمة',
+    summarize_text: 'تلخيص',
+    apply_text: 'تطبيق على النص',
+    recommandations: 'التقرير والتوصيات المقترحة',
+    anomalies: 'حالات الغياب الشاذة ومخاطر الانقطاع',
+    synthese: 'الخلاصة الأسبوعية',
+    parent_notice: 'إشعارات أولياء الأمور',
+    custom_report: 'تقرير مخصص وتحليل حر',
+    // Parent Portal & Magic Link
+    magic_link: 'الرابط السحري للولي',
+    generate_magic_link: 'إنشاء الرابط السحري للولي',
+    pin_security_code: 'رمز PIN للأمان',
+    pin_is_phone: 'رمز PIN هو رقم الهاتف المسجل لدى المعهد',
+    send_via_whatsapp: 'إرسال عبر واتساب',
+    upload_justification: 'تقديم تبرير غياب',
+    unlock_portal: 'فتح البوابة',
+    enter_phone_pin: 'أدخل رقم الهاتف كرمز PIN',
+    magic_link_copied: 'تم نسخ الرابط السحري بنجاح!',
+    attendance_rate: 'نسبة الحضور',
+    // Statuses & Abbreviations
+    pending_justification: 'في انتظار التبرير',
+    abbr_present: 'ح',
+    abbr_absent: 'غ',
+    abbr_late: 'م',
+    abbr_excused: 'ع',
+    abbr_pending: 'ت',
   },
 };
 
 export function t(key: string, lang: string = 'en'): string {
   return translations[lang]?.[key] || translations['en']?.[key] || key;
+}
+
+export function getStatusLabel(status: string, lang: string = 'fr'): string {
+  const s = (status || '').toLowerCase().trim();
+  if (s === 'present' || s === 'p') return t('present', lang);
+  if (s === 'absent' || s === 'a') return t('absent', lang);
+  if (s === 'late' || s === 'l' || s === 'r' || s === 'retard') return t('late', lang);
+  if (s === 'excused' || s === 'e' || s === 'j' || s === 'justified' || s === 'justifié') return t('excused', lang);
+  if (s === 'pending_justification' || s === 'pending') return t('pending_justification', lang);
+  return t(status, lang) || status;
+}
+
+export function getStatusAbbr(status: string, lang: string = 'fr'): string {
+  const s = (status || '').toLowerCase().trim();
+  if (s === 'present' || s === 'p') return t('abbr_present', lang);
+  if (s === 'absent' || s === 'a') return t('abbr_absent', lang);
+  if (s === 'late' || s === 'l' || s === 'r' || s === 'retard') return t('abbr_late', lang);
+  if (s === 'excused' || s === 'e' || s === 'j' || s === 'justified' || s === 'justifié') return t('abbr_excused', lang);
+  if (s === 'pending_justification' || s === 'pending') return t('abbr_pending', lang);
+  return s.charAt(0).toUpperCase();
 }
 
 export default translations;

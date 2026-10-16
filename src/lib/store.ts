@@ -38,6 +38,7 @@ interface AppState {
 
   // Settings
   language: 'en' | 'fr' | 'ar';
+  setLanguage: (lang: 'en' | 'fr' | 'ar') => void;
   primaryColor: string;
   setPrimaryColor: (color: string) => void;
 
@@ -434,7 +435,7 @@ export const useAppStore = create<AppState>((set) => ({
   justifications: getCachedData<ExcuseJustification[]>('justifications', []),
   profileViewStudent: null,
 
-  language: 'en',
+  language: 'fr',
   primaryColor: '#10b981',
 
   setCurrentPage: (page) => set({ currentPage: page }),
@@ -602,13 +603,22 @@ export const useAppStore = create<AppState>((set) => ({
     document.documentElement.style.setProperty('--app-primary-color', color);
   },
 
+  setLanguage: (lang) => {
+    set({ language: lang });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('attendance_language', lang);
+      document.documentElement.lang = lang;
+      document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    }
+  },
+
   loadAllData: async () => {
-    const savedLang = (typeof window !== 'undefined' ? localStorage.getItem('attendance_language') : null) as 'en' | 'fr' | null;
+    const savedLang = (typeof window !== 'undefined' ? localStorage.getItem('attendance_language') : null) as 'en' | 'fr' | 'ar' | null;
     const cachedColor = typeof window !== 'undefined' ? localStorage.getItem('attendance_primary_color') || '#10b981' : '#10b981';
     document.documentElement.style.setProperty('--app-primary-color', cachedColor);
     if (savedLang) {
       document.documentElement.lang = savedLang;
-      document.documentElement.dir = (savedLang as string) === 'ar' ? 'rtl' : 'ltr';
+      document.documentElement.dir = savedLang === 'ar' ? 'rtl' : 'ltr';
     }
 
     _loadingFromApi = true;
@@ -682,7 +692,7 @@ export const useAppStore = create<AppState>((set) => ({
               admins: (cd.admins || getCachedData('admins', [])) as Record<string, unknown>[],
               schoolInfo: (cd.schoolInfo && typeof cd.schoolInfo === 'object' && Object.keys(cd.schoolInfo).length > 0) ? cd.schoolInfo as SchoolInfo : (getCachedData('schoolInfo', {}) as SchoolInfo),
               primaryColor: cachedColor,
-              language: savedLang || 'en',
+              language: savedLang || 'fr',
             });
 
             // Write back to local cache

@@ -57,7 +57,8 @@ import {
   Flame, Award, Zap, Globe, Database, Activity, ToggleLeft, CreditCard, IdCard,
   Palette, HardDrive, ChevronDown, Info, RotateCcw, Archive, Cloud, FolderOpen,
   FileCheck, ListChecks, Target, Smartphone, WifiOff, History, FileUp,
-  AlertOctagon, Paperclip, BellRing, Sparkles, QrCode, ShieldAlert, FileSpreadsheet
+  AlertOctagon, Paperclip, BellRing, Sparkles, QrCode, ShieldAlert, FileSpreadsheet,
+  Link2
 } from 'lucide-react';
 
 import { QrScannerDialog } from '@/components/QrScannerDialog';
@@ -68,6 +69,8 @@ import { BulkImportDialog } from '@/components/BulkImportDialog';
 import { CertificateGenerator } from '@/components/CertificateGenerator';
 import { AiAutopilot } from '@/components/AiAutopilot';
 import { ParentPortal } from '@/components/ParentPortal';
+import { ParentMagicLinkDialog } from '@/components/ParentMagicLinkDialog';
+import { AiTextAssist } from '@/components/AiTextAssist';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 
@@ -276,6 +279,7 @@ function generateSmartNotifications(students: Student[], attendance: AttendanceR
 // ==================== STUDENT 360° PROFILE ====================
 function Student360Profile({ student, onClose }: { student: Student; onClose: () => void }) {
   const { classes, attendance, grades, behavior, incidents, modules, language, setCurrentPage } = useAppStore();
+  const [magicOpen, setMagicOpen] = useState(false);
 
   const studentClass = classes.find(c => c.id === student.classId);
   const sa = attendance.filter(a => a.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -428,6 +432,15 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
             <Button
               variant="outline"
               size="sm"
+              className="flex-1 sm:flex-none text-xs border-emerald-400 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700 font-medium"
+              onClick={() => setMagicOpen(true)}
+              title={language === 'fr' ? 'Lien Magique Parent & Instructions WhatsApp' : 'Parent Magic Link & WhatsApp'}
+            >
+              <Link2 className="h-4 w-4 mr-1.5 text-emerald-600" />{language === 'fr' ? 'Magic Link Parent' : 'Parent Magic Link'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               className="flex-1 sm:flex-none text-xs border-emerald-300 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300"
               onClick={async () => {
                 await pdfUtils.exportStudentBadgesPDF([student], classes, useAppStore.getState().schoolInfo, language);
@@ -533,6 +546,7 @@ function Student360Profile({ student, onClose }: { student: Student; onClose: ()
             </div>;
           }) : <EmptyState message={t('no_data', language)} />)}
         </div>
+        <ParentMagicLinkDialog open={magicOpen} onOpenChange={setMagicOpen} student={student} />
       </DialogContent>
     </Dialog>
   );
@@ -633,6 +647,26 @@ function LoginScreen() {
               {loading && <RefreshCw className="h-4 w-4 animate-spin mr-2" />}
               {t('signing_in', language)}
             </Button>
+
+            <div className="relative my-3 pt-1">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-[10px] uppercase">
+                <span className="bg-card px-2 text-muted-foreground">{language === 'fr' ? 'Ou espace dédié' : 'Or dedicated space'}</span>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => useAppStore.getState().setCurrentPage('parent-portal')}
+              className="w-full text-xs gap-2 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 h-9"
+            >
+              <Smartphone className="h-4 w-4 text-emerald-600" />
+              {language === 'fr' ? "Espace Parents (Suivi d'assiduité & Justificatifs)" : "Parent Portal (Attendance & Excuses)"}
+            </Button>
           </form>
         </CardContent>
       </Card>
@@ -708,8 +742,23 @@ function Header({ onMenuClick, onExportClick }: { onMenuClick: () => void; onExp
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenuClick}><Menu className="h-5 w-5" /></Button>
         <div className="flex-1 min-w-0"><h1 className="text-lg font-semibold truncate">{t(currentPage, language)}</h1></div>
-        <Button variant="outline" size="sm" className="hidden sm:flex gap-2 text-muted-foreground" onClick={() => setSearchOpen(true)}><Search className="h-4 w-4" /><span className="text-xs">{t('search', language)}</span><kbd className="hidden md:inline-flex items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">Ctrl+K</kbd></Button>
-        <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => { const langs = ['en', 'fr', 'ar'] as const; const idx = langs.indexOf(language); const newLang = langs[(idx + 1) % langs.length]; useAppStore.setState({ language: newLang }); localStorage.setItem('attendance_language', newLang); document.documentElement.lang = newLang; document.documentElement.dir = newLang === 'ar' ? 'rtl' : 'ltr'; const names: Record<string, string> = { en: 'English', fr: 'Français', ar: 'العربية' }; toast.success(names[newLang]); }}><Languages className="h-4 w-4" /><span className="hidden sm:inline">{language.toUpperCase()}</span></Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 text-xs font-semibold h-8 border-border bg-background shadow-xs hover:bg-muted"
+          onClick={() => {
+            const langs = ['fr', 'en', 'ar'] as const;
+            const idx = langs.indexOf(language);
+            const newLang = langs[(idx + 1) % langs.length];
+            useAppStore.getState().setLanguage(newLang);
+            const names: Record<string, string> = { fr: '🇫🇷 Français activé', en: '🇬🇧 English activated', ar: '🇲🇦 تم تفعيل العربية' };
+            toast.success(names[newLang]);
+          }}
+          title={language === 'fr' ? 'Changer de langue (Français / English / العربية)' : 'Change language'}
+        >
+          <Languages className="h-3.5 w-3.5 text-emerald-600" />
+          <span>{language === 'fr' ? '🇫🇷 FR' : language === 'ar' ? '🇲🇦 AR' : '🇬🇧 EN'}</span>
+        </Button>
         <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}</Button>
         <Button variant="outline" size="icon" onClick={onExportClick}><Download className="h-4 w-4" /></Button>
         <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground"><div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /><span>{language === 'fr' ? 'Dernière sync' : 'Last sync'}: {syncTime.toLocaleTimeString(language === 'fr' ? 'fr-FR' : 'en-US', { hour: '2-digit', minute: '2-digit' })}</span></div>
@@ -1417,6 +1466,7 @@ function StudentsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [profileStudent, setProfileStudent] = useState<Student | null>(null);
+  const [magicStudent, setMagicStudent] = useState<Student | null>(null);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [form, setForm] = useState({ fullName: '', studentId: '', classId: '', status: 'active' as Student['status'], guardianName: '', guardianPhone: '', guardianEmail: '', phone: '', email: '', address: '', notes: '', group: '', photo: '' as string });
   const [sortBy, setSortBy] = useState('name_asc');
@@ -1596,6 +1646,7 @@ function StudentsPage() {
                 <TableCell className="hidden xl:table-cell">{s.guardianPhone ? <><span className="text-xs">{s.guardianPhone}</span><Button variant="ghost" size="icon" className="h-6 w-6 text-emerald-600" onClick={() => window.open(`https://wa.me/${formatWhatsAppPhone(s.guardianPhone)}?text=${encodeURIComponent('Hello from school!')}`, '_blank')}><MessageCircle className="h-3.5 w-3.5" /></Button></> : '-'}</TableCell>
                 <TableCell><div className="flex gap-1">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setProfileStudent(s)}><Eye className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/20" title={language === 'fr' ? 'Lien Magique Parent & WhatsApp' : 'Parent Magic Link & WhatsApp'} onClick={() => setMagicStudent(s)}><Link2 className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-950/20" title={language === 'fr' ? 'Bulletin Semestriel PDF' : 'Semester Report Card PDF'} onClick={() => {
                     const st = useAppStore.getState();
                     const sc = classes.find(c => c.id === s.classId);
@@ -1668,13 +1719,25 @@ function StudentsPage() {
           </div>
           <div className="space-y-2"><Label>{language === 'fr' ? 'Adresse' : 'Address'}</Label><Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></div>
           <div className="space-y-2"><Label>Group</Label><Input value={form.group} onChange={e => setForm({ ...form, group: e.target.value })} /></div>
-          <div className="space-y-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Notes</Label>
+              <AiTextAssist
+                value={form.notes}
+                onApply={(txt) => setForm({ ...form, notes: txt })}
+                contextPrompt="Notes administratives et suivi d'un étudiant"
+                size="sm"
+              />
+            </div>
+            <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} />
+          </div>
         </div>
         <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter>
       </DialogContent></Dialog>
 
       {profileStudent && <Student360Profile student={profileStudent} onClose={() => setProfileStudent(null)} />}
       <BulkImportDialog open={bulkImportOpen} onOpenChange={setBulkImportOpen} />
+      <ParentMagicLinkDialog open={Boolean(magicStudent)} onOpenChange={(open) => { if (!open) setMagicStudent(null); }} student={magicStudent} />
     </div>
   );
 }
@@ -3885,9 +3948,31 @@ function IncidentsPage() {
             <div className="space-y-2"><Label>{t('status', language)}</Label><Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Incident['status'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">{t('open', language)}</SelectItem><SelectItem value="investigating">{t('investigating', language)}</SelectItem><SelectItem value="resolved">{t('resolved', language)}</SelectItem><SelectItem value="closed">{t('closed', language)}</SelectItem></SelectContent></Select></div>
             <div className="space-y-2"><Label>{language === 'fr' ? 'Date' : 'Date'}</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
           </div>
-          <div className="space-y-2"><Label>{language === 'fr' ? 'Description' : 'Description'}</Label><Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>{language === 'fr' ? 'Description' : 'Description'}</Label>
+              <AiTextAssist
+                value={form.description}
+                onApply={(txt) => setForm({ ...form, description: txt })}
+                contextPrompt="Description d'un incident ou manquement disciplinaire"
+                size="sm"
+              />
+            </div>
+            <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} />
+          </div>
           <div className="space-y-2"><Label>{language === 'fr' ? 'Action prise' : 'Action Taken'}</Label><Textarea value={form.actionTaken} onChange={e => setForm({ ...form, actionTaken: e.target.value })} rows={2} /></div>
-          <div className="space-y-2"><Label>{t('follow_up_notes', language)}</Label><Textarea value={form.followUpNotes} onChange={e => setForm({ ...form, followUpNotes: e.target.value })} rows={2} /></div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>{t('follow_up_notes', language)}</Label>
+              <AiTextAssist
+                value={form.followUpNotes}
+                onApply={(txt) => setForm({ ...form, followUpNotes: txt })}
+                contextPrompt="Notes de suivi administratif et pédagogique d'un incident"
+                size="sm"
+              />
+            </div>
+            <Textarea value={form.followUpNotes} onChange={e => setForm({ ...form, followUpNotes: e.target.value })} rows={2} />
+          </div>
         </div>
         <DialogFooter className="shrink-0 pt-2"><Button variant="outline" onClick={() => setDialogOpen(false)}>{t('cancel', language)}</Button><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSave}>{t('save', language)}</Button></DialogFooter>
       </DialogContent></Dialog>
@@ -4262,7 +4347,16 @@ function MessagingPage() {
               </div>
             )}
             <div className="space-y-2">
-              <Label>{language === 'fr' ? 'Contenu' : 'Content'}</Label>
+              <div className="flex items-center justify-between">
+                <Label>{language === 'fr' ? 'Contenu' : 'Content'}</Label>
+                <AiTextAssist
+                  value={form.content}
+                  onApply={(txt) => setForm({ ...form, content: txt })}
+                  contextPrompt="Modèle de message de notification aux parents (absences, retards, convocations)"
+                  size="sm"
+                  label="Rédiger avec IA"
+                />
+              </div>
               <Textarea value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} rows={6} placeholder="Dear {guardian_name}, {student_name} was marked absent from {class} today ({date})..." />
               <p className="text-[11px] text-muted-foreground">
                 Variables: {'{student_name}'} {'{guardian_name}'} {'{class}'} {'{date}'} {'{time}'} {'{school_name}'}
@@ -4734,7 +4828,19 @@ function ProgressReportsSection() {
           <div className="space-y-2"><Label>{t('report_period', language)}</Label><Select value={period} onValueChange={setPeriod}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="full_year">{t('full_year', language)}</SelectItem><SelectItem value="q1">{t('q1', language)}</SelectItem><SelectItem value="q2">{t('q2', language)}</SelectItem><SelectItem value="q3">{t('q3', language)}</SelectItem><SelectItem value="q4">{t('q4', language)}</SelectItem><SelectItem value="custom">{t('custom', language)}</SelectItem></SelectContent></Select></div>
           {period === 'custom' && <div className="space-y-2"><Label>{t('date_range', language)}</Label><div className="flex gap-1"><Input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="text-xs" /><Input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="text-xs" /></div></div>}
         </div>
-        <div className="space-y-2"><Label>{t('teacher_comment', language)}</Label><Textarea value={teacherComment} onChange={e => setTeacherComment(e.target.value)} rows={2} placeholder={language === 'fr' ? 'Ajouter un commentaire...' : 'Add a teacher comment...'} /></div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>{t('teacher_comment', language)}</Label>
+            <AiTextAssist
+              value={teacherComment}
+              onApply={setTeacherComment}
+              contextPrompt="Appréciation globale de l'enseignant sur le rapport de progression et bulletin d'assiduité"
+              size="sm"
+              label="Appréciation IA"
+            />
+          </div>
+          <Textarea value={teacherComment} onChange={e => setTeacherComment(e.target.value)} rows={2} placeholder={language === 'fr' ? 'Ajouter un commentaire...' : 'Add a teacher comment...'} />
+        </div>
         <div className="flex gap-2">
           <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => setShowPreview(true)}><Eye className="h-4 w-4 mr-1" />{t('preview_report', language)}</Button>
           <Button variant="outline" onClick={() => { pdfUtils.exportProgressReportPDF(studentReports, classSummary, schoolInfo as unknown as Record<string, string | undefined>, dateRange, teacherComment, language); toast.success(t('report_generated', language)); }}><Download className="h-4 w-4 mr-1" />{t('download_pdf', language)}</Button>
@@ -8434,6 +8540,43 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
+    if (currentPage === 'parent-portal' || (typeof window !== 'undefined' && (window.location.search.includes('parent') || window.location.search.includes('std=')))) {
+      return (
+        <div className="min-h-screen bg-background p-4 sm:p-6">
+          <div className="max-w-4xl mx-auto mb-4 flex justify-between items-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                useAppStore.getState().setCurrentPage('dashboard');
+                if (typeof window !== 'undefined' && window.location.search) {
+                  window.history.replaceState({}, '', window.location.pathname);
+                }
+              }}
+              className="text-xs text-muted-foreground gap-1.5"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              {language === 'fr' ? 'Retour Connexion Staff' : 'Back to Staff Login'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={() => {
+                const langs = ['fr', 'en', 'ar'] as const;
+                const idx = langs.indexOf(language);
+                const nextLang = langs[(idx + 1) % langs.length];
+                useAppStore.getState().setLanguage(nextLang);
+              }}
+            >
+              <Languages className="h-3.5 w-3.5 text-emerald-600" />
+              {language === 'fr' ? '🇫🇷 FR' : language === 'ar' ? '🇲🇦 AR' : '🇬🇧 EN'}
+            </Button>
+          </div>
+          <ParentPortal />
+        </div>
+      );
+    }
     return <LoginScreen />;
   }
 
