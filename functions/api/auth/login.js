@@ -6,7 +6,7 @@
  *   3. If user NOT in D1 → attempt fallback bootstrap against external API
  */
 
-import { getCorsHeaders } from '../_lib/cors.js';
+import { getCorsHeaders } from '../../_lib/cors.js';
 
 const EXTERNAL_API = 'https://infohas-attendance-api.rachidelsabah.workers.dev/api';
 
