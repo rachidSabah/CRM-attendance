@@ -150,12 +150,10 @@ function processDocumentXml(xml: string, data: CertificateData, designConfig?: D
   let updated = bodyContent;
 
   // 1. Replace Date: e.g. "DATE : 16/10/2026"
-  // Root cause fix: The template originally had 'DATE : ' and separate digit runs.
-  // Previously, an extra secondary regex matched the whitespace in 'DATE : ' and inserted the date a second time,
-  // causing "DATE :16/10/2026 16/10/2026".
-  // This clean single replacement formats exactly ONE date in the heading with pristine Word alignment.
+  // The date is positioned in the certificate body at the upper-right immediately before the title ATTESTATION DE SCOLARITE.
+  // We use native Word right alignment (<w:jc w:val="right"/>) with bold styling.
   const pDateRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?DATE\s*[:\u00A0][\s\S]*?<\/w:p>/;
-  const cleanDateParagraph = `<w:p w14:paraId="7899BA29" w14:textId="11629A04" w:rsidR="00A17DC3" w:rsidRPr="00614FE3" w:rsidRDefault="00614FE3" w:rsidP="00614FE3"><w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:pPr><w:r><w:t xml:space="preserve">                                                                                                                    </w:t></w:r><w:r w:rsidR="00EB4E3B" w:rsidRPr="00614FE3"><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">  DATE : </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t>${data.dateDelivrance}</w:t></w:r></w:p>`;
+  const cleanDateParagraph = `<w:p w14:paraId="7899BA29" w14:textId="11629A04" w:rsidR="00A17DC3" w:rsidRPr="00614FE3" w:rsidRDefault="00614FE3" w:rsidP="00614FE3"><w:pPr><w:jc w:val="right"/><w:rPr><w:b/><w:bCs/></w:rPr></w:pPr><w:r w:rsidR="00EB4E3B" w:rsidRPr="00614FE3"><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">DATE : </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t>${data.dateDelivrance}</w:t></w:r></w:p>`;
 
   if (pDateRegex.test(updated)) {
     updated = updated.replace(pDateRegex, cleanDateParagraph);
@@ -352,45 +350,86 @@ export async function generateCertificateDocx(
     } catch {}
   }
 
+  // 2. Process headers (institutional logos, accreditation seal, 3-line heading, no dates in header)
+  const logoW = designConfig?.logo?.width || 85;
+  const logoH = designConfig?.logo?.height || 85;
+  const wEmu = Math.round(logoW * 9525);
+  const hEmu = Math.round(logoH * 9525);
+
+  const instName = designConfig?.heading?.institutionalName || 'INSTITUT PRIVE DE FORMATION';
+  const subline1 = designConfig?.heading?.institutionalSubline1 || 'D’HOTESSES DE L’AIR ET STEWARDS';
+  const subline2 = designConfig?.heading?.institutionalSubline2 || 'CABIN CREW TRAINING INSTITUTE';
+  const showInstHeading = designConfig?.heading?.showInstitutionalHeading !== false;
+  const showSecondaryLogo = designConfig?.heading?.showSecondaryLogo !== false;
+
   if (logoBytes) {
     zip.file('word/media/image3.jpeg', logoBytes);
+  }
 
-    // Dynamic logo dimensions:
-    // Convert configured width & height in px to Word EMUs (1 px ≈ 9525 EMU)
-    const logoW = designConfig?.logo?.width || 85;
-    const logoH = designConfig?.logo?.height || 85;
-    const wEmu = Math.round(logoW * 9525);
-    const hEmu = Math.round(logoH * 9525);
+  for (const hName of ['word/header1.xml', 'word/header2.xml', 'word/header3.xml', 'word/header4.xml']) {
+    const hFile = zip.file(hName);
+    if (hFile) {
+      let hXml = await hFile.async('string');
 
-    for (const hName of ['word/header1.xml', 'word/header2.xml', 'word/header3.xml', 'word/header4.xml']) {
-      const hFile = zip.file(hName);
-      if (hFile) {
-        const hXml = await hFile.async('string');
-        const updatedHXml = hXml.replace(/cx="\d+"\s+cy="\d+"/g, `cx="${wEmu}" cy="${hEmu}"`);
-        zip.file(hName, updatedHXml);
+      // 1. Ensure NO date exists in header
+      hXml = hXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?DATE\s*[:\u00A0][\s\S]*?<\/w:p>/gi, '');
+
+      // 2. Dynamic Institutional 3-line heading text
+      if (!showInstHeading) {
+        hXml = hXml.replace(/<w:t>INSTITUT PRIVE DE FORMATION<\/w:t>/g, '<w:t></w:t>');
+        hXml = hXml.replace(/<w:t>D’HOTESSES DE L’AIR ET STEWARDS<\/w:t>/g, '<w:t></w:t>');
+        hXml = hXml.replace(/<w:t>CABIN CREW TRAINING INSTITUTE<\/w:t>/g, '<w:t></w:t>');
+      } else {
+        hXml = hXml.replace(/<w:t>INSTITUT PRIVE DE FORMATION<\/w:t>/g, `<w:t>${instName}</w:t>`);
+        hXml = hXml.replace(/<w:t>D’HOTESSES DE L’AIR ET STEWARDS<\/w:t>/g, `<w:t>${subline1}</w:t>`);
+        hXml = hXml.replace(/<w:t>CABIN CREW TRAINING INSTITUTE<\/w:t>/g, `<w:t>${subline2}</w:t>`);
       }
+
+      // 3. Secondary logo (accreditation seal) toggle
+      if (!showSecondaryLogo) {
+        hXml = hXml.replace(/<w:r\b[^>]*><w:rPr><w:noProof\/><\/w:rPr><w:drawing><wp:anchor[\s\S]*?Image 1[\s\S]*?<\/wp:anchor><\/w:drawing><\/w:r>/g, '');
+      }
+
+      // 4. Update primary logo dimensions ONLY for Image 2 / inline drawing (preserves Image 1 accreditation seal)
+      if (logoBytes) {
+        hXml = hXml.replace(/(<wp:inline\b[\s\S]*?<wp:extent\s+)cx="\d+"\s+cy="\d+"/g, `$1cx="${wEmu}" cy="${hEmu}"`);
+        hXml = hXml.replace(/(<wp:inline\b[\s\S]*?<a:xfrm>[\s\S]*?<a:ext\s+)cx="\d+"\s+cy="\d+"/g, `$1cx="${wEmu}" cy="${hEmu}"`);
+      }
+
+      zip.file(hName, hXml);
     }
   }
 
-  // 3. Process footers (apply custom footer color, font and text if provided)
+  // 3. Process footers (apply custom footer text, font, size, color and alignment)
   if (designConfig?.footer) {
     const footerColor = toOpenXmlHexColor(designConfig.footer.textColor, '475569');
     const footerFont = designConfig.footer.fontFamily || 'Calibri';
     const footerSz = Math.round((designConfig.footer.fontSize || 9) * 2);
+    const footerAlign = designConfig.footer.alignment || 'center';
+    const showSep = designConfig.footer.showSeparatorLine !== false;
+    const sepColor = toOpenXmlHexColor(designConfig.footer.separatorColor, 'CBD5E1');
 
     for (const fName of ['word/footer1.xml', 'word/footer2.xml', 'word/footer3.xml', 'word/footer4.xml']) {
       const fFile = zip.file(fName);
       if (fFile) {
         let fXml = await fFile.async('string');
-        // Update font color in footer text runs
-        fXml = fXml.replace(/<w:rPr>(?:(?!<\/w:rPr>)[\s\S])*?<\/w:rPr>/g, (rPr) => {
-          if (rPr.includes('<w:color')) {
-            return rPr.replace(/<w:color\s+w:val="[^"]*"/g, `<w:color w:val="${footerColor}"`);
-          } else {
-            return rPr.replace('</w:rPr>', `<w:color w:val="${footerColor}"/><w:rFonts w:ascii="${footerFont}" w:hAnsi="${footerFont}"/><w:sz w:val="${footerSz}"/><w:szCs w:val="${footerSz}"/></w:rPr>`);
-          }
-        });
-        zip.file(fName, fXml);
+        const pIndex = fXml.indexOf('<w:p');
+        if (pIndex > 0) {
+          const footerHead = fXml.slice(0, pIndex);
+          const rawText = designConfig.footer.text ||
+            "INFOHAS S.a.r.l Au Capital de 200.000Dhs\n15, Rue Demnate Hassan – Rabat - Maroc\nTél/Fax : 05 37 762025\nE-mail : infohas@menara.ma";
+          const lines = rawText.split('\n').filter(l => l.trim().length > 0);
+
+          const generatedParas = lines.map((line, idx) => {
+            const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const topBdr = (idx === 0 && showSep)
+              ? `<w:pBdr><w:top w:val="single" w:sz="6" w:space="4" w:color="${sepColor}"/></w:pBdr>`
+              : '';
+            return `<w:p><w:pPr><w:pStyle w:val="Pieddepage"/><w:jc w:val="${footerAlign}"/>${topBdr}<w:rPr><w:rFonts w:ascii="${footerFont}" w:hAnsi="${footerFont}"/><w:color w:val="${footerColor}"/><w:sz w:val="${footerSz}"/><w:szCs w:val="${footerSz}"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="${footerFont}" w:hAnsi="${footerFont}"/><w:color w:val="${footerColor}"/><w:sz w:val="${footerSz}"/><w:szCs w:val="${footerSz}"/></w:rPr><w:t xml:space="preserve">${escaped}</w:t></w:r></w:p>`;
+          }).join('');
+
+          zip.file(fName, `${footerHead}${generatedParas}</w:ftr>`);
+        }
       }
     }
   }

@@ -12,6 +12,7 @@ import {
   toOpenXmlHexColor,
 } from '@/lib/documentDesignTypes';
 import { generateCertificateDocx, buildInitialCertificateData } from '@/lib/docxGenerator';
+import { generateCertificatePdf } from '@/lib/certificatePdf';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -275,89 +276,33 @@ export function DocumentCustomizationPanel() {
     }
   };
 
-  // Generate and Download Test PDF
-  const handleDownloadTestPdf = () => {
+  // Generate and Download Test PDF matching full vector layout and official design
+  const handleDownloadTestPdf = async () => {
+    setIsGeneratingTest(true);
     try {
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
+      const sampleStudent = students[0] || {
+        id: 'test_std_1',
+        fullName: 'ZINEB SAD',
+        studentId: 'F01/26',
+        className: 'Group Dubai 1ère Année',
+        status: 'active'
+      };
 
-      // Heading color
-      const headingHex = workingPreset.heading.textColor || '#17365D';
-      const r = parseInt(headingHex.slice(1, 3), 16) || 23;
-      const g = parseInt(headingHex.slice(3, 5), 16) || 54;
-      const b = parseInt(headingHex.slice(5, 7), 16) || 93;
+      const certData = buildInitialCertificateData(sampleStudent as any, academicYears);
+      certData.nom = 'SAD';
+      certData.prenom = 'ZINEB';
+      certData.anneeScolaire = '2025-2026';
 
-      // Top banner line
-      doc.setDrawColor(r, g, b);
-      doc.setLineWidth(1.5);
-      doc.line(15, 25, pageWidth - 15, 25);
+      const { pdfBlob, filename, doc } = await generateCertificatePdf(certData, workingPreset);
+      const downloadFilename = `TEST_DESIGN_${workingPreset.name.replace(/\s+/g, '_')}_${filename}`;
+      doc.save(downloadFilename);
 
-      // Date box
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.setTextColor(30, 41, 59);
-      doc.text(`DATE : 16/10/2026`, pageWidth - 20, 20, { align: 'right' });
-
-      // Title
-      doc.setFont('times', workingPreset.heading.bold ? 'bold' : 'normal');
-      doc.setFontSize(workingPreset.heading.fontSize || 18);
-      doc.setTextColor(r, g, b);
-      doc.text(workingPreset.heading.text || 'ATTESTATION DE SCOLARITE', pageWidth / 2, 38, { align: 'center' });
-
-      // Title underline
-      if (workingPreset.heading.showBottomBorder) {
-        doc.setLineWidth(0.5);
-        doc.line(pageWidth / 2 - 35, 41, pageWidth / 2 + 35, 41);
-      }
-
-      // Legal body
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9.5);
-      doc.setTextColor(51, 65, 85);
-      doc.text('JE SOUSSIGNÉE Mme M’ZIOUAD IMANE DIRECTRICE DE INFOHAS :', 20, 52);
-      doc.setFontSize(8.5);
-      doc.text('ÉTABLISSEMENT DE FORMATION PROFESSIONNELLE PRIVÉ AUTORISÉ SOUS LE N° 4/07/1997. ACCRÉDITATION N° 25/K0183/DFPP/45.', 20, 58);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9.5);
-      doc.text('CERTIFIE QUE L’ÉLÈVE :', 20, 66);
-
-      // Sample Student Data Box
-      doc.setDrawColor(203, 213, 225);
-      doc.setLineWidth(0.3);
-      doc.rect(20, 72, pageWidth - 40, 50);
-
-      doc.setFont('helvetica', 'bold');
-      doc.text('Nom       : SAD', 25, 80);
-      doc.text('Prénom : ZINEB', 110, 80);
-      doc.text('Né (e) le : 00/00/0000', 25, 90);
-      doc.text('À : RABAT', 110, 90);
-      doc.text('Nationalité : MAROCAINE', 25, 100);
-      doc.text('Année scolaire : 2025-2026', 110, 100);
-      doc.text('Classe : ATAM (Option hôtesse de l’air / steward)', 25, 110);
-
-      // Footer
-      const footerHex = workingPreset.footer.textColor || '#64748B';
-      const fr = parseInt(footerHex.slice(1, 3), 16) || 100;
-      const fg = parseInt(footerHex.slice(3, 5), 16) || 116;
-      const fb = parseInt(footerHex.slice(5, 7), 16) || 139;
-
-      if (workingPreset.footer.showSeparatorLine) {
-        doc.setDrawColor(226, 232, 240);
-        doc.setLineWidth(0.4);
-        doc.line(15, pageHeight - 20, pageWidth - 15, pageHeight - 20);
-      }
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(workingPreset.footer.fontSize || 8);
-      doc.setTextColor(fr, fg, fb);
-      const splitFooter = doc.splitTextToSize(workingPreset.footer.text, pageWidth - 30);
-      doc.text(splitFooter, pageWidth / 2, pageHeight - 14, { align: 'center' });
-
-      doc.save(`TEST_DESIGN_${workingPreset.name.replace(/\s+/g, '_')}.pdf`);
-      toast.success('Document PDF test généré et téléchargé.');
+      toast.success(`Document PDF test généré et vérifié : ${downloadFilename}`);
     } catch (err: any) {
+      console.error('Erreur de génération PDF:', err);
       toast.error('Erreur de génération PDF: ' + err.message);
+    } finally {
+      setIsGeneratingTest(false);
     }
   };
 
@@ -683,6 +628,94 @@ export function DocumentCustomizationPanel() {
                       <Check className="h-4 w-4" />
                       Ligne de séparation
                     </Button>
+                  </div>
+
+                  <Separator className="my-2" />
+
+                  {/* Institutional Header Configuration (Lines & Accreditation) */}
+                  <div className="space-y-3 pt-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                        En-tête officiel bilingue de l’institution (3 lignes)
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant={workingPreset.heading.showInstitutionalHeading !== false ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => setWorkingPreset({
+                            ...workingPreset,
+                            heading: {
+                              ...workingPreset.heading,
+                              showInstitutionalHeading: !(workingPreset.heading.showInstitutionalHeading !== false)
+                            }
+                          })}
+                        >
+                          {workingPreset.heading.showInstitutionalHeading !== false ? 'Affiché' : 'Masqué'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {workingPreset.heading.showInstitutionalHeading !== false && (
+                      <div className="space-y-2.5 bg-muted/30 p-3 rounded-lg border border-border">
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground">Ligne 1 (Français institutionnel)</Label>
+                          <Input
+                            value={workingPreset.heading.institutionalName || 'INSTITUT PRIVE DE FORMATION'}
+                            onChange={e => setWorkingPreset({
+                              ...workingPreset,
+                              heading: { ...workingPreset.heading, institutionalName: e.target.value }
+                            })}
+                            className="h-8 text-xs font-medium"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground">Ligne 2 (Spécialité)</Label>
+                          <Input
+                            value={workingPreset.heading.institutionalSubline1 || 'D’HOTESSES DE L’AIR ET STEWARDS'}
+                            onChange={e => setWorkingPreset({
+                              ...workingPreset,
+                              heading: { ...workingPreset.heading, institutionalSubline1: e.target.value }
+                            })}
+                            className="h-8 text-xs font-medium"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground">Ligne 3 (Anglais officiel)</Label>
+                          <Input
+                            value={workingPreset.heading.institutionalSubline2 || 'CABIN CREW TRAINING INSTITUTE'}
+                            onChange={e => setWorkingPreset({
+                              ...workingPreset,
+                              heading: { ...workingPreset.heading, institutionalSubline2: e.target.value }
+                            })}
+                            className="h-8 text-xs font-medium"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div>
+                        <div className="text-xs font-medium">Sceau d’accréditation officiel (Droite)</div>
+                        <div className="text-[11px] text-muted-foreground">Affiche le cachet d'accréditation du ministère à droite de l'en-tête</div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant={workingPreset.heading.showSecondaryLogo !== false ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setWorkingPreset({
+                          ...workingPreset,
+                          heading: {
+                            ...workingPreset.heading,
+                            showSecondaryLogo: !(workingPreset.heading.showSecondaryLogo !== false)
+                          }
+                        })}
+                      >
+                        {workingPreset.heading.showSecondaryLogo !== false ? 'Activé' : 'Désactivé'}
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -1027,57 +1060,84 @@ export function DocumentCustomizationPanel() {
                   fontFamily: workingPreset.heading.fontFamily || 'Times New Roman',
                 }}
               >
-                {/* Header Section */}
-                <div className="border-b-2 pb-4 mb-4" style={{ borderColor: workingPreset.heading.borderColor || '#17365D' }}>
-                  <div className="flex items-start justify-between">
-                    {/* Logo display */}
-                    <div
-                      className="flex flex-col"
+                {/* Header Section: Left Logo + 3 Institutional lines + Right Accreditation Seal */}
+                <div
+                  className="flex items-start justify-between border-b-2 pb-4 mb-4"
+                  style={{ borderColor: workingPreset.heading.borderColor || '#17365D' }}
+                >
+                  {/* Left: Logo and 3 Institutional Lines */}
+                  <div
+                    className="flex flex-col max-w-[65%]"
+                    style={{
+                      alignItems: workingPreset.logo.alignment === 'center' ? 'center' : workingPreset.logo.alignment === 'right' ? 'flex-end' : 'flex-start'
+                    }}
+                  >
+                    <img
+                      src={workingPreset.logo.selectedLogo === 'custom' && workingPreset.logo.customLogoUrl ? workingPreset.logo.customLogoUrl : '/infohas-logo.png'}
+                      alt="Logo"
                       style={{
-                        alignItems: workingPreset.logo.alignment === 'center' ? 'center' : workingPreset.logo.alignment === 'right' ? 'flex-end' : 'flex-start'
+                        width: `${workingPreset.logo.width}px`,
+                        height: `${workingPreset.logo.height}px`,
+                        objectFit: 'contain'
                       }}
-                    >
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                    {workingPreset.heading.showInstitutionalHeading !== false && (
+                      <div className="mt-2 text-left font-serif leading-tight">
+                        <div className="font-bold text-[10px] text-zinc-900 tracking-wide uppercase">
+                          {workingPreset.heading.institutionalName || 'INSTITUT PRIVE DE FORMATION'}
+                        </div>
+                        <div className="font-bold text-[9px] text-zinc-800 tracking-wide uppercase">
+                          {workingPreset.heading.institutionalSubline1 || 'D’HOTESSES DE L’AIR ET STEWARDS'}
+                        </div>
+                        <div className="font-bold text-[9px] text-zinc-800 tracking-wide uppercase">
+                          {workingPreset.heading.institutionalSubline2 || 'CABIN CREW TRAINING INSTITUTE'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right: Accreditation Seal */}
+                  {workingPreset.heading.showSecondaryLogo !== false && (
+                    <div className="flex flex-col items-end shrink-0">
                       <img
-                        src={workingPreset.logo.selectedLogo === 'custom' && workingPreset.logo.customLogoUrl ? workingPreset.logo.customLogoUrl : '/infohas-logo.png'}
-                        alt="Logo"
-                        style={{
-                          width: `${workingPreset.logo.width}px`,
-                          height: `${workingPreset.logo.height}px`,
-                          objectFit: 'contain'
+                        src="/accreditation-seal.jpg"
+                        alt="Accréditation"
+                        className="w-16 h-16 object-contain"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
                         }}
                       />
-                      <span className="text-[9px] font-sans font-semibold tracking-tighter text-zinc-600 mt-1 uppercase">
-                        Institut de Formation Professionnelle
-                      </span>
                     </div>
+                  )}
+                </div>
 
-                    {/* Heading Date Box */}
-                    <div className="text-right font-sans space-y-0.5">
-                      <div className="font-bold text-zinc-800 text-[11px]">
-                        DATE : <span className="underline decoration-dotted">16/10/2026</span>
-                      </div>
-                      <div className="text-[10px] text-zinc-500">Rabat, Maroc</div>
-                    </div>
-                  </div>
+                {/* Certificate Body Begins */}
+                {/* Upper-right Date immediately before title */}
+                <div className="text-right font-sans text-[11px] mb-2">
+                  <span className="font-bold text-zinc-800">DATE : </span>
+                  <span className="font-bold text-zinc-800 underline decoration-dotted">16/10/2026</span>
+                </div>
 
-                  {/* Heading Title */}
-                  <div
-                    className="mt-6 mb-2"
-                    style={{ textAlign: workingPreset.heading.alignment || 'center' }}
+                {/* Heading Title */}
+                <div
+                  className="my-3"
+                  style={{ textAlign: workingPreset.heading.alignment || 'center' }}
+                >
+                  <h1
+                    style={{
+                      color: workingPreset.heading.textColor || '#17365D',
+                      fontSize: `${workingPreset.heading.fontSize}px`,
+                      fontWeight: workingPreset.heading.bold ? 'bold' : 'normal',
+                      fontStyle: workingPreset.heading.italic ? 'italic' : 'normal',
+                      fontFamily: workingPreset.heading.fontFamily || 'Times New Roman',
+                    }}
+                    className={`inline-block uppercase tracking-wider ${workingPreset.heading.showBottomBorder ? 'border-b-2 pb-0.5' : ''}`}
                   >
-                    <h1
-                      style={{
-                        color: workingPreset.heading.textColor || '#17365D',
-                        fontSize: `${workingPreset.heading.fontSize}px`,
-                        fontWeight: workingPreset.heading.bold ? 'bold' : 'normal',
-                        fontStyle: workingPreset.heading.italic ? 'italic' : 'normal',
-                        fontFamily: workingPreset.heading.fontFamily || 'Times New Roman',
-                      }}
-                      className="inline-block uppercase tracking-wider border-b-2 pb-0.5"
-                    >
-                      {workingPreset.heading.text || 'ATTESTATION DE SCOLARITE'}
-                    </h1>
-                  </div>
+                    {workingPreset.heading.text || 'ATTESTATION DE SCOLARITE'}
+                  </h1>
                 </div>
 
                 {/* Body Content Simulation */}
@@ -1121,7 +1181,17 @@ export function DocumentCustomizationPanel() {
 
                   <div className="text-right pt-2 font-sans text-[10px]">
                     <p className="font-bold">Directrice de l’établissement</p>
-                    <p className="text-zinc-600">Mme M’Ziouad Imane</p>
+                    <p className="text-zinc-700 font-semibold">Mme M’Ziouad Imane</p>
+                    <div className="h-14 flex items-center justify-end pt-1">
+                      <img
+                        src="/signature-cachet.png"
+                        alt="Cachet et Signature"
+                        className="h-14 w-auto object-contain opacity-90"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
 

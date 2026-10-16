@@ -9,6 +9,7 @@ import {
   generateCertificateDocx,
   sanitizeFilename,
 } from '@/lib/docxGenerator';
+import { generateCertificatePdf } from '@/lib/certificatePdf';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,6 +25,11 @@ import {
 
 export function CertificateGenerator() {
   const { students, classes, academicYears, schoolInfo, documentDesign, setCurrentPage } = useAppStore();
+
+  const activePreset = useMemo(() => {
+    const id = documentDesign?.activePresetIdByDocType?.['certificate'];
+    return documentDesign?.presets?.find(p => p.id === id) || documentDesign?.presets?.[0];
+  }, [documentDesign]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
@@ -95,6 +101,30 @@ export function CertificateGenerator() {
     } catch (err: any) {
       console.error('Erreur génération certificat:', err);
       toast.error(`Échec de la génération du document: ${err.message || 'Erreur inconnue'}`);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Download Vector PDF matching official layout
+  const handleDownloadPdf = async () => {
+    if (!certData) return;
+    setIsGenerating(true);
+    try {
+      const { pdfBlob, filename } = await generateCertificatePdf(certData, activePreset);
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success(`Certificat PDF téléchargé avec succès : ${filename}`);
+    } catch (err: any) {
+      console.error('Erreur génération certificat PDF:', err);
+      toast.error(`Échec de la génération PDF: ${err.message || 'Erreur inconnue'}`);
     } finally {
       setIsGenerating(false);
     }
@@ -192,7 +222,15 @@ export function CertificateGenerator() {
             className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
           >
             <Download className="h-4 w-4" />
-            {isGenerating ? 'Génération en cours...' : 'Télécharger DOCX'}
+            {isGenerating ? 'Génération...' : 'Télécharger DOCX'}
+          </Button>
+          <Button
+            onClick={handleDownloadPdf}
+            disabled={!certData || isGenerating}
+            className="gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+          >
+            <Download className="h-4 w-4" />
+            {isGenerating ? 'Génération...' : 'Télécharger PDF'}
           </Button>
         </div>
       </div>
@@ -465,37 +503,78 @@ export function CertificateGenerator() {
               backgroundSize: '24px 24px',
             }}
           >
-            {/* Header Logos & Accreditation */}
-            <div className="flex items-start justify-between border-b-2 border-zinc-900/10 pb-6 mb-6">
-              {/* INFOHAS Official Logo */}
-              <div className="w-44 flex flex-col items-start">
+            {/* Header Section: Left Logo + 3 Institutional Lines + Right Accreditation Seal */}
+            <div
+              className="flex items-start justify-between border-b-2 pb-5 mb-4"
+              style={{ borderColor: activePreset?.heading?.borderColor || '#17365D' }}
+            >
+              {/* Left: Logo & Institutional Name */}
+              <div className="flex flex-col items-start max-w-[65%]">
                 <img
-                  src="/infohas-logo.png"
-                  alt="INFOHAS Logo"
-                  className="h-16 w-auto object-contain"
+                  src={activePreset?.logo?.selectedLogo === 'custom' && activePreset.logo.customLogoUrl ? activePreset.logo.customLogoUrl : '/infohas-logo.png'}
+                  alt="Logo INFOHAS"
+                  style={{
+                    width: `${activePreset?.logo?.width || 85}px`,
+                    height: `${activePreset?.logo?.height || 85}px`,
+                    objectFit: 'contain'
+                  }}
                   onError={(e) => {
-                    // Fallback to text if image fails
                     (e.target as HTMLElement).style.display = 'none';
                   }}
                 />
-                <span className="text-[10px] tracking-tighter text-zinc-600 font-sans mt-1 uppercase font-semibold">
-                  Institut de Formation Professionnelle
-                </span>
+                {activePreset?.heading?.showInstitutionalHeading !== false && (
+                  <div className="mt-2 text-left font-serif leading-tight">
+                    <div className="font-bold text-[11px] text-zinc-900 tracking-wide uppercase">
+                      {activePreset?.heading?.institutionalName || 'INSTITUT PRIVE DE FORMATION'}
+                    </div>
+                    <div className="font-bold text-[10px] text-zinc-800 tracking-wide uppercase">
+                      {activePreset?.heading?.institutionalSubline1 || 'D’HOTESSES DE L’AIR ET STEWARDS'}
+                    </div>
+                    <div className="font-bold text-[10px] text-zinc-800 tracking-wide uppercase">
+                      {activePreset?.heading?.institutionalSubline2 || 'CABIN CREW TRAINING INSTITUTE'}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Date Box */}
-              <div className="text-right font-sans text-xs space-y-1">
-                <div className="font-bold text-zinc-800">
-                  DATE : <span className="underline decoration-dotted">{certData?.dateDelivrance || '15/10/2026'}</span>
+              {/* Right: Accreditation Seal */}
+              {activePreset?.heading?.showSecondaryLogo !== false && (
+                <div className="flex flex-col items-end shrink-0">
+                  <img
+                    src="/accreditation-seal.jpg"
+                    alt="Accréditation"
+                    className="w-20 h-20 object-contain"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                    }}
+                  />
                 </div>
-                <div className="text-[10px] text-zinc-500">Rabat, Maroc</div>
-              </div>
+              )}
             </div>
 
-            {/* Title */}
-            <div className="text-center my-6 space-y-1">
-              <h1 className="text-2xl font-black tracking-wider uppercase border-b-2 border-zinc-800 inline-block px-4 pb-1">
-                Attestation de Scolarité
+            {/* Certificate Body Begins */}
+            {/* Upper-right Date immediately before title */}
+            <div className="text-right font-sans text-xs mb-3">
+              <span className="font-bold text-zinc-900">DATE : </span>
+              <span className="font-bold text-zinc-900 underline decoration-dotted">{certData?.dateDelivrance || '16/10/2026'}</span>
+            </div>
+
+            {/* Title: ATTESTATION DE SCOLARITÉ */}
+            <div
+              className="my-5"
+              style={{ textAlign: activePreset?.heading?.alignment || 'center' }}
+            >
+              <h1
+                style={{
+                  color: activePreset?.heading?.textColor || '#17365D',
+                  fontSize: `${activePreset?.heading?.fontSize || 18}px`,
+                  fontWeight: activePreset?.heading?.bold !== false ? 'bold' : 'normal',
+                  fontStyle: activePreset?.heading?.italic ? 'italic' : 'normal',
+                  fontFamily: activePreset?.heading?.fontFamily || "'Times New Roman', Times, serif",
+                }}
+                className={`uppercase tracking-wider inline-block ${activePreset?.heading?.showBottomBorder ? 'border-b-2 pb-0.5' : ''}`}
+              >
+                {activePreset?.heading?.text || 'ATTESTATION DE SCOLARITE'}
               </h1>
             </div>
 
@@ -593,23 +672,41 @@ export function CertificateGenerator() {
             </div>
 
             {/* Signature Block */}
-            <div className="mt-12 flex justify-end">
-              <div className="text-center w-64 space-y-1">
+            <div className="mt-8 flex justify-end">
+              <div className="text-center w-64 space-y-1 relative">
                 <div className="text-xs font-bold uppercase text-zinc-700">
                   Directrice de l’établissement
                 </div>
                 <div className="text-sm font-semibold text-zinc-900 pt-1">
                   {certData?.directrice || 'Mme M’ZIOUAD IMANE'}
                 </div>
-                <div className="h-16 flex items-center justify-center text-[10px] text-zinc-400 italic">
-                  [Cachet et Signature Officielle]
+                <div className="h-20 flex items-center justify-center relative">
+                  <img
+                    src="/signature-cachet.png"
+                    alt="Cachet et Signature Officielle"
+                    className="h-20 w-auto object-contain opacity-95 mx-auto"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                    }}
+                  />
                 </div>
               </div>
             </div>
 
-            {/* Official Footer Note */}
-            <div className="absolute bottom-4 left-8 right-8 text-[9px] text-zinc-400 text-center border-t border-zinc-200 pt-2 font-sans">
-              INFOHAS INSTITUT — Document officiel délivré par le système de gestion académique
+            {/* Official Configured Footer */}
+            <div
+              className="mt-8 pt-3 border-t text-[9px] text-center font-sans space-y-0.5"
+              style={{
+                borderColor: activePreset?.footer?.separatorColor || '#CBD5E1',
+                color: activePreset?.footer?.textColor || '#475569',
+                fontFamily: activePreset?.footer?.fontFamily || 'Calibri',
+                textAlign: activePreset?.footer?.alignment || 'center',
+              }}
+            >
+              <div className="whitespace-pre-line leading-relaxed">
+                {activePreset?.footer?.text ||
+                  "INFOHAS S.a.r.l Au Capital de 200.000Dhs\n15, Rue Demnate Hassan – Rabat - Maroc\nTél/Fax : 05 37 762025\nE-mail : infohas@menara.ma"}
+              </div>
             </div>
           </div>
         </div>

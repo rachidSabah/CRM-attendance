@@ -19,6 +19,12 @@ export interface HeadingConfig {
   showBottomBorder: boolean;
   borderColor: string;        // Hex e.g. '#17365D'
   showSeparatorLine: boolean;
+  // Official institutional heading
+  showInstitutionalHeading?: boolean;
+  institutionalName?: string;     // Line 1: 'INSTITUT PRIVE DE FORMATION'
+  institutionalSubline1?: string; // Line 2: 'D’HOTESSES DE L’AIR ET STEWARDS'
+  institutionalSubline2?: string; // Line 3: 'CABIN CREW TRAINING INSTITUTE'
+  showSecondaryLogo?: boolean;    // Accreditation seal on right
 }
 
 export interface FooterConfig {
@@ -123,13 +129,18 @@ export const DEFAULT_DOCUMENT_PRESETS: DocumentDesignPreset[] = [
       showBottomBorder: true,
       borderColor: '#17365D',
       showSeparatorLine: true,
+      showInstitutionalHeading: true,
+      institutionalName: 'INSTITUT PRIVE DE FORMATION',
+      institutionalSubline1: 'D’HOTESSES DE L’AIR ET STEWARDS',
+      institutionalSubline2: 'CABIN CREW TRAINING INSTITUTE',
+      showSecondaryLogo: true,
     },
     footer: {
-      text: "INFOHAS — Institut de Formation Professionnelle Privé | Autorisation N° 4/07/1997 | Accréditation N° 25/K0183/DFPP/45\n48 Avenue de France, Agdal, Rabat — Tél: +212 537 77 88 99 | www.infohas.ma",
+      text: "INFOHAS — Institut de Formation Professionnelle Privé | Autorisation N° 4/07/1997 | Accréditation N° 25/K0183/DFPP/45\n15 Rue Demnate, Hassan, Rabat — Tél: +212 537 76 20 25 | www.infohas.ma",
       textColor: '#475569',
       backgroundColor: 'transparent',
       fontFamily: 'Calibri',
-      fontSize: 9,
+      fontSize: 8.5,
       alignment: 'center',
       showSeparatorLine: true,
       separatorColor: '#CBD5E1',
