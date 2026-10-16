@@ -29,8 +29,16 @@ export function buildInitialCertificateData(student: Student, academicYears: Aca
   if (parts.length === 1) {
     nom = parts[0];
   } else if (parts.length === 2) {
-    nom = parts[0];
-    prenom = parts[1];
+    // If the 2nd token is a patronymic / family name (e.g. Ibnoghazala, Ben..., El..., Bou...),
+    // set nom as the 2nd token and prenom as 1st token; otherwise nom is 1st and prenom is 2nd.
+    const p1Upper = parts[1].toUpperCase();
+    if (p1Upper.startsWith('IBN') || p1Upper.startsWith('BEN') || p1Upper.startsWith('EL') || p1Upper.startsWith('BOU')) {
+      nom = parts[1];
+      prenom = parts[0];
+    } else {
+      nom = parts[0];
+      prenom = parts[1];
+    }
   } else {
     nom = parts.slice(0, Math.ceil(parts.length / 2)).join(' ');
     prenom = parts.slice(Math.ceil(parts.length / 2)).join(' ');
@@ -98,44 +106,41 @@ function processDocumentXml(xml: string, data: CertificateData): string {
     }
   }
 
-  // Helper to replace text within a <w:p> containing a specific label
   let updated = bodyContent;
 
-  // Replace Date: e.g. "DATE : 15/10/2026"
+  // 1. Replace Date: e.g. "DATE : 15/10/2026"
   updated = updated.replace(
-    /(DATE\s*:\s*)([0-9\s/]+)/gi,
-    `$1${data.dateDelivrance}`
+    /(DATE\s*[:\u00A0]\s*<\/w:t><\/w:r>)(?:[\s\S]*?)(<\/w:p>)/i,
+    `$1<w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve"> ${data.dateDelivrance}</w:t></w:r>$2`
   );
+  updated = updated.replace(/(DATE\s*[:\u00A0]\s*)([0-9\s/]+)/gi, `$1${data.dateDelivrance}`);
 
-  // Replace Nom: e.g. "Nom : SAKIM"
+  // 2. Replace Nom (in template: SAKIM)
+  updated = updated.replace(/<w:t>SAKIM<\/w:t>/g, `<w:t>${data.nom}</w:t>`);
+
+  // 3. Replace Prénom (in template: KHADIJA)
+  // Clean up any previously mutated runs in Prénom paragraph
   updated = updated.replace(
-    /(<w:t[^>]*>\s*Nom\s*:\s*<\/w:t>[\s\S]*?<w:t[^>]*>)([^<]*)(<\/w:t>)/gi,
-    `$1${data.nom}$3`
+    /(<w:t[^>]*>Prénom[\s\S]*?<\/w:t><\/w:r>)[\s\S]*?<w:t>(?:KHADIJA|[^<]+)<\/w:t><\/w:r><\/w:p>/gi,
+    `$1<w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve"> </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t>${data.prenom}</w:t></w:r></w:p>`
   );
-  // Fallback direct run replace for Nom
-  updated = updated.replace(/<w:t>Nom\s+:\s*SAKIM<\/w:t>/g, `<w:t>Nom : ${data.nom}</w:t>`);
+  updated = updated.replace(/<w:t>KHADIJA<\/w:t>/g, `<w:t>${data.prenom}</w:t>`);
 
-  // Replace Prénom: e.g. "Prénom : KHADIJA"
-  updated = updated.replace(
-    /(<w:t[^>]*>\s*Prénom\s*:\s*<\/w:t>[\s\S]*?<w:t[^>]*>)([^<]*)(<\/w:t>)/gi,
-    `$1${data.prenom}$3`
-  );
-  updated = updated.replace(/<w:t>Prénom\s*:\s*KHADIJA<\/w:t>/g, `<w:t>Prénom : ${data.prenom}</w:t>`);
-
-  // Replace Né (e) le: e.g. "06/09/2008"
+  // 4. Replace Né (e) le: e.g. "06/09/2008" or "22/10/2002"
   updated = updated.replace(/<w:t>06\/09\/2008<\/w:t>/g, `<w:t>${data.dateNaissance || '00/00/0000'}</w:t>`);
+  updated = updated.replace(/<w:t>22\/10\/2002<\/w:t>/g, `<w:t>${data.dateNaissance || '00/00/0000'}</w:t>`);
   updated = updated.replace(/<w:t>19\/05\/2004#?<\/w:t>/g, `<w:t>${data.dateNaissance || '00/00/0000'}</w:t>`);
 
-  // Replace A : [Lieu]
+  // 5. Replace A : [Lieu]
   updated = updated.replace(/<w:t>ZEMAMRA SIDI BENNOUR<\/w:t>/g, `<w:t>${data.lieuNaissance || 'RABAT'}</w:t>`);
 
-  // Replace Domicile
+  // 6. Replace Domicile
   updated = updated.replace(
     /<w:t>HAY KALAA AV MOUATAMID IBN ABBAD PSG 02 NR 02 M’DIQ<\/w:t>/g,
     `<w:t>${data.domicile || 'RABAT'}</w:t>`
   );
 
-  // Replace Nationalité: e.g. "<w:t xml:space="preserve"> MAROCAINE</w:t>"
+  // 7. Replace Nationalité
   if (data.nationalite) {
     updated = updated.replace(
       /<w:t[^>]*>\s*MAROCAINE\s*<\/w:t>/g,
@@ -143,10 +148,10 @@ function processDocumentXml(xml: string, data: CertificateData): string {
     );
   }
 
-  // Replace CIN: e.g. "LG55372"
+  // 8. Replace CIN: e.g. "LG55372"
   updated = updated.replace(/<w:t>LG55372<\/w:t>/g, `<w:t>${data.cin || ''}</w:t>`);
 
-  // Replace Année d'étude (1ère Année / 2ème Année) in registration paragraph
+  // 9. Replace Année d'étude (1ère Année / 2ème Année) in registration paragraph
   if (data.anneeEtude) {
     updated = updated.replace(
       /<w:t>1<\/w:t><\/w:r>[\s\S]{0,400}?<w:t[^>]*>Année\s*<\/w:t><\/w:r>/g,
@@ -154,14 +159,16 @@ function processDocumentXml(xml: string, data: CertificateData): string {
     );
   }
 
-  // Replace Matricule in registration phrase: e.g. F57/27
-  updated = updated.replace(
-    /<w:t>F<\/w:t><\/w:r>[\s\S]{0,300}?<w:t>\/27<\/w:t><\/w:r>/g,
-    `<w:t>${data.matricule}</w:t></w:r>`
-  );
-  updated = updated.replace(/<w:t>F\/24\s*#?\s*<\/w:t>/g, `<w:t>${data.matricule}</w:t>`);
+  // 10. Replace Matricule in registration phrase: e.g. F57/27
+  if (data.matricule) {
+    updated = updated.replace(
+      /<w:t>F<\/w:t><\/w:r>[\s\S]{0,300}?<w:t>\/27<\/w:t><\/w:r>/g,
+      `<w:t>${data.matricule}</w:t></w:r>`
+    );
+    updated = updated.replace(/<w:t>F\/24\s*#?\s*<\/w:t>/g, `<w:t>${data.matricule}</w:t>`);
+  }
 
-  // Replace Année scolaire in drawing box runs: 202 6 /202 7
+  // 11. Replace Année scolaire in drawing box runs: 202 6 /202 7
   if (data.anneeScolaire) {
     updated = updated.replace(
       /<w:t>202<\/w:t><\/w:r>[\s\S]{0,250}?<w:t>6<\/w:t><\/w:r>[\s\S]{0,250}?<w:t>\/202<\/w:t><\/w:r>[\s\S]{0,250}?<w:t>7<\/w:t><\/w:r>/g,
@@ -171,24 +178,24 @@ function processDocumentXml(xml: string, data: CertificateData): string {
     updated = updated.replace(/<w:t>##2023\/2024##<\/w:t>/g, `<w:t>${data.anneeScolaire}</w:t>`);
   }
 
-  // Replace NUMERO NATIONAL: e.g. "P140169168"
+  // 12. Replace NUMERO NATIONAL: e.g. "P140169168"
   updated = updated.replace(/<w:t>P140169168<\/w:t>/g, `<w:t>${data.numeroNational || ''}</w:t>`);
 
-  // Replace Filière / Classe if custom
+  // 13. Replace Filière / Classe if custom
   if (data.filiere) {
     updated = updated.replace(
-      /En classe de\s*:\s*ATAM[^<]*/g,
+      /En classe de\s*[:\u00A0]\s*ATAM[^<]*/g,
       `En classe de : ${data.filiere}`
     );
   }
 
-  // Replace Usage if custom
+  // 14. Replace Usage if custom
   if (data.usage) {
     updated = updated.replace(/<w:t>ADMINISTRATIF#?<\/w:t>/g, `<w:t>${data.usage}</w:t>`);
-    updated = updated.replace(/(délivrée pour usage\s*:\s*)([A-Z\s]+)/gi, `$1${data.usage}`);
+    updated = updated.replace(/(délivrée pour usage\s*[:\u00A0]\s*)([A-Z\s]+)/gi, `$1${data.usage}`);
   }
 
-  // Replace Directrice name if custom
+  // 15. Replace Directrice name if custom
   if (data.directrice && data.directrice !== "Mme M’ZIOUAD IMANE") {
     updated = updated.replace(/Mme M’ZIOUAD IMANE/g, data.directrice);
     updated = updated.replace(/Mme M’Ziouad Imane/g, data.directrice);
