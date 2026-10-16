@@ -35,12 +35,24 @@ export async function onRequestGet(context) {
   const url = new URL(context.request.url);
   const forceFresh = url.searchParams.get('fresh') === 'true' || url.searchParams.get('refresh') === 'true';
 
-  const auth = await validateRequest(context.request, db);
-  if (!auth.authenticated) {
-    return new Response(JSON.stringify({ success: false, error: auth.error }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json', ...cors },
-    });
+  const directKey = context.request.headers.get('x-gemini-key') || url.searchParams.get('apiKey');
+
+  // If no direct key passed, check session
+  let auth = { authenticated: true };
+  if (!directKey) {
+    auth = await validateRequest(context.request, db);
+    // If not authenticated, return standard fallback models with 200 so UI selector always works smoothly
+    if (!auth.authenticated) {
+      return new Response(JSON.stringify({
+        success: true,
+        isLive: false,
+        models: FALLBACK_MODELS,
+        defaultModel: 'gemini-2.5-flash',
+        count: FALLBACK_MODELS.length,
+      }), {
+        headers: { 'Content-Type': 'application/json', ...cors },
+      });
+    }
   }
 
   try {

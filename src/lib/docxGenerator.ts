@@ -22,27 +22,71 @@ export interface CertificateData {
   notes?: string;
 }
 
-export function buildInitialCertificateData(student: Student, academicYears: AcademicYear[] = []): CertificateData {
-  const parts = (student.fullName || '').trim().split(/\s+/);
-  let nom = '';
-  let prenom = '';
+const COMMON_FIRST_NAMES = [
+  'FATIMA', 'DOUAE', 'DOAAE', 'YASMINE', 'IKHLASS', 'OUSSAMA', 'ACHRAF', 'CHOROUK',
+  'LATIFA', 'MOHAMED', 'MOHAMMED', 'LINA', 'SABAH', 'AYA', 'ZOUHAIR', 'SALMA',
+  'HOUDA', 'IMANE', 'AMINE', 'HAMZA', 'OMAR', 'ANAS', 'WALID', 'YOUSSEF',
+  'MEHDI', 'HASSAN', 'SAID', 'KHADIJA', 'MERIEM', 'MARYAM', 'ZINEB', 'HAFSA',
+  'ASMAA', 'NAOUAL', 'SARA', 'SARAH', 'KAOUTAR', 'KENZA', 'HIBA', 'MANAL', 'NADA', 'ZAHRA'
+];
+
+export function parseStudentName(fullName: string): { nom: string; prenom: string } {
+  const clean = (fullName || '').trim();
+  if (!clean) return { nom: '', prenom: '' };
+
+  const parts = clean.split(/\s+/);
   if (parts.length === 1) {
-    nom = parts[0];
-  } else if (parts.length === 2) {
-    // If the 2nd token is a patronymic / family name (e.g. Ibnoghazala, Ben..., El..., Bou...),
-    // set nom as the 2nd token and prenom as 1st token; otherwise nom is 1st and prenom is 2nd.
-    const p1Upper = parts[1].toUpperCase();
-    if (p1Upper.startsWith('IBN') || p1Upper.startsWith('BEN') || p1Upper.startsWith('EL') || p1Upper.startsWith('BOU')) {
-      nom = parts[1];
-      prenom = parts[0];
-    } else {
-      nom = parts[0];
-      prenom = parts[1];
-    }
-  } else {
-    nom = parts.slice(0, Math.ceil(parts.length / 2)).join(' ');
-    prenom = parts.slice(Math.ceil(parts.length / 2)).join(' ');
+    return { nom: parts[0].toUpperCase(), prenom: '' };
   }
+
+  const firstUpper = parts[0].toUpperCase();
+  const secondUpper = parts.length > 2 ? parts[1].toUpperCase() : '';
+  const lastUpper = parts[parts.length - 1].toUpperCase();
+
+  // Compound given name like 'MOHAMED AMINE ELAMARI' or 'FATIMA ZAHRA BENANI'
+  if (parts.length >= 3 && COMMON_FIRST_NAMES.includes(firstUpper) && COMMON_FIRST_NAMES.includes(secondUpper)) {
+    return {
+      prenom: (parts[0] + ' ' + parts[1]).toUpperCase(),
+      nom: parts.slice(2).join(' ').toUpperCase()
+    };
+  }
+
+  // If last word is a known first name (e.g. 'ACHAHBOUNE FATIMA'), nom is first part
+  if (COMMON_FIRST_NAMES.includes(lastUpper) && !COMMON_FIRST_NAMES.includes(firstUpper)) {
+    return {
+      nom: parts.slice(0, parts.length - 1).join(' ').toUpperCase(),
+      prenom: lastUpper
+    };
+  }
+
+  // Check compound family prefixes: EL, AL, AIT, BEN, IBN, BOU
+  const familyPrefixes = ['EL', 'AL', 'AIT', 'BEN', 'IBN', 'BOU', 'OULAD', 'OULD'];
+  for (let i = 1; i < parts.length; i++) {
+    if (familyPrefixes.includes(parts[i].toUpperCase())) {
+      return {
+        prenom: parts.slice(0, i).join(' ').toUpperCase(),
+        nom: parts.slice(i).join(' ').toUpperCase()
+      };
+    }
+  }
+
+  // If first word is a known first name (e.g. 'DOUAE MOURCHID', 'YASMINE IBNOGHAZALA')
+  if (COMMON_FIRST_NAMES.includes(firstUpper)) {
+    return {
+      prenom: parts[0].toUpperCase(),
+      nom: parts.slice(1).join(' ').toUpperCase()
+    };
+  }
+
+  // Default: First name is part 0, Family name is rest
+  return {
+    prenom: parts[0].toUpperCase(),
+    nom: parts.slice(1).join(' ').toUpperCase()
+  };
+}
+
+export function buildInitialCertificateData(student: Student, academicYears: AcademicYear[] = []): CertificateData {
+  const { nom, prenom } = parseStudentName(student.fullName || '');
 
   // Detect study year: e.g. 1ère Année vs 2ème Année
   let anneeEtude = '1ère Année';
@@ -115,16 +159,23 @@ function processDocumentXml(xml: string, data: CertificateData): string {
   );
   updated = updated.replace(/(DATE\s*[:\u00A0]\s*)([0-9\s/]+)/gi, `$1${data.dateDelivrance}`);
 
-  // 2. Replace Nom (in template: SAKIM)
-  updated = updated.replace(/<w:t>SAKIM<\/w:t>/g, `<w:t>${data.nom}</w:t>`);
+  // 2. Replace Nom (in template: SAKIM) with exact official XML alignment runs
+  const p10Regex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<w:t[^>]*>Nom<\/w:t>(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
+  const cleanP10 = `<w:p w14:paraId="50531F5B" w14:textId="3C5B9956" w:rsidR="007D13A6" w:rsidRDefault="007D13A6" w:rsidP="00956483"><w:pPr><w:rPr><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r w:rsidRPr="00AC420A"><w:rPr><w:b/><w:bCs/></w:rPr><w:t>Nom</w:t></w:r><w:r w:rsidR="00B56AEA"><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">    </w:t></w:r><w:r w:rsidR="00D72450"><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">  </w:t></w:r><w:r w:rsidRPr="00AC420A"><w:rPr><w:b/><w:bCs/></w:rPr><w:t> </w:t></w:r><w:r w:rsidRPr="005F00F5"><w:rPr><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t>:</w:t></w:r><w:r w:rsidR="00956483"><w:rPr><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r><w:r w:rsidR="00AA217F"><w:rPr><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t>${data.nom}</w:t></w:r></w:p>`;
+  if (p10Regex.test(updated)) {
+    updated = updated.replace(p10Regex, cleanP10);
+  } else {
+    updated = updated.replace(/<w:t>SAKIM<\/w:t>/g, `<w:t>${data.nom}</w:t>`);
+  }
 
-  // 3. Replace Prénom (in template: KHADIJA)
-  // Clean up any previously mutated runs in Prénom paragraph
-  updated = updated.replace(
-    /(<w:t[^>]*>Prénom[\s\S]*?<\/w:t><\/w:r>)[\s\S]*?<w:t>(?:KHADIJA|[^<]+)<\/w:t><\/w:r><\/w:p>/gi,
-    `$1<w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve"> </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t>${data.prenom}</w:t></w:r></w:p>`
-  );
-  updated = updated.replace(/<w:t>KHADIJA<\/w:t>/g, `<w:t>${data.prenom}</w:t>`);
+  // 3. Replace Prénom (in template: KHADIJA) with exact official XML runs
+  const p12Regex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<w:t[^>]*>Prénom[\s\S]*?<\/w:p>/;
+  const cleanP12 = `<w:p w14:paraId="2B8959FD" w14:textId="2E797C7E" w:rsidR="007D13A6" w:rsidRPr="00AC420A" w:rsidRDefault="007D13A6" w:rsidP="000E7FAC"><w:pPr><w:rPr><w:u w:val="single"/></w:rPr></w:pPr><w:r w:rsidRPr="00AC420A"><w:rPr><w:b/><w:bCs/></w:rPr><w:t>Prénom :</w:t></w:r><w:r w:rsidR="00956483"><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve"> </w:t></w:r><w:r w:rsidR="00AA217F"><w:rPr><w:b/><w:bCs/></w:rPr><w:t>${data.prenom}</w:t></w:r></w:p>`;
+  if (p12Regex.test(updated)) {
+    updated = updated.replace(p12Regex, cleanP12);
+  } else {
+    updated = updated.replace(/<w:t>KHADIJA<\/w:t>/g, `<w:t>${data.prenom}</w:t>`);
+  }
 
   // 4. Replace Né (e) le: e.g. "06/09/2008" or "22/10/2002"
   updated = updated.replace(/<w:t>06\/09\/2008<\/w:t>/g, `<w:t>${data.dateNaissance || '00/00/0000'}</w:t>`);

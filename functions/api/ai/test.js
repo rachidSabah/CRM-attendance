@@ -10,19 +10,24 @@ export async function onRequestPost(context) {
   const cors = getCorsHeaders(context.request);
   const db = context.env.DB;
 
-  const auth = await validateRequest(context.request, db);
-  if (!auth.authenticated) {
-    return new Response(JSON.stringify({ success: false, error: auth.error }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json', ...cors },
-    });
-  }
-
   try {
     let body = {};
     try {
       body = await context.request.json();
     } catch {}
+
+    const directKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+
+    // If no direct API key is supplied in the request body, validate admin session
+    if (!directKey) {
+      const auth = await validateRequest(context.request, db);
+      if (!auth.authenticated) {
+        return new Response(JSON.stringify({ success: false, error: auth.error || 'Authentification requise pour tester la clé système' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json', ...cors },
+        });
+      }
+    }
 
     // Resolve API Key
     let apiKey = body.apiKey || context.env.GEMINI_API_KEY;

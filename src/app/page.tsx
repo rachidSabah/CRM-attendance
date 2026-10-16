@@ -6071,14 +6071,13 @@ function AiSettingsSection() {
   const fetchLiveModels = async (forceFresh = false) => {
     setRefreshingModels(true);
     try {
-      const token = getApiToken() || '';
+      const token = getApiToken();
       const url = forceFresh ? '/api/ai/models?fresh=true' : '/api/ai/models';
-      const res = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          ...(inputKey.trim() ? { 'x-gemini-key': inputKey.trim() } : {})
-        }
-      });
+      const headers: Record<string, string> = {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        ...(inputKey.trim() ? { 'x-gemini-key': inputKey.trim() } : {})
+      };
+      const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.models) && data.models.length > 0) {
@@ -6101,10 +6100,9 @@ function AiSettingsSection() {
 
   const fetchConfig = async () => {
     try {
-      const token = getApiToken() || '';
-      const res = await fetch('/api/ai/config', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const token = getApiToken();
+      const headers: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const res = await fetch('/api/ai/config', { headers });
       if (res.ok) {
         const data = await res.json();
         setHasKey(Boolean(data.hasKey));
@@ -6127,13 +6125,14 @@ function AiSettingsSection() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const token = getApiToken() || '';
+      const token = getApiToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      };
       const res = await fetch('/api/ai/config', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers,
         body: JSON.stringify({
           apiKey: inputKey.trim() || undefined,
           defaultModel
@@ -6158,13 +6157,14 @@ function AiSettingsSection() {
     setTesting(true);
     setTestResult(null);
     try {
-      const token = getApiToken() || '';
+      const token = getApiToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      };
       const res = await fetch('/api/ai/test', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers,
         body: JSON.stringify({
           apiKey: inputKey.trim() || undefined,
           model: defaultModel

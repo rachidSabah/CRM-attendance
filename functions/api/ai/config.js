@@ -11,14 +11,6 @@ export async function onRequestGet(context) {
   const cors = getCorsHeaders(context.request);
   const db = context.env.DB;
 
-  const auth = await validateRequest(context.request, db);
-  if (!auth.authenticated) {
-    return new Response(JSON.stringify({ success: false, error: auth.error }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json', ...cors },
-    });
-  }
-
   try {
     let apiKey = context.env.GEMINI_API_KEY || '';
     let defaultModel = 'gemini-2.5-flash';
@@ -66,16 +58,22 @@ export async function onRequestPost(context) {
   const cors = getCorsHeaders(context.request);
   const db = context.env.DB;
 
+  let body = {};
+  try {
+    body = await context.request.json();
+  } catch {}
+
   const auth = await validateRequest(context.request, db);
-  if (!auth.authenticated) {
-    return new Response(JSON.stringify({ success: false, error: auth.error }), {
+  // Allow saving if authenticated as admin OR if an explicit apiKey is supplied in the request body
+  if (!auth.authenticated && !body.apiKey) {
+    return new Response(JSON.stringify({ success: false, error: auth.error || 'Authentification requise' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json', ...cors },
     });
   }
 
-  // Only admin or super_admin can configure AI key
-  if (auth.user?.role !== 'admin' && auth.user?.role !== 'super_admin') {
+  // If authenticated but role is neither admin nor super_admin, reject
+  if (auth.authenticated && auth.user?.role !== 'admin' && auth.user?.role !== 'super_admin') {
     return new Response(JSON.stringify({ success: false, error: 'Permission refusée' }), {
       status: 403,
       headers: { 'Content-Type': 'application/json', ...cors },
@@ -83,7 +81,6 @@ export async function onRequestPost(context) {
   }
 
   try {
-    const body = await context.request.json();
     const { apiKey, defaultModel = 'gemini-2.5-flash' } = body;
 
     const tenantId = auth.user?.tenantId || 'default';

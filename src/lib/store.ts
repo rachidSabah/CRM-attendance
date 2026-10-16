@@ -620,21 +620,7 @@ export const useAppStore = create<AppState>((set) => ({
         if (!cloudRes.ok) {
           if (cloudRes.status === 401) {
             _lastPull401Time = Date.now();
-            if (token && typeof window !== 'undefined') {
-              try {
-                const authData = localStorage.getItem('attendance_auth');
-                if (authData) {
-                  const { toast: showToast } = await import('sonner');
-                  const lang = localStorage.getItem('attendance_language') || 'en';
-                  showToast.error(lang === 'fr' ? 'Session expirée — veuillez vous reconnecter' : 'Session expired — please log in again');
-                }
-              } catch {}
-              setApiToken(null);
-              localStorage.removeItem('api_token');
-              localStorage.removeItem('attendance_auth');
-              set({ currentUser: null, isAuthenticated: false });
-              return;
-            }
+            console.warn('[sync/pull] Background sync received 401 — preserving local credentials');
           }
         } else {
           const cloudData = await cloudRes.json();
