@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import type { Student, AcademicYear } from './types';
+import { DocumentDesignPreset, toOpenXmlHexColor } from './documentDesignTypes';
 
 export interface CertificateData {
   studentId: string;
@@ -130,12 +131,8 @@ export function sanitizeFilename(name: string): string {
 /**
  * Replace placeholders and specific target runs in document.xml while preserving all Word XML formatting
  */
-function processDocumentXml(xml: string, data: CertificateData): string {
+function processDocumentXml(xml: string, data: CertificateData, designConfig?: DocumentDesignPreset): string {
   // 1. Isolate the first certificate section (section 0)
-  // In WordprocessingML, intermediate section properties are stored inside a paragraph:
-  // <w:p ...><w:pPr><w:sectPr ...>...</w:sectPr></w:pPr></w:p>
-  // For the final (and in our single-page document, only) section, <w:sectPr> must be
-  // a direct child of <w:body>. We extract sectPr and strip the wrapping paragraph.
   const sectPrEnd = xml.indexOf('</w:sectPr>');
   const bodyStart = xml.indexOf('<w:body>') + '<w:body>'.length;
   let bodyContent = xml;
@@ -152,14 +149,43 @@ function processDocumentXml(xml: string, data: CertificateData): string {
 
   let updated = bodyContent;
 
-  // 1. Replace Date: e.g. "DATE : 15/10/2026"
-  updated = updated.replace(
-    /(DATE\s*[:\u00A0]\s*<\/w:t><\/w:r>)(?:[\s\S]*?)(<\/w:p>)/i,
-    `$1<w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve"> ${data.dateDelivrance}</w:t></w:r>$2`
-  );
-  updated = updated.replace(/(DATE\s*[:\u00A0]\s*)([0-9\s/]+)/gi, `$1${data.dateDelivrance}`);
+  // 1. Replace Date: e.g. "DATE : 16/10/2026"
+  // Root cause fix: The template originally had 'DATE : ' and separate digit runs.
+  // Previously, an extra secondary regex matched the whitespace in 'DATE : ' and inserted the date a second time,
+  // causing "DATE :16/10/2026 16/10/2026".
+  // This clean single replacement formats exactly ONE date in the heading with pristine Word alignment.
+  const pDateRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?DATE\s*[:\u00A0][\s\S]*?<\/w:p>/;
+  const cleanDateParagraph = `<w:p w14:paraId="7899BA29" w14:textId="11629A04" w:rsidR="00A17DC3" w:rsidRPr="00614FE3" w:rsidRDefault="00614FE3" w:rsidP="00614FE3"><w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:pPr><w:r><w:t xml:space="preserve">                                                                                                                    </w:t></w:r><w:r w:rsidR="00EB4E3B" w:rsidRPr="00614FE3"><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">  DATE : </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t>${data.dateDelivrance}</w:t></w:r></w:p>`;
 
-  // 2. Replace Nom (in template: SAKIM) with exact official XML alignment runs
+  if (pDateRegex.test(updated)) {
+    updated = updated.replace(pDateRegex, cleanDateParagraph);
+  } else {
+    updated = updated.replace(
+      /(DATE\s*[:\u00A0]\s*<\/w:t><\/w:r>)(?:[\s\S]*?)(<\/w:p>)/i,
+      `$1<w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve"> ${data.dateDelivrance}</w:t></w:r>$2`
+    );
+  }
+
+  // 2. Custom Heading Styling (P3 ATTESTATION DE SCOLARITE) if custom design provided
+  if (designConfig?.heading) {
+    const headingColor = toOpenXmlHexColor(designConfig.heading.textColor, '17365D');
+    const fontFamily = designConfig.heading.fontFamily || 'Times New Roman';
+    const szVal = Math.round((designConfig.heading.fontSize || 18) * 2);
+    const isBold = designConfig.heading.bold ? '<w:b/><w:bCs/>' : '';
+    const isItalic = designConfig.heading.italic ? '<w:i/><w:iCs/>' : '';
+    const headingText = (!designConfig.heading.isTextLocked && designConfig.heading.text)
+      ? designConfig.heading.text
+      : 'ATTESTATION DE SCOLARITE';
+
+    const p3Regex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<w:t[^>]*>ATTESTATION DE SCOLARITE<\/w:t>(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
+    const cleanP3 = `<w:p w14:paraId="0443EC96" w14:textId="4E983514" w:rsidR="00A17DC3" w:rsidRPr="00614FE3" w:rsidRDefault="00614FE3" w:rsidP="00105CBB"><w:pPr><w:jc w:val="${designConfig.heading.alignment || 'center'}"/><w:rPr><w:rFonts w:ascii="${fontFamily}" w:hAnsi="${fontFamily}"/><w:color w:val="${headingColor}"/>${isBold}${isItalic}<w:sz w:val="${szVal}"/><w:szCs w:val="${szVal}"/></w:rPr></w:pPr><w:r w:rsidR="00A17DC3" w:rsidRPr="00614FE3"><w:rPr><w:rFonts w:ascii="${fontFamily}" w:hAnsi="${fontFamily}"/><w:color w:val="${headingColor}"/>${isBold}${isItalic}<w:sz w:val="${szVal}"/><w:szCs w:val="${szVal}"/></w:rPr><w:t>${headingText}</w:t></w:r></w:p>`;
+
+    if (p3Regex.test(updated)) {
+      updated = updated.replace(p3Regex, cleanP3);
+    }
+  }
+
+  // 3. Replace Nom (in template: SAKIM) with exact official XML alignment runs
   const p10Regex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<w:t[^>]*>Nom<\/w:t>(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
   const cleanP10 = `<w:p w14:paraId="50531F5B" w14:textId="3C5B9956" w:rsidR="007D13A6" w:rsidRDefault="007D13A6" w:rsidP="00956483"><w:pPr><w:rPr><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r w:rsidRPr="00AC420A"><w:rPr><w:b/><w:bCs/></w:rPr><w:t>Nom</w:t></w:r><w:r w:rsidR="00B56AEA"><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">    </w:t></w:r><w:r w:rsidR="00D72450"><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">  </w:t></w:r><w:r w:rsidRPr="00AC420A"><w:rPr><w:b/><w:bCs/></w:rPr><w:t> </w:t></w:r><w:r w:rsidRPr="005F00F5"><w:rPr><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t>:</w:t></w:r><w:r w:rsidR="00956483"><w:rPr><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r><w:r w:rsidR="00AA217F"><w:rPr><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t>${data.nom}</w:t></w:r></w:p>`;
   if (p10Regex.test(updated)) {
@@ -168,7 +194,7 @@ function processDocumentXml(xml: string, data: CertificateData): string {
     updated = updated.replace(/<w:t>SAKIM<\/w:t>/g, `<w:t>${data.nom}</w:t>`);
   }
 
-  // 3. Replace Prénom (in template: KHADIJA) with exact official XML runs
+  // 4. Replace Prénom (in template: KHADIJA) with exact official XML runs
   const p12Regex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<w:t[^>]*>Prénom[\s\S]*?<\/w:p>/;
   const cleanP12 = `<w:p w14:paraId="2B8959FD" w14:textId="2E797C7E" w:rsidR="007D13A6" w:rsidRPr="00AC420A" w:rsidRDefault="007D13A6" w:rsidP="000E7FAC"><w:pPr><w:rPr><w:u w:val="single"/></w:rPr></w:pPr><w:r w:rsidRPr="00AC420A"><w:rPr><w:b/><w:bCs/></w:rPr><w:t>Prénom :</w:t></w:r><w:r w:rsidR="00956483"><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve"> </w:t></w:r><w:r w:rsidR="00AA217F"><w:rPr><w:b/><w:bCs/></w:rPr><w:t>${data.prenom}</w:t></w:r></w:p>`;
   if (p12Regex.test(updated)) {
@@ -177,21 +203,21 @@ function processDocumentXml(xml: string, data: CertificateData): string {
     updated = updated.replace(/<w:t>KHADIJA<\/w:t>/g, `<w:t>${data.prenom}</w:t>`);
   }
 
-  // 4. Replace Né (e) le: e.g. "06/09/2008" or "22/10/2002"
+  // 5. Replace Né (e) le: e.g. "06/09/2008" or "22/10/2002"
   updated = updated.replace(/<w:t>06\/09\/2008<\/w:t>/g, `<w:t>${data.dateNaissance || '00/00/0000'}</w:t>`);
   updated = updated.replace(/<w:t>22\/10\/2002<\/w:t>/g, `<w:t>${data.dateNaissance || '00/00/0000'}</w:t>`);
   updated = updated.replace(/<w:t>19\/05\/2004#?<\/w:t>/g, `<w:t>${data.dateNaissance || '00/00/0000'}</w:t>`);
 
-  // 5. Replace A : [Lieu]
+  // 6. Replace A : [Lieu]
   updated = updated.replace(/<w:t>ZEMAMRA SIDI BENNOUR<\/w:t>/g, `<w:t>${data.lieuNaissance || 'RABAT'}</w:t>`);
 
-  // 6. Replace Domicile
+  // 7. Replace Domicile
   updated = updated.replace(
     /<w:t>HAY KALAA AV MOUATAMID IBN ABBAD PSG 02 NR 02 M’DIQ<\/w:t>/g,
     `<w:t>${data.domicile || 'RABAT'}</w:t>`
   );
 
-  // 7. Replace Nationalité
+  // 8. Replace Nationalité
   if (data.nationalite) {
     updated = updated.replace(
       /<w:t[^>]*>\s*MAROCAINE\s*<\/w:t>/g,
@@ -199,10 +225,10 @@ function processDocumentXml(xml: string, data: CertificateData): string {
     );
   }
 
-  // 8. Replace CIN: e.g. "LG55372"
+  // 9. Replace CIN: e.g. "LG55372"
   updated = updated.replace(/<w:t>LG55372<\/w:t>/g, `<w:t>${data.cin || ''}</w:t>`);
 
-  // 9. Replace Année d'étude (1ère Année / 2ème Année) in registration paragraph
+  // 10. Replace Année d'étude (1ère Année / 2ème Année) in registration paragraph
   if (data.anneeEtude) {
     updated = updated.replace(
       /<w:t>1<\/w:t><\/w:r>[\s\S]{0,400}?<w:t[^>]*>Année\s*<\/w:t><\/w:r>/g,
@@ -210,7 +236,7 @@ function processDocumentXml(xml: string, data: CertificateData): string {
     );
   }
 
-  // 10. Replace Matricule in registration phrase: e.g. F57/27
+  // 11. Replace Matricule in registration phrase: e.g. F57/27
   if (data.matricule) {
     updated = updated.replace(
       /<w:t>F<\/w:t><\/w:r>[\s\S]{0,300}?<w:t>\/27<\/w:t><\/w:r>/g,
@@ -219,7 +245,7 @@ function processDocumentXml(xml: string, data: CertificateData): string {
     updated = updated.replace(/<w:t>F\/24\s*#?\s*<\/w:t>/g, `<w:t>${data.matricule}</w:t>`);
   }
 
-  // 11. Replace Année scolaire in drawing box runs: 202 6 /202 7
+  // 12. Replace Année scolaire in drawing box runs: 202 6 /202 7
   if (data.anneeScolaire) {
     updated = updated.replace(
       /<w:t>202<\/w:t><\/w:r>[\s\S]{0,250}?<w:t>6<\/w:t><\/w:r>[\s\S]{0,250}?<w:t>\/202<\/w:t><\/w:r>[\s\S]{0,250}?<w:t>7<\/w:t><\/w:r>/g,
@@ -229,10 +255,10 @@ function processDocumentXml(xml: string, data: CertificateData): string {
     updated = updated.replace(/<w:t>##2023\/2024##<\/w:t>/g, `<w:t>${data.anneeScolaire}</w:t>`);
   }
 
-  // 12. Replace NUMERO NATIONAL: e.g. "P140169168"
+  // 13. Replace NUMERO NATIONAL: e.g. "P140169168"
   updated = updated.replace(/<w:t>P140169168<\/w:t>/g, `<w:t>${data.numeroNational || ''}</w:t>`);
 
-  // 13. Replace Filière / Classe if custom
+  // 14. Replace Filière / Classe if custom
   if (data.filiere) {
     updated = updated.replace(
       /En classe de\s*[:\u00A0]\s*ATAM[^<]*/g,
@@ -240,13 +266,13 @@ function processDocumentXml(xml: string, data: CertificateData): string {
     );
   }
 
-  // 14. Replace Usage if custom
+  // 15. Replace Usage if custom
   if (data.usage) {
     updated = updated.replace(/<w:t>ADMINISTRATIF#?<\/w:t>/g, `<w:t>${data.usage}</w:t>`);
     updated = updated.replace(/(délivrée pour usage\s*[:\u00A0]\s*)([A-Z\s]+)/gi, `$1${data.usage}`);
   }
 
-  // 15. Replace Directrice name if custom
+  // 16. Replace Directrice name if custom
   if (data.directrice && data.directrice !== "Mme M’ZIOUAD IMANE") {
     updated = updated.replace(/Mme M’ZIOUAD IMANE/g, data.directrice);
     updated = updated.replace(/Mme M’Ziouad Imane/g, data.directrice);
@@ -259,12 +285,13 @@ function processDocumentXml(xml: string, data: CertificateData): string {
 }
 
 /**
- * Generate a genuine .docx certificate by updating the official template with student data and INFOHAS logo
+ * Generate a genuine .docx certificate by updating the official template with student data and customized styling/logo
  */
 export async function generateCertificateDocx(
   data: CertificateData,
   templateBuffer?: ArrayBuffer | Uint8Array,
-  logoBuffer?: ArrayBuffer | Uint8Array
+  logoBuffer?: ArrayBuffer | Uint8Array,
+  designConfig?: DocumentDesignPreset
 ): Promise<{ docxBuffer: Uint8Array; filename: string }> {
   let sourceBuffer = templateBuffer;
 
@@ -286,16 +313,38 @@ export async function generateCertificateDocx(
 
   const zip = await JSZip.loadAsync(sourceBuffer);
 
-  // 1. Process document.xml
+  // 1. Process document.xml with design configuration
   const docFile = zip.file('word/document.xml');
   if (docFile) {
     const docXml = await docFile.async('string');
-    const processedXml = processDocumentXml(docXml, data);
+    const processedXml = processDocumentXml(docXml, data, designConfig);
     zip.file('word/document.xml', processedXml);
   }
 
-  // 2. Process headers (replace old logo image3.jpeg with current INFOHAS logo)
+  // 2. Process logo (Default: official INFOHAS logo; or custom uploaded logo if configured)
   let logoBytes = logoBuffer;
+
+  // If custom logo configured and provided via base64 data URL
+  if (!logoBytes && designConfig?.logo?.selectedLogo === 'custom' && designConfig.logo.customLogoUrl) {
+    try {
+      const url = designConfig.logo.customLogoUrl;
+      if (url.startsWith('data:')) {
+        const base64Data = url.split(',')[1];
+        if (base64Data) {
+          const binaryStr = atob(base64Data);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+          logoBytes = bytes;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not decode custom logo bytes:', e);
+    }
+  }
+
+  // Fallback to official INFOHAS logo
   if (!logoBytes && typeof window !== 'undefined') {
     try {
       const lRes = await fetch('/infohas-logo.png');
@@ -306,22 +355,47 @@ export async function generateCertificateDocx(
   if (logoBytes) {
     zip.file('word/media/image3.jpeg', logoBytes);
 
-    // Prevent logo stretching and deformation:
-    // The official template originally had cx="3534410" cy="468630" (wide 7.54:1 ratio banner).
-    // Our circular INFOHAS emblem is 1024x1024 (1:1 square).
-    // We update the drawing container extents in all header files to a balanced square (824230 x 824230 EMU,
-    // exactly matching the right-side accreditation badge) so the logo renders with 100% natural, un-distorted proportions.
+    // Dynamic logo dimensions:
+    // Convert configured width & height in px to Word EMUs (1 px ≈ 9525 EMU)
+    const logoW = designConfig?.logo?.width || 85;
+    const logoH = designConfig?.logo?.height || 85;
+    const wEmu = Math.round(logoW * 9525);
+    const hEmu = Math.round(logoH * 9525);
+
     for (const hName of ['word/header1.xml', 'word/header2.xml', 'word/header3.xml', 'word/header4.xml']) {
       const hFile = zip.file(hName);
       if (hFile) {
         const hXml = await hFile.async('string');
-        const updatedHXml = hXml.replace(/cx="3534410"\s+cy="468630"/g, 'cx="824230" cy="824230"');
+        const updatedHXml = hXml.replace(/cx="\d+"\s+cy="\d+"/g, `cx="${wEmu}" cy="${hEmu}"`);
         zip.file(hName, updatedHXml);
       }
     }
   }
 
-  // 3. Generate sanitized filename
+  // 3. Process footers (apply custom footer color, font and text if provided)
+  if (designConfig?.footer) {
+    const footerColor = toOpenXmlHexColor(designConfig.footer.textColor, '475569');
+    const footerFont = designConfig.footer.fontFamily || 'Calibri';
+    const footerSz = Math.round((designConfig.footer.fontSize || 9) * 2);
+
+    for (const fName of ['word/footer1.xml', 'word/footer2.xml', 'word/footer3.xml', 'word/footer4.xml']) {
+      const fFile = zip.file(fName);
+      if (fFile) {
+        let fXml = await fFile.async('string');
+        // Update font color in footer text runs
+        fXml = fXml.replace(/<w:rPr>(?:(?!<\/w:rPr>)[\s\S])*?<\/w:rPr>/g, (rPr) => {
+          if (rPr.includes('<w:color')) {
+            return rPr.replace(/<w:color\s+w:val="[^"]*"/g, `<w:color w:val="${footerColor}"`);
+          } else {
+            return rPr.replace('</w:rPr>', `<w:color w:val="${footerColor}"/><w:rFonts w:ascii="${footerFont}" w:hAnsi="${footerFont}"/><w:sz w:val="${footerSz}"/><w:szCs w:val="${footerSz}"/></w:rPr>`);
+          }
+        });
+        zip.file(fName, fXml);
+      }
+    }
+  }
+
+  // 4. Generate sanitized filename
   const cleanNom = sanitizeFilename(data.nom || 'ETUDIANT');
   const cleanPrenom = sanitizeFilename(data.prenom || 'Stagiaire');
   const cleanYear = sanitizeFilename(data.anneeScolaire || '2026-2027');

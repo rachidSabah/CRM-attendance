@@ -26,7 +26,7 @@ interface AiModel {
 }
 
 export function AiAutopilot() {
-  const { students, attendance, classes, currentUser } = useAppStore();
+  const { students, attendance, classes, currentUser, documentDesign } = useAppStore();
 
   const [models, setModels] = useState<AiModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash');
@@ -261,11 +261,13 @@ export function AiAutopilot() {
     try {
       const title = getReportTitle(section);
       const content = getExportableContent(section);
+      const activePresetId = documentDesign?.activePresetIdByDocType?.['attendance_report'];
+      const activePreset = documentDesign?.presets?.find(p => p.id === activePresetId) || documentDesign?.presets?.[1];
       exportAiReportPdf(title, content, {
         model: selectedModel,
         category: section || activeTab,
         date: new Date().toLocaleDateString('fr-FR'),
-      });
+      }, activePreset);
       toast.success('Rapport PDF téléchargé avec succès.');
     } catch (e: any) {
       toast.error('Erreur lors du téléchargement PDF: ' + e.message);
@@ -276,11 +278,13 @@ export function AiAutopilot() {
     try {
       const title = getReportTitle(section);
       const content = getExportableContent(section);
+      const activePresetId = documentDesign?.activePresetIdByDocType?.['attendance_report'];
+      const activePreset = documentDesign?.presets?.find(p => p.id === activePresetId) || documentDesign?.presets?.[1];
       await exportAiReportDocx(title, content, {
         model: selectedModel,
         category: section || activeTab,
         date: new Date().toLocaleDateString('fr-FR'),
-      });
+      }, activePreset);
       toast.success('Rapport DOCX téléchargé avec succès.');
     } catch (e: any) {
       toast.error('Erreur lors du téléchargement DOCX: ' + e.message);

@@ -19,11 +19,11 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import {
   FileText, Download, Printer, RotateCcw, Save, Search, UserCheck,
-  Building, CheckCircle2, ShieldCheck, Sparkles, GraduationCap
+  Building, CheckCircle2, ShieldCheck, Sparkles, GraduationCap, Palette
 } from 'lucide-react';
 
 export function CertificateGenerator() {
-  const { students, classes, academicYears, schoolInfo } = useAppStore();
+  const { students, classes, academicYears, schoolInfo, documentDesign, setCurrentPage } = useAppStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
@@ -74,7 +74,9 @@ export function CertificateGenerator() {
     if (!certData) return;
     setIsGenerating(true);
     try {
-      const { docxBuffer, filename } = await generateCertificateDocx(certData);
+      const activePresetId = documentDesign?.activePresetIdByDocType?.['certificate'];
+      const activePreset = documentDesign?.presets?.find(p => p.id === activePresetId) || documentDesign?.presets?.[0];
+      const { docxBuffer, filename } = await generateCertificateDocx(certData, undefined, undefined, activePreset);
       
       // Create blob and download in browser
       const blob = new Blob([docxBuffer as BlobPart], {
@@ -145,6 +147,15 @@ export function CertificateGenerator() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage('settings')}
+            className="gap-2 text-purple-600 border-purple-200 hover:bg-purple-50 dark:hover:bg-purple-950/40"
+          >
+            <Palette className="h-4 w-4" />
+            Personnaliser le Design
+          </Button>
           <Button
             variant="outline"
             size="sm"

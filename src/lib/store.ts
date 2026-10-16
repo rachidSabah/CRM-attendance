@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, Notification, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule, CalendarEvent, ExcuseJustification } from './types';
+import type { DocumentCustomizationSettings, DocumentDesignPreset, DocumentType } from './documentDesignTypes';
+import { DEFAULT_DOCUMENT_PRESETS } from './documentDesignTypes';
 import { api, setApiToken, localApi } from './api';
 
 interface AppState {
@@ -41,6 +43,10 @@ interface AppState {
   setLanguage: (lang: 'en' | 'fr' | 'ar') => void;
   primaryColor: string;
   setPrimaryColor: (color: string) => void;
+  documentDesign: DocumentCustomizationSettings;
+  setDocumentDesign: (settings: DocumentCustomizationSettings) => void;
+  saveDocumentPreset: (preset: DocumentDesignPreset) => void;
+  setActiveDocumentPreset: (docType: DocumentType, presetId: string) => void;
 
   // Actions
   setCurrentPage: (page: PageName) => void;
@@ -437,6 +443,15 @@ export const useAppStore = create<AppState>((set) => ({
 
   language: 'fr',
   primaryColor: '#10b981',
+  documentDesign: getCachedData<DocumentCustomizationSettings>('documentDesign', {
+    activePresetIdByDocType: {
+      certificate: 'preset_infohas_official_cert',
+      attendance_report: 'preset_standard_attendance_report',
+      administrative_doc: 'preset_admin_doc',
+    },
+    presets: DEFAULT_DOCUMENT_PRESETS,
+    updatedAt: new Date().toISOString(),
+  }),
 
   setCurrentPage: (page) => set({ currentPage: page }),
 
@@ -612,6 +627,34 @@ export const useAppStore = create<AppState>((set) => ({
     }
   },
 
+  setDocumentDesign: (settings) => {
+    set({ documentDesign: settings });
+    saveCache('documentDesign', settings);
+  },
+
+  saveDocumentPreset: (preset) => {
+    const state = useAppStore.getState();
+    const presets = state.documentDesign.presets.map(p => p.id === preset.id ? preset : p);
+    if (!presets.some(p => p.id === preset.id)) presets.push(preset);
+    const updated = { ...state.documentDesign, presets, updatedAt: new Date().toISOString() };
+    set({ documentDesign: updated });
+    saveCache('documentDesign', updated);
+  },
+
+  setActiveDocumentPreset: (docType, presetId) => {
+    const state = useAppStore.getState();
+    const updated = {
+      ...state.documentDesign,
+      activePresetIdByDocType: {
+        ...state.documentDesign.activePresetIdByDocType,
+        [docType]: presetId
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    set({ documentDesign: updated });
+    saveCache('documentDesign', updated);
+  },
+
   loadAllData: async () => {
     const savedLang = (typeof window !== 'undefined' ? localStorage.getItem('attendance_language') : null) as 'en' | 'fr' | 'ar' | null;
     const cachedColor = typeof window !== 'undefined' ? localStorage.getItem('attendance_primary_color') || '#10b981' : '#10b981';
@@ -724,6 +767,18 @@ export const useAppStore = create<AppState>((set) => ({
           }
         }
       }
+
+      // Fetch document design presets from server
+      try {
+        const dRes = await fetch('/api/doc-design/config');
+        if (dRes.ok) {
+          const dData = await dRes.json();
+          if (dData.success && dData.settings) {
+            set({ documentDesign: dData.settings });
+            saveCache('documentDesign', dData.settings);
+          }
+        }
+      } catch {}
     } catch (e) {
       // Errors handled gracefully without clearing cached state
     } finally {

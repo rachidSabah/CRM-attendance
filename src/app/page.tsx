@@ -71,6 +71,7 @@ import { AiAutopilot } from '@/components/AiAutopilot';
 import { ParentPortal } from '@/components/ParentPortal';
 import { ParentMagicLinkDialog } from '@/components/ParentMagicLinkDialog';
 import { AiTextAssist } from '@/components/AiTextAssist';
+import { DocumentCustomizationPanel } from '@/components/DocumentCustomizationPanel';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 
@@ -5712,6 +5713,7 @@ function SettingsPage() {
           <TabsTrigger value="reminders" className="flex items-center gap-1.5"><BellRing className="h-4 w-4" />{language === 'fr' ? 'Rappels Auto' : 'Auto Reminders'}</TabsTrigger>
           <TabsTrigger value="whatsapp" className="flex items-center gap-1.5"><MessageCircle className="h-4 w-4 text-emerald-600" />{language === 'fr' ? 'WhatsApp & Escalades' : 'WhatsApp & Escalation'}</TabsTrigger>
           <TabsTrigger value="ai" className="flex items-center gap-1.5"><Sparkles className="h-4 w-4 text-blue-500" />{language === 'fr' ? 'Paramètres IA (Gemini)' : 'Gemini AI'}</TabsTrigger>
+          <TabsTrigger value="doc_design" className="flex items-center gap-1.5"><Palette className="h-4 w-4 text-purple-500" />{language === 'fr' ? 'Personnalisation des documents' : language === 'ar' ? 'تخصيص المستندات' : 'Document Customization'}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -5758,6 +5760,10 @@ function SettingsPage() {
               <div className="space-y-2"><Label>{t('timezone', language)}</Label><Select value={tz} onValueChange={setTz}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Africa/Casablanca">Africa/Casablanca</SelectItem><SelectItem value="Europe/Paris">Europe/Paris</SelectItem><SelectItem value="UTC">UTC</SelectItem></SelectContent></Select></div>
             </div>
           </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="doc_design" className="space-y-4">
+          <DocumentCustomizationPanel />
         </TabsContent>
 
         <TabsContent value="teachers" className="space-y-4">

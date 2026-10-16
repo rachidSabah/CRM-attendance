@@ -271,6 +271,8 @@ const translations: Record<string, Record<string, string>> = {
     abbr_late: 'L',
     abbr_excused: 'E',
     abbr_pending: 'PJ',
+    doc_customization: 'Document Customization',
+    doc_design: 'Document Design & Styling',
   },
   fr: {
     dashboard: 'Tableau de bord', students: 'Étudiants', classes: 'Classes',
@@ -544,6 +546,8 @@ const translations: Record<string, Record<string, string>> = {
     abbr_late: 'R',
     abbr_excused: 'J',
     abbr_pending: 'AJ',
+    doc_customization: 'Personnalisation des documents',
+    doc_design: 'Design & Personnalisation des documents',
   },
   ar: {
     dashboard: 'لوحة التحكم', students: 'الطلاب', classes: 'الأقسام',
@@ -806,6 +810,8 @@ const translations: Record<string, Record<string, string>> = {
     abbr_late: 'م',
     abbr_excused: 'ع',
     abbr_pending: 'ت',
+    doc_customization: 'تخصيص المستندات',
+    doc_design: 'تصميم وتخصيص المستندات',
   },
 };
 

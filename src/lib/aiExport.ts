@@ -1,5 +1,7 @@
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
+import type { DocumentDesignPreset } from './documentDesignTypes';
+import { toOpenXmlHexColor } from './documentDesignTypes';
 
 export interface AiExportMetadata {
   model?: string;
@@ -27,7 +29,8 @@ function stripMarkdown(text: string): string {
 export function exportAiReportPdf(
   title: string,
   content: string,
-  meta: AiExportMetadata = {}
+  meta: AiExportMetadata = {},
+  designPreset?: DocumentDesignPreset
 ): void {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -41,8 +44,13 @@ export function exportAiReportPdf(
   const contentWidth = pageWidth - margin * 2;
   let y = margin;
 
-  // Header Banner Background
-  doc.setFillColor(5, 150, 105); // Emerald-600
+  // Header Banner Background (Dynamic from design preset or emerald default)
+  const bannerHex = designPreset?.heading?.textColor || '#059669';
+  const br = parseInt(bannerHex.slice(1, 3), 16) || 5;
+  const bg = parseInt(bannerHex.slice(3, 5), 16) || 150;
+  const bb = parseInt(bannerHex.slice(5, 7), 16) || 105;
+
+  doc.setFillColor(br, bg, bb);
   doc.rect(0, 0, pageWidth, 28, 'F');
 
   // School Brand
@@ -207,12 +215,15 @@ function escapeXml(str: string): string {
 export async function exportAiReportDocx(
   title: string,
   content: string,
-  meta: AiExportMetadata = {}
+  meta: AiExportMetadata = {},
+  designPreset?: DocumentDesignPreset
 ): Promise<void> {
   const zip = new JSZip();
 
   const lines = content.split('\n');
   let paragraphsXml = '';
+
+  const headerColor = toOpenXmlHexColor(designPreset?.heading?.textColor || '#059669', '059669');
 
   // 1. Institution Header
   paragraphsXml += `
@@ -226,7 +237,7 @@ export async function exportAiReportDocx(
         <w:rPr>
           <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>
           <w:b/>
-          <w:color w:val="059669"/>
+          <w:color w:val="${headerColor}"/>
           <w:sz w:val="28"/>
         </w:rPr>
         <w:t>INSTITUT SUPÉRIEUR INFOHAS</w:t>
