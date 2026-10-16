@@ -80,15 +80,26 @@ export function sanitizeFilename(name: string): string {
  */
 function processDocumentXml(xml: string, data: CertificateData): string {
   // 1. Isolate the first certificate section (section 0)
-  const firstSectIdx = xml.indexOf('</w:sectPr>');
+  // In WordprocessingML, intermediate section properties are stored inside a paragraph:
+  // <w:p ...><w:pPr><w:sectPr ...>...</w:sectPr></w:pPr></w:p>
+  // For the final (and in our single-page document, only) section, <w:sectPr> must be
+  // a direct child of <w:body>. We extract sectPr and strip the wrapping paragraph.
+  const sectPrEnd = xml.indexOf('</w:sectPr>');
   const bodyStart = xml.indexOf('<w:body>') + '<w:body>'.length;
-  if (firstSectIdx > 0 && bodyStart > 0) {
-    const singleSection = xml.slice(bodyStart, firstSectIdx + '</w:sectPr>'.length);
-    xml = xml.slice(0, bodyStart) + singleSection + '</w:body></w:document>';
+  let bodyContent = xml;
+  let sectPrXml = '';
+
+  if (sectPrEnd > 0 && bodyStart > 0) {
+    const sectPrStart = xml.lastIndexOf('<w:sectPr', sectPrEnd);
+    const pStart = xml.lastIndexOf('<w:p ', sectPrStart);
+    if (sectPrStart > 0 && pStart > bodyStart) {
+      sectPrXml = xml.slice(sectPrStart, sectPrEnd + '</w:sectPr>'.length);
+      bodyContent = xml.slice(bodyStart, pStart);
+    }
   }
 
   // Helper to replace text within a <w:p> containing a specific label
-  let updated = xml;
+  let updated = bodyContent;
 
   // Replace Date: e.g. "DATE : 15/10/2026"
   updated = updated.replace(
@@ -183,6 +194,9 @@ function processDocumentXml(xml: string, data: CertificateData): string {
     updated = updated.replace(/Mme M’Ziouad Imane/g, data.directrice);
   }
 
+  if (sectPrXml && bodyStart > 0) {
+    return xml.slice(0, bodyStart) + updated + sectPrXml + '</w:body></w:document>';
+  }
   return updated;
 }
 

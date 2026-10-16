@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { useAppStore, syncToCloud, loadFromCloud, getCloudSyncStatus, sendAttendanceReminders, retrySync, saveAttendanceDirectly } from '@/lib/store';
-import { setApiToken, localApi } from '@/lib/api';
+import { setApiToken, getApiToken, localApi } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import type { User, Student, Class, Module, AttendanceRecord, Grade, BehaviorRecord, Task, Incident, Teacher, Employee, Template, AcademicYear, SchoolInfo, PageName, CalendarEvent, ClassScheduleEntry, Exam, ExamGrade, CurriculumItem, AuditLogEntry, SavedSchedule } from '@/lib/types';
 import * as exportUtils from '@/lib/export';
@@ -56,7 +56,7 @@ import {
   Flame, Award, Zap, Globe, Database, Activity, ToggleLeft, CreditCard, IdCard,
   Palette, HardDrive, ChevronDown, Info, RotateCcw, Archive, Cloud, FolderOpen,
   FileCheck, ListChecks, Target, Smartphone, WifiOff, History, FileUp,
-  AlertOctagon, Paperclip, BellRing, QrCode, ShieldAlert, FileSpreadsheet
+  AlertOctagon, Paperclip, BellRing, QrCode, ShieldAlert, FileSpreadsheet, Sparkles
 } from 'lucide-react';
 
 import { QrScannerDialog } from '@/components/QrScannerDialog';
@@ -5596,7 +5596,7 @@ function AiSettingsSection() {
 
   const fetchConfig = async () => {
     try {
-      const token = localStorage.getItem('auth_token') || '';
+      const token = getApiToken() || '';
       const res = await fetch('/api/ai/config', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -5621,7 +5621,7 @@ function AiSettingsSection() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const token = localStorage.getItem('auth_token') || '';
+      const token = getApiToken() || '';
       const res = await fetch('/api/ai/config', {
         method: 'POST',
         headers: {
@@ -5651,7 +5651,7 @@ function AiSettingsSection() {
     setTesting(true);
     setTestResult(null);
     try {
-      const token = localStorage.getItem('auth_token') || '';
+      const token = getApiToken() || '';
       const res = await fetch('/api/ai/test', {
         method: 'POST',
         headers: {

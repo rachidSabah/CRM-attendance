@@ -12,7 +12,16 @@ export function setApiToken(token: string | null) {
 
 export function getApiToken(): string | null {
   if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem('api_token');
+    let stored = localStorage.getItem('api_token');
+    if (!stored) {
+      try {
+        const auth = JSON.parse(localStorage.getItem('attendance_auth') || '{}');
+        if (auth && auth.token) stored = auth.token;
+      } catch {}
+    }
+    if (!stored) {
+      stored = localStorage.getItem('auth_token');
+    }
     if (stored) apiToken = stored;
   }
   return apiToken;

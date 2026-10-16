@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '@/lib/store';
+import { getApiToken } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,7 +41,7 @@ export function AiAutopilot() {
   // Fetch available models
   const loadModels = async () => {
     try {
-      const token = localStorage.getItem('auth_token') || '';
+      const token = getApiToken() || '';
       const res = await fetch('/api/ai/models', {
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -116,7 +117,7 @@ export function AiAutopilot() {
     setResultText('');
     setLatency(null);
 
-    const token = localStorage.getItem('auth_token') || '';
+    const token = getApiToken() || '';
 
     let contextData: any = {};
     let promptOverride = '';
